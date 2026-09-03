@@ -6,42 +6,45 @@
 {% include "bot/includes/quote_responsive_css.html" %}
 <style>
     /* View Quote — document chrome only. */
-    .vq-company {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding: 18px;
+    /* The letterhead ships its own styles with the shared partial; these
+       page-local rules only cover the document chrome around it. */
+    .qf-doc__head {
+        text-align: center;
         margin-bottom: 24px;
-        border-radius: var(--radius-md);
-        background: var(--color-surface-low);
+        padding-bottom: 18px;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
     }
 
-    .vq-company__logo {
-        flex: 0 0 auto;
-        width: 64px;
-        height: 64px;
+    .qf-doc__logo {
+        height: 66px;
+        width: auto;
+        max-width: 180px;
+        display: block;
+        margin: 0 auto 10px;
+    }
+
+    .qf-doc__mark {
+        width: 66px;
+        height: 66px;
+        margin: 0 auto 10px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: var(--radius-md);
-        background: var(--color-surface-lowest);
-        overflow: hidden;
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        font-weight: 700;
     }
 
-    .vq-company__logo img { width: 100%; height: 100%; object-fit: contain; }
-
-    .vq-company__details h2 {
-        margin: 0 0 4px;
-        font-size: clamp(1rem, 4vw, 1.2rem);
+    .qf-doc__name {
+        margin: 0;
+        font-size: clamp(1.05rem, 4.5vw, 1.35rem);
         font-weight: 500;
         color: var(--color-text);
     }
 
-    .vq-company__details p {
-        margin: 2px 0;
-        font-size: 12.5px;
-        color: var(--color-muted);
-    }
+    .qf-doc__ta,
+    .qf-doc__line { margin: 4px 0 0; font-size: 12px; color: var(--color-muted); }
 
     .vq-doc {
         text-align: center;
@@ -88,7 +91,6 @@
     .vq-foot a { color: var(--color-primary); text-decoration: underline; }
 
     @media (max-width: 767px) {
-        .vq-company { flex-direction: column; text-align: center; gap: 12px; padding: 16px 14px; }
         .vq-cols { grid-template-columns: 1fr; gap: 18px; }
     }
 </style>
@@ -110,18 +112,13 @@
     </div>
 
     <div class="pbq-card">
-        <!-- Company -->
-        <div class="vq-company">
-            <div class="vq-company__logo">
-                <img src="{{ logo_data_uri|default:logo_url }}" alt="HOMEBASE CONSTRUCTION logo">
-            </div>
-            <div class="vq-company__details">
-                <h2>HOMEBASE CONSTRUCTION [PVT] LTD</h2>
-                <p>150 Northway | Seke rd, Hatfield &mdash; Harare</p>
-                <p>Cell: 0774 819 901 | 0772 254 823</p>
-                <p>Email: info@homebaseplumbers.co.zw</p>
-            </div>
-        </div>
+        {% comment %}
+        The SAME letterhead the editor previews, so what the plumber checks on
+        screen is what their customer receives. It used to hardcode "HOMEBASE
+        CONSTRUCTION [PVT] LTD", a Hatfield address and Homebase's phone and
+        email, on every tenant's quote.
+        {% endcomment %}
+        {% include "bot/includes/quote_flat_letterhead.html" %}
 
         <!-- Document header -->
         <div class="vq-doc">
@@ -276,12 +273,20 @@
             </form>
         </div>
 
-        <!-- Footer -->
+        {% comment %}
+        The contact line is the TENANT's own, and absent means the offer is
+        omitted rather than pointing the customer at another business. It used
+        to hardcode info@homebaseplumbers.co.zw on every tenant's quote.
+        {% endcomment %}
         <div class="vq-foot">
             <strong>Prepared for:</strong>
-            {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}<br>
-            If you have any questions about this quotation, please contact us at
-            <a href="mailto:info@homebaseplumbers.co.zw">info@homebaseplumbers.co.zw</a>
+            {{ quotation.appointment.customer_name|default:quotation.appointment.phone_number }}
+            {% if lh.public_email %}<br>
+            Any questions about this quotation, contact us at
+            <a href="mailto:{{ lh.public_email }}">{{ lh.public_email }}</a>
+            {% elif lh.phones %}<br>
+            Any questions about this quotation, call us on {{ lh.phones.0 }}
+            {% endif %}
         </div>
     </div>
 </div>

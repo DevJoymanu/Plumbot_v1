@@ -115,25 +115,28 @@ def quotation_templates_api(request):
 
 @method_decorator(staff_required, name='dispatch')
 class StandaloneQuotationView(View):
-    """Render the standalone quotation creation form."""
-    template_name = 'bot/pages/standalone_quotation.html'
+    """Render the standalone quotation creation form.
+
+    Same shared template as create-from-lead and edit — this screen's layout IS
+    the flat layout, so it is rendered from the one file rather than a copy of
+    it that can drift.
+    """
 
     def get(self, request, *args, **kwargs):
-        context = {
-            **branding.branding_context(getattr(request, 'tenant', None)),
-        }
+        from .quotations import (
+            FLAT_FORM_TEMPLATE, SECTIONED_FORM_TEMPLATE, flat_form_context,
+            _sectioned_form_context)
+        from .quote_layout import is_sectioned, tenant_of
+
+        context = flat_form_context(request, mode='new')
 
         # A tenant on the sectioned layout builds even an unattached quote on
         # their own sheet.
-        from .quotations import _sectioned_form_context
-        from .quote_layout import is_sectioned, tenant_of
-
-        tenant = tenant_of(request)
-        if is_sectioned(tenant):
+        if is_sectioned(tenant_of(request)):
             context.update(_sectioned_form_context(request))
-            return render(request, 'bot/pages/quote_sectioned_form.html', context)
+            return render(request, SECTIONED_FORM_TEMPLATE, context)
 
-        return render(request, self.template_name, context)
+        return render(request, FLAT_FORM_TEMPLATE, context)
 
 
 @csrf_exempt

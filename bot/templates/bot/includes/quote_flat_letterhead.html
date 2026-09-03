@@ -1,0 +1,35 @@
+{% comment %}
+The head of a FLAT quote document, rendered entirely from the tenant's own
+letterhead and logo.
+
+Used by the editor's live preview AND by the read-only client copy, so the
+document a plumber checks on screen is the document their customer receives.
+Before this, the preview hardcoded "HOMEBASE CONSTRUCTION", the strapline
+"Quality Is Our Qualification", a Johannesburg street address and a phone
+number, so every tenant previewed their quote under Homebase's identity.
+
+Every block is guarded and absent means OMIT, never borrow: a tenant with no
+strapline gets no strapline line, not somebody else's. The logo falls back to
+the business name, then to its initials, then to nothing.
+
+Expects: lh (TenantConfig.letterhead()), plus branding_context
+(logo_url / logo_data_uri / brand_name).
+{% endcomment %}
+<div class="qf-doc__head">
+    {% if logo_data_uri or logo_url %}
+    <img class="qf-doc__logo" src="{{ logo_data_uri|default:logo_url }}"
+         alt="{{ brand_name|default:lh.business_name }}">
+    {% elif brand_initials %}
+    <div class="qf-doc__mark">{{ brand_initials }}</div>
+    {% endif %}
+
+    {% firstof lh.business_name brand_name as doc_name %}
+    {% if doc_name %}<h2 class="qf-doc__name">{{ doc_name }}</h2>{% endif %}
+    {% if lh.trading_name %}<p class="qf-doc__ta">t / a {{ lh.trading_name }}</p>{% endif %}
+    {% if lh.strapline %}<p class="qf-doc__line">{{ lh.strapline }}</p>{% endif %}
+    {% if lh.address %}<p class="qf-doc__line">{{ lh.address }}</p>{% endif %}
+    {% if lh.phones %}
+    <p class="qf-doc__line">{% for phone in lh.phones %}{{ phone }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if lh.public_email %}<p class="qf-doc__line">{{ lh.public_email }}</p>{% endif %}
+</div>

@@ -919,7 +919,7 @@ class SectionedQuoteTests(TestCase):
         response = self.hb_client.get(
             reverse('create_quotation', args=[self.homebase_lead.pk]))
         names = [t.name for t in response.templates]
-        self.assertIn('bot/pages/create_quotation.html', names)
+        self.assertIn('bot/pages/quote_flat_form.html', names)
         self.assertNotIn('bot/pages/quote_sectioned_form.html', names)
 
     def test_no_barmak_letterhead_value_reaches_another_tenant(self):
@@ -1146,7 +1146,7 @@ class SectionedQuoteTests(TestCase):
         })
         response = self.client.get(
             reverse('create_quotation', args=[self.barmak_lead.pk]))
-        self.assertIn('bot/pages/create_quotation.html',
+        self.assertIn('bot/pages/quote_flat_form.html',
                       [t.name for t in response.templates])
 
     # ── the seed migration ──────────────────────────────────────────────
@@ -6222,3 +6222,122 @@ class GlobalTemplateTests(StaffClientTestCase):
         created = QuotationTemplate.objects.filter(name='Sneaky Global').first()
         if created is not None:
             self.assertFalse(created.is_global)
+
+
+class OneQuoteLayoutTests(StaffClientTestCase):
+    """Every flat quote screen renders from ONE template, per tenant.
+
+    Create-from-lead, standalone-new and edit used to be three separate
+    750-950 line templates that had drifted: different headers, two different
+    preview blocks, and no preview at all on edit. The same quote looked like
+    three products depending on how you reached it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.profile, _ = TenantProfile.objects.get_or_create(tenant=self.tenant)
+        self.lead = make_lead(9600, customer_name='Layout Lead',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(appointment=self.lead,
+                                              labor_cost=Decimal('80'))
+
+    def _editors(self):
+        return {
+            'standalone': reverse('standalone_quotation'),
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'edit': reverse('edit_quotation', args=[self.quote.pk]),
+        }
+
+    def test_all_three_editors_use_the_one_template(self):
+        for name, url in self._editors().items():
+            with self.subTest(screen=name):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('bot/pages/quote_flat_form.html',
+                              [t.name for t in response.templates])
+
+    def test_each_editor_knows_its_own_mode(self):
+        expected = {'standalone': 'new', 'create': 'create', 'edit': 'edit'}
+        for name, url in self._editors().items():
+            with self.subTest(screen=name):
+                self.assertEqual(
+                    self.client.get(url).context['quote_mode'], expected[name])
+
+    def test_every_editor_carries_the_document_preview(self):
+        """Edit had no preview at all, so a plumber could not see the document
+        they were changing."""
+        for name, url in self._editors().items():
+            with self.subTest(screen=name):
+                body = self.client.get(url).content.decode()
+                self.assertIn('id="previewSection"', body)
+                self.assertIn('id="previewItems"', body)
+
+    def test_the_editor_and_the_client_copy_share_one_letterhead(self):
+        pages = list(self._editors().values()) + [
+            reverse('view_quotation', args=[self.quote.pk])]
+        for url in pages:
+            with self.subTest(url=url):
+                self.assertIn('bot/includes/quote_flat_letterhead.html',
+                              [t.name for t in self.client.get(url).templates])
+
+    def test_no_hardcoded_homebase_identity_on_any_quote_screen(self):
+        """The preview and the client copy printed 'HOMEBASE CONSTRUCTION', a
+        Johannesburg address and Homebase's phone and email on EVERY tenant's
+        quote."""
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-layout')
+        TenantProfile.objects.create(
+            tenant=other, letterhead={'business_name': 'Acme Plumbing'})
+        lead = make_lead(9601, tenant=other, customer_name='Acme Lead')
+        quote = Quotation.objects.create(appointment=lead)
+
+        user = get_user_model().objects.create_user(
+            username='acme-layout-staff', password='pw', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=other, role='staff')
+        self.client.force_login(user)
+
+        for url in (reverse('standalone_quotation'),
+                    reverse('create_quotation', args=[lead.pk]),
+                    reverse('edit_quotation', args=[quote.pk]),
+                    reverse('view_quotation', args=[quote.pk])):
+            with self.subTest(url=url):
+                body = self.client.get(url).content.decode()
+                self.assertNotIn('HOMEBASE CONSTRUCTION', body)
+                self.assertNotIn('Pritchard', body)
+                self.assertNotIn('homebaseplumbers.co.zw', body)
+                self.assertIn('Acme Plumbing', body)
+
+    def test_a_tenant_with_no_letterhead_omits_the_lines_rather_than_borrowing(self):
+        bare = Tenant.objects.create(name='Bare Plumbing', slug='bare-layout')
+        TenantProfile.objects.create(tenant=bare)
+        lead = make_lead(9602, tenant=bare)
+        user = get_user_model().objects.create_user(
+            username='bare-staff', password='pw', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=bare, role='staff')
+        self.client.force_login(user)
+
+        body = self.client.get(reverse('create_quotation', args=[lead.pk])).content.decode()
+        self.assertIn('Bare Plumbing', body)          # falls back to its own name
+        self.assertNotIn('HOMEBASE', body.upper())
+
+    def test_a_sectioned_tenant_still_gets_its_own_sheet(self):
+        """The per-tenant switch survives the unification."""
+        self.profile.letterhead = {'layout': 'sectioned', 'business_name': 'Homebase'}
+        self.profile.save(update_fields=['letterhead'])
+        for url in self._editors().values():
+            with self.subTest(url=url):
+                names = [t.name for t in self.client.get(url).templates]
+                self.assertIn('bot/pages/quote_sectioned_form.html', names)
+                self.assertNotIn('bot/pages/quote_flat_form.html', names)
+
+    def test_the_superseded_templates_are_gone(self):
+        """One layout means one file; a leftover copy is one edit away from
+        drifting again."""
+        from django.template import TemplateDoesNotExist
+        from django.template.loader import get_template
+        for name in ('bot/pages/create_quotation.html',
+                     'bot/pages/edit_quotation.html',
+                     'bot/pages/standalone_quotation.html'):
+            with self.subTest(template=name):
+                with self.assertRaises(TemplateDoesNotExist):
+                    get_template(name)

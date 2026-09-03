@@ -105,7 +105,6 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
 class CreateQuotationView(CreateView):
     model = Quotation
     form_class = QuotationForm
-    template_name = 'bot/pages/create_quotation.html'
 
     def _appointment(self):
         if 'pk' not in self.kwargs:
@@ -116,8 +115,8 @@ class CreateQuotationView(CreateView):
 
     def get_template_names(self):
         if is_sectioned(tenant_of(self.request, appointment=self._appointment())):
-            return ['bot/pages/quote_sectioned_form.html']
-        return [self.template_name]
+            return [SECTIONED_FORM_TEMPLATE]
+        return [FLAT_FORM_TEMPLATE]
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -131,8 +130,9 @@ class CreateQuotationView(CreateView):
         # Resolved AFTER the appointment lands in context, so the LEAD's tenant
         # wins: an operator raising a quote for a client must get the client's
         # letterhead, not their own workspace's.
-        context.update(branding.branding_context(
-            _branding_tenant(self.request, context)))
+        context.update(flat_form_context(
+            self.request, mode='create' if appointment else 'new',
+            appointment=appointment))
 
         # Job notes from the post-visit debrief carry into the quote screen —
         # the plumber typed them minutes ago and should not retype them. Only
@@ -345,10 +345,14 @@ class ViewQuotationView(DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(branding.branding_context(_branding_tenant(self.request, context)))
 
         quotation = context['quotation']
         tenant = tenant_of(self.request, quotation=quotation)
+        # The client copy uses the SAME letterhead the editor previews, so both
+        # need the same context whichever layout this tenant is on.
+        context.update(flat_form_context(
+            self.request, mode='view', quotation=quotation,
+            appointment=getattr(quotation, 'appointment', None)))
         if is_sectioned(tenant):
             letterhead = letterhead_for(tenant)
             context['lh'] = letterhead
@@ -388,6 +392,44 @@ def _viewing_all_tenants(request) -> bool:
     from ..decorators import is_platform_owner
 
     return bool(request.GET.get('all')) and is_platform_owner(request.user)
+
+
+# The flat quote document is ONE template for all three editors, exactly as the
+# sectioned one already is. FLAT_FORM_TEMPLATE is the single name, so a fourth
+# screen cannot quietly grow its own layout.
+FLAT_FORM_TEMPLATE = 'bot/pages/quote_flat_form.html'
+SECTIONED_FORM_TEMPLATE = 'bot/pages/quote_sectioned_form.html'
+
+# The project types offered on every quote screen. One list, so the editor's
+# dropdown and the template picker's filter cannot drift.
+QUOTE_PROJECT_TYPES = [
+    ('bathroom_renovation', 'Bathroom Renovation'),
+    ('kitchen_renovation', 'Kitchen Renovation'),
+    ('new_plumbing_installation', 'New Plumbing Installation'),
+    ('general_plumbing', 'General Plumbing'),
+    ('electrical_installation', 'Electrical Installation'),
+    ('roof_repair', 'Roof Repair'),
+    ('other', 'Other'),
+]
+
+
+def flat_form_context(request, *, mode, appointment=None, quotation=None):
+    """Everything the shared flat editor needs, resolved from the LEAD's tenant.
+
+    `brand_initials` is the last-resort mark when a tenant has no logo: their
+    own initials, never a platform default.
+    """
+    tenant = tenant_of(request, appointment=appointment, quotation=quotation)
+    context = {
+        'quote_mode': mode,
+        'quote_project_types': QUOTE_PROJECT_TYPES,
+        'lh': letterhead_for(tenant),
+        **branding.branding_context(tenant),
+    }
+    name = context.get('brand_name') or ''
+    context['brand_initials'] = ''.join(
+        word[0] for word in name.split()[:2] if word).upper()
+    return context
 
 
 def _visible_quotations(request, across_tenants=None):
@@ -484,7 +526,7 @@ class QuotationsListView(ListView):
 @staff_required
 @require_http_methods(["GET"])
 def quotation_detail_api(request, pk):
-    """Return quotation payload used by edit_quotation.html."""
+    """Return quotation payload the flat editor loads an existing quote from."""
     quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment = quotation.appointment
 
@@ -529,22 +571,17 @@ def quotation_detail_api(request, pk):
 class EditQuotationView(UpdateView):
     model = Quotation
     form_class = QuotationForm
-    template_name = 'bot/pages/edit_quotation.html'
 
     def get_template_names(self):
         if is_sectioned(tenant_of(self.request, quotation=self.get_object())):
-            return ['bot/pages/quote_sectioned_form.html']
-        return [self.template_name]
-    
-
+            return [SECTIONED_FORM_TEMPLATE]
+        return [FLAT_FORM_TEMPLATE]
 
     def get_queryset(self):
-        _t = getattr(self.request, 'tenant', None)
-        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
-
-    def get_queryset(self):
-        _t = getattr(self.request, 'tenant', None)
-        return Quotation.objects.filter(appointment__tenant=_t) if _t else Quotation.objects.all()
+        # There were TWO get_queryset definitions here, the second silently
+        # overriding the first, and both fell back to EVERY tenant when no
+        # workspace resolved. Same resolver as every other quote action now.
+        return _visible_quotations(self.request)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -554,8 +591,11 @@ class EditQuotationView(UpdateView):
             context['formset'] = QuotationItemFormSet(instance=self.object)
 
         quotation = self.object
+        context.update(flat_form_context(
+            self.request, mode='edit', quotation=quotation,
+            appointment=getattr(quotation, 'appointment', None)))
+        context['quotation'] = quotation
         if is_sectioned(tenant_of(self.request, quotation=quotation)):
-            context.update(branding.branding_context(_branding_tenant(self.request, context)))
             context.update(_sectioned_form_context(self.request, quotation=quotation))
         return context
     
@@ -574,7 +614,7 @@ class EditQuotationView(UpdateView):
             return self.render_to_response(self.get_context_data(form=form))
 
     def post(self, request, *args, **kwargs):
-        # JSON API update path used by edit_quotation.html
+        # JSON API update path used by the flat editor in edit mode
         content_type = (request.content_type or '').lower()
         if 'application/json' in content_type:
             quotation = self.get_object()

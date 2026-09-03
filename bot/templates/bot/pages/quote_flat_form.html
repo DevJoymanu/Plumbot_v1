@@ -1,0 +1,947 @@
+{% extends "bot/layouts/base.html" %}
+{% load static %}
+
+{% comment %}
+THE flat quote editor. One template for all three of them.
+
+Create-from-lead, standalone-new and edit used to be three separate 750-950
+line templates that had drifted apart: different headers, two different preview
+blocks, and the edit screen had no preview at all — so the same quote looked
+like three different products depending on how you reached it. This is the
+standalone layout (the one at /quotations/new/), made the layout everywhere.
+
+It mirrors what the SECTIONED layout already does: `quote_sectioned_form.html`
+is one template serving the same three screens. Now both layouts work the same
+way, and `get_template_names()` on each view picks between them per tenant.
+
+Mode comes from `quote_mode`:
+    new     — blank standalone quote
+    create  — from a lead, prefilled from the appointment
+    edit    — an existing quote, loaded from the API
+
+The differences between the three are genuinely small (what is prefilled, where
+Save posts, and whether Send/Duplicate/Delete are offered), so they are `{% if %}`
+branches here rather than three copies of the same 800 lines.
+
+Item ids come from a monotonic nextItemId(), never Date.now() or the array
+index — every lookup is by id, and two items added in the same millisecond
+shared one (CLAUDE.md). The edit screen used to key items by array index, which
+is the same bug wearing a different hat: removing item 2 renumbered item 3.
+{% endcomment %}
+
+{% block title %}{% if quote_mode == 'edit' %}Edit Quotation{% elif quote_mode == 'create' %}Create Quotation{% else %}New Quotation{% endif %}{% endblock %}
+
+{% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
+<style>
+    /* The quote document — page-specific bits only; the shared quote layer
+       (quote_responsive_css.html) carries the responsive behaviour. */
+    .qf-preview { display: none; }
+
+    .qf-doc__head {
+        text-align: center;
+        margin-bottom: 18px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.10);
+    }
+
+    .qf-doc__logo {
+        height: 66px;
+        width: auto;
+        max-width: 180px;
+        display: block;
+        margin: 0 auto 10px;
+    }
+
+    .qf-doc__mark {
+        width: 66px;
+        height: 66px;
+        margin: 0 auto 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        font-weight: 700;
+    }
+
+    .qf-doc__name {
+        margin: 0;
+        font-size: clamp(1.05rem, 4.5vw, 1.35rem);
+        font-weight: 500;
+        color: var(--color-text);
+    }
+
+    .qf-doc__ta,
+    .qf-doc__line { margin: 4px 0 0; font-size: 12px; color: var(--color-muted); }
+
+    .qf-block {
+        padding: 14px;
+        margin: 12px 0;
+        border-radius: var(--radius-md);
+        background: var(--color-surface-low);
+        font-size: 13px;
+    }
+
+    .qf-block strong {
+        display: block;
+        margin-bottom: 6px;
+        font-family: var(--font-label);
+        font-size: 10.5px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-muted);
+    }
+
+    /* Edit mode only: the record's own identity, above the form. */
+    .qf-meta {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        align-items: center;
+        font-size: 13px;
+        color: var(--color-muted);
+    }
+
+    .qf-meta strong { color: var(--color-text); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pbq-page pbq-page--barred" id="quoteFormPage">
+
+    <div class="pbq-head pbq-no-print">
+        <div>
+            <h1 class="pbq-head__title">
+                {% if quote_mode == 'edit' %}Edit Quotation
+                {% elif quote_mode == 'create' %}Quotation Generator
+                {% else %}New Quotation{% endif %}
+            </h1>
+            <p class="pbq-head__sub">
+                {% if quote_mode == 'edit' %}
+                    {{ quotation.quotation_number }} · {{ quotation.get_display_name }}
+                {% elif quote_mode == 'create' %}
+                    For {{ appointment.customer_name|default:appointment.phone_number|default:"this lead" }}.
+                {% else %}
+                    Build a quote from scratch, or start from a saved template.
+                {% endif %}
+            </p>
+        </div>
+        <div class="pbq-head__actions">
+            {% if quote_mode != 'edit' %}
+            <button type="button" class="btn btn-outline-primary" id="useTemplateBtn" onclick="openTemplateModal()">
+                <i class="fas fa-file-invoice"></i> Use Template
+            </button>
+            {% endif %}
+            {% if appointment %}
+            <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Lead
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="alertContainer" class="pbq-no-print"></div>
+
+    {% if quote_mode == 'edit' %}
+    <div class="pbq-card pbq-no-print">
+        <div class="qf-meta">
+            <span>Quote <strong>{{ quotation.quotation_number }}</strong></span>
+            <span>Status <span class="pbq-status pbq-status--{{ quotation.status }}">{{ quotation.get_status_display }}</span></span>
+            <span>Created <strong>{{ quotation.created_at|date:"j M Y" }}</strong></span>
+            <span>Updated <strong id="updatedDate">{{ quotation.updated_at|date:"j M Y, H:i" }}</strong></span>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Client Information -->
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-user"></i> Client Information</h2>
+        <div class="pbq-field">
+            <label for="clientName">Client Name *</label>
+            <input type="text" id="clientName" placeholder="Enter client name" required
+                value="{{ appointment.customer_name|default:'' }}">
+        </div>
+        <div class="pbq-field">
+            <label for="clientPhone">Phone Number</label>
+            <input type="tel" id="clientPhone" placeholder="Enter phone number"
+                value="{{ appointment.phone_number|default:'' }}">
+        </div>
+        <div class="pbq-field">
+            <label for="clientEmail">Email</label>
+            <input type="email" id="clientEmail" placeholder="Enter email address"
+                value="{{ appointment.customer_email|default:'' }}">
+        </div>
+        <div class="pbq-field">
+            <label for="clientAddress">Address</label>
+            <textarea id="clientAddress" placeholder="Enter client address">{{ appointment.customer_area|default:'' }}</textarea>
+        </div>
+    </div>
+
+    <!-- Project Information -->
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-project-diagram"></i> Project Information</h2>
+        <div class="pbq-field">
+            <label for="projectType">Project Type *</label>
+            <select id="projectType" required>
+                <option value="">Select project type</option>
+                {% for value, label in quote_project_types %}
+                <option value="{{ value }}" {% if appointment.project_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="pbq-field">
+            <label for="projectLocation">Project Location</label>
+            <input type="text" id="projectLocation" placeholder="Project site address"
+                value="{{ appointment.customer_area|default:'' }}">
+        </div>
+        <div class="pbq-field">
+            <label for="projectNotes">Project Notes</label>
+            {% comment %}
+            The debrief's job notes win when there are any: they are the newer,
+            more specific description of what this quote is for. data-prefilled
+            stops the appointment fetch overwriting what the plumber typed on
+            site.
+            {% endcomment %}
+            <textarea id="projectNotes" placeholder="Describe the project scope..."
+                      {% if quote_prefill_notes %}data-prefilled="1"{% endif %}>{% if quote_prefill_notes %}{{ quote_prefill_notes }}{% else %}{{ appointment.project_description|default:'' }}{% endif %}</textarea>
+        </div>
+    </div>
+
+    <!-- Items -->
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items &amp; Materials</h2>
+        <div class="pbq-items-panel">
+            <div class="pbq-items-bar" id="itemsBar">
+                <span class="pbq-items-bar__count" id="itemsCount">No items yet</span>
+                <span class="pbq-items-bar__total" id="itemsRunningTotal">US$0.00</span>
+            </div>
+            <div class="pbq-items-scroll" id="itemsScroll">
+                <div class="pbq-items" id="itemsList">
+                    <div class="pbq-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>No items added yet</p>
+                    </div>
+                </div>
+            </div>
+            <div class="pbq-items-foot">
+                <button type="button" class="btn btn-outline-primary pbq-add" onclick="addItem()">
+                    <i class="fas fa-plus"></i> Add Item
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Totals -->
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-calculator"></i> Totals</h2>
+        <div class="pbq-totals">
+            <div class="pbq-total-row">
+                <span>Material Cost</span>
+                <span id="materialsTotal">US$0.00</span>
+            </div>
+            <div class="pbq-total-row">
+                <span><label for="labourCost" style="margin:0;">Labour Cost</label></span>
+                <input type="number" class="pbq-total-input" id="labourCost" value="0" min="0" step="0.01"
+                       inputmode="decimal" oninput="calculateTotals()">
+            </div>
+            <div class="pbq-total-row">
+                <span><label for="transportCost" style="margin:0;">Transport Cost</label></span>
+                <input type="number" class="pbq-total-input" id="transportCost" value="0" min="0" step="0.01"
+                       inputmode="decimal" oninput="calculateTotals()">
+            </div>
+            <div class="pbq-total-row pbq-total-row--grand">
+                <span>Total Amount</span>
+                <span id="grandTotal">US$0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Notes -->
+    <div class="pbq-card pbq-no-print">
+        <h2 class="pbq-section-title"><i class="fas fa-sticky-note"></i> Additional Notes</h2>
+        <div class="pbq-field">
+            <textarea id="additionalNotes" rows="3"
+                      placeholder="Payment terms, warranty info, exclusions…">{% if quote_mode == 'edit' %}{{ quotation.notes|default:'' }}{% endif %}</textarea>
+        </div>
+    </div>
+
+    <!-- The document itself -->
+    <div class="pbq-card qf-preview" id="previewSection">
+        {% include "bot/includes/quote_flat_letterhead.html" %}
+
+        <div class="qf-block"><strong>Client Information</strong><div id="previewClient"></div></div>
+        <div class="qf-block"><strong>Project Details</strong><div id="previewProject"></div></div>
+
+        <div class="pbq-table-wrap">
+            <table class="pbq-table pbq-table--stack">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th class="pbq-num">Qty</th>
+                        <th class="pbq-num">Price</th>
+                        <th class="pbq-num">Total</th>
+                    </tr>
+                </thead>
+                <tbody id="previewItems"></tbody>
+            </table>
+        </div>
+
+        <div class="pbq-totals" style="margin-top:16px;">
+            <div class="pbq-total-row"><span>Material cost</span><span id="previewMaterials">US$0.00</span></div>
+            <div class="pbq-total-row"><span>Labour</span><span id="previewLabour">US$0.00</span></div>
+            <div class="pbq-total-row"><span>Transport</span><span id="previewTransport">US$0.00</span></div>
+            <div class="pbq-total-row pbq-total-row--grand">
+                <span>Total Amount</span><span id="previewGrandTotal">US$0.00</span>
+            </div>
+        </div>
+
+        <div id="previewNotes" class="qf-block" style="display:none;"></div>
+    </div>
+
+    {% comment %}
+    Sticky, not fixed, and offset by --bottom-nav-h: .pb-content__inner runs a
+    keyframe with animation-fill-mode both, and a retained transform would make
+    it the containing block for any fixed descendant (CLAUDE.md).
+    {% endcomment %}
+    <div class="pbq-actionbar pbq-no-print">
+        <button type="button" class="btn btn-outline-primary" onclick="showPreview()">
+            <i class="fas fa-eye"></i> Preview
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="downloadPDF()">
+            <i class="fas fa-download"></i> Download
+        </button>
+        {% if quote_mode == 'edit' %}
+        <button type="button" class="btn btn-danger" onclick="deleteQuotation()">
+            <i class="fas fa-trash"></i> Delete
+        </button>
+        {% else %}
+        <button type="button" class="btn btn-danger" onclick="clearAll()">
+            <i class="fas fa-trash"></i> Clear
+        </button>
+        {% endif %}
+        <button type="button" class="btn btn-primary" onclick="saveQuotation()" id="saveBtn">
+            <i class="fas fa-save"></i> Save
+        </button>
+    </div>
+</div>
+
+{% if quote_mode != 'edit' %}
+<!-- Template Selector Modal -->
+<div class="pbq-modal pbq-no-print" id="templateModal">
+    <div class="pbq-modal__panel">
+        <div class="pbq-modal__head">
+            <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
+            <button type="button" class="pbq-modal__close" onclick="closeTemplateModal()"
+                    aria-label="Close template picker">&times;</button>
+        </div>
+        <div class="pbq-modal__body">
+            <div class="pbq-modal__filters">
+                <input type="text" id="templateSearch" placeholder="Search templates..." oninput="searchTemplates()">
+                <select id="templateProjectFilter" onchange="filterTemplates()">
+                    <option value="">All Project Types</option>
+                    {% for value, label in quote_project_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div id="templatesList"></div>
+
+            <div id="templatesLoading" class="pbq-empty">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading templates...</p>
+            </div>
+
+            <div id="templatesEmpty" class="pbq-empty" style="display:none;">
+                <i class="fas fa-inbox"></i>
+                <p>No templates found</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Mode ─────────────────────────────────────────────────────────────
+    const MODE = "{{ quote_mode|default:'new' }}";
+    const QUOTATION_ID = {% if quote_mode == 'edit' %}{{ quotation.pk }}{% else %}null{% endif %};
+    const APPOINTMENT_ID = {% if appointment %}{{ appointment.pk }}{% else %}null{% endif %};
+
+    // Past this many rows the list gets its own scrollbar. Declared BEFORE
+    // anything that reads it: calculateTotals() runs during boot, and a const
+    // declared further down threw a ReferenceError that killed the whole
+    // handler on a page still returning 200 (CLAUDE.md, temporal dead zone).
+    const ITEMS_CAP_AT = 6;
+
+    let items = [];
+    let allTemplates = [];
+    let itemSeq = 0;
+
+    // Monotonic, never Date.now() and never the array index: every lookup is
+    // by id, and two items created in the same millisecond shared one.
+    function nextItemId() { return ++itemSeq; }
+
+    // ── Small helpers ────────────────────────────────────────────────────
+    function esc(value) {
+        if (value === null || value === undefined) { return ''; }
+        const div = document.createElement('div');
+        div.textContent = String(value);
+        return div.innerHTML;
+    }
+
+    function money(value) {
+        return 'US$' + (Number(value) || 0).toFixed(2);
+    }
+
+    function num(id) {
+        const el = document.getElementById(id);
+        return el ? (parseFloat(el.value) || 0) : 0;
+    }
+
+    function val(id) {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+    }
+
+    function getCsrfToken() {
+        const input = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (input) { return input.value; }
+        const match = document.cookie.match(/(^|;)\s*csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[2]) : '';
+    }
+
+    function showAlert(message, type) {
+        const container = document.getElementById('alertContainer');
+        if (!container) { return; }
+        const cls = type === 'error' ? 'pb-alert--error'
+                  : type === 'success' ? 'pb-alert--success' : 'pb-alert--info';
+        container.innerHTML = '<div class="pb-alert ' + cls + '">' + esc(message) + '</div>';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(function () { container.innerHTML = ''; }, 6000);
+    }
+
+    // ── Items ────────────────────────────────────────────────────────────
+    function addItem() {
+        const id = nextItemId();
+        items.push({ id: id, name: '', qty: 1, unit: 0 });
+        renderItems();
+        revealItem(id);
+    }
+
+    function removeItem(id) {
+        items = items.filter(function (item) { return item.id !== id; });
+        renderItems();
+    }
+
+    function updateItem(id, field, value) {
+        const item = items.find(function (row) { return row.id === id; });
+        if (!item) { return; }
+        item[field] = (field === 'name') ? value : (parseFloat(value) || 0);
+        updateItemTotal(id);
+        calculateTotals();
+    }
+
+    function updateItemTotal(id) {
+        const item = items.find(function (row) { return row.id === id; });
+        if (!item) { return; }
+        const cell = document.querySelector('[data-total-for="' + id + '"]');
+        if (cell) { cell.textContent = money(item.qty * item.unit); }
+    }
+
+    function itemCardHtml(item, index) {
+        return '' +
+            '<div class="pbq-item" data-item-id="' + item.id + '">' +
+              '<div class="pbq-item__head">' +
+                '<span class="pbq-item__index">Item ' + (index + 1) + '</span>' +
+                '<button type="button" class="pbq-item__remove" aria-label="Remove item"' +
+                        ' data-remove="' + item.id + '"><i class="fas fa-times"></i></button>' +
+              '</div>' +
+              '<div class="pbq-field">' +
+                '<label>Description</label>' +
+                '<input type="text" value="' + esc(item.name) + '" placeholder="Item description"' +
+                      ' data-field="name" data-id="' + item.id + '">' +
+              '</div>' +
+              '<div class="pbq-item__row">' +
+                '<div class="pbq-field">' +
+                  '<label>Qty</label>' +
+                  '<input type="number" min="0" step="0.01" inputmode="decimal" value="' + item.qty + '"' +
+                        ' data-field="qty" data-id="' + item.id + '">' +
+                '</div>' +
+                '<div class="pbq-field">' +
+                  '<label>Unit price</label>' +
+                  '<input type="number" min="0" step="0.01" inputmode="decimal" value="' + item.unit + '"' +
+                        ' data-field="unit" data-id="' + item.id + '">' +
+                '</div>' +
+                '<div class="pbq-item__total">' +
+                  '<label>Total</label>' +
+                  '<span data-total-for="' + item.id + '">' + money(item.qty * item.unit) + '</span>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+    }
+
+    function ensureBlankItem() {
+        const last = items[items.length - 1];
+        if (!last || (last.name || '').trim() !== '' || last.unit) {
+            items.push({ id: nextItemId(), name: '', qty: 1, unit: 0 });
+            return true;
+        }
+        return false;
+    }
+
+    function renderItems() {
+        const list = document.getElementById('itemsList');
+        const scroll = document.getElementById('itemsScroll');
+        if (!list) { return; }
+
+        // innerHTML rebuilds the list, so the scroll position has to be
+        // restored across it or the panel jumps to the top on every keystroke.
+        const scrollTop = scroll ? scroll.scrollTop : 0;
+
+        if (!items.length) {
+            list.innerHTML = '<div class="pbq-empty"><i class="fas fa-inbox"></i><p>No items added yet</p></div>';
+        } else {
+            list.innerHTML = items.map(itemCardHtml).join('');
+        }
+
+        if (scroll) {
+            scroll.classList.toggle('is-capped', items.length > ITEMS_CAP_AT);
+            scroll.scrollTop = scrollTop;
+        }
+        calculateTotals();
+    }
+
+    function revealItem(id) {
+        const node = document.querySelector('[data-item-id="' + id + '"]');
+        if (!node) { return; }
+        const scroll = document.getElementById('itemsScroll');
+        if (scroll && scroll.classList.contains('is-capped')) {
+            // Scroll the list's own box, not the page: 'center' pushed every
+            // item already added out of the viewport, which with the keyboard
+            // up left the blank new row as the only thing on screen.
+            scroll.scrollTop = scroll.scrollHeight;
+        } else {
+            node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+        const input = node.querySelector('input[data-field="name"]');
+        if (input) { input.focus(); }
+    }
+
+    function updateItemsBar() {
+        const real = items.filter(function (item) { return (item.name || '').trim(); });
+        const count = document.getElementById('itemsCount');
+        const total = document.getElementById('itemsRunningTotal');
+        if (count) {
+            count.textContent = real.length
+                ? real.length + ' item' + (real.length === 1 ? '' : 's')
+                : 'No items yet';
+        }
+        if (total) {
+            total.textContent = money(real.reduce(function (sum, item) {
+                return sum + (item.qty * item.unit);
+            }, 0));
+        }
+    }
+
+    // The single choke point for every figure on the page, so the running bar
+    // and the totals card cannot drift apart.
+    function calculateTotals() {
+        const materials = items.reduce(function (sum, item) {
+            return sum + ((parseFloat(item.qty) || 0) * (parseFloat(item.unit) || 0));
+        }, 0);
+        const labour = num('labourCost');
+        const transport = num('transportCost');
+
+        const materialsEl = document.getElementById('materialsTotal');
+        const grandEl = document.getElementById('grandTotal');
+        if (materialsEl) { materialsEl.textContent = money(materials); }
+        if (grandEl) { grandEl.textContent = money(materials + labour + transport); }
+        updateItemsBar();
+    }
+
+    // ── The document preview ─────────────────────────────────────────────
+    function showPreview() {
+        const preview = document.getElementById('previewSection');
+        if (!preview) { return; }
+
+        document.getElementById('previewClient').innerHTML =
+            '<strong>' + esc(val('clientName') || 'Client') + '</strong><br>' +
+            esc(val('clientAddress')) +
+            (val('clientPhone') ? '<br>' + esc(val('clientPhone')) : '') +
+            (val('clientEmail') ? '<br>' + esc(val('clientEmail')) : '');
+
+        const typeSelect = document.getElementById('projectType');
+        const typeLabel = typeSelect && typeSelect.selectedIndex >= 0
+            ? typeSelect.options[typeSelect.selectedIndex].text : '';
+        document.getElementById('previewProject').innerHTML =
+            '<strong>' + esc(typeLabel) + '</strong><br>' +
+            esc(val('projectLocation')) +
+            (val('projectNotes') ? '<br>' + esc(val('projectNotes')) : '');
+
+        const rows = items.filter(function (item) { return (item.name || '').trim(); });
+        document.getElementById('previewItems').innerHTML = rows.map(function (item) {
+            return '<tr>' +
+                '<td data-label="Item">' + esc(item.name) + '</td>' +
+                '<td class="pbq-num" data-label="Qty">' + item.qty + '</td>' +
+                '<td class="pbq-num" data-label="Price">' + money(item.unit) + '</td>' +
+                '<td class="pbq-num" data-label="Total">' + money(item.qty * item.unit) + '</td>' +
+            '</tr>';
+        }).join('');
+
+        const materials = rows.reduce(function (sum, item) { return sum + item.qty * item.unit; }, 0);
+        const labour = num('labourCost');
+        const transport = num('transportCost');
+        document.getElementById('previewMaterials').textContent = money(materials);
+        document.getElementById('previewLabour').textContent = money(labour);
+        document.getElementById('previewTransport').textContent = money(transport);
+        document.getElementById('previewGrandTotal').textContent = money(materials + labour + transport);
+
+        const notes = val('additionalNotes');
+        const notesEl = document.getElementById('previewNotes');
+        notesEl.style.display = notes ? 'block' : 'none';
+        notesEl.innerHTML = notes ? '<strong>Notes</strong>' + esc(notes).replace(/\n/g, '<br>') : '';
+
+        preview.style.display = 'block';
+        preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function downloadPDF() {
+        if (QUOTATION_ID) {
+            // A saved quote has a real PDF, byte-for-byte the one the customer
+            // is sent. Only an unsaved draft falls back to the print dialog.
+            window.location.href = '/quotations/' + QUOTATION_ID + '/download/';
+            return;
+        }
+        showPreview();
+        setTimeout(function () { window.print(); }, 500);
+    }
+
+    function clearAll() {
+        if (!confirm('Clear this quote and start again?')) { return; }
+        items = [];
+        ['clientName', 'clientPhone', 'clientEmail', 'clientAddress',
+         'projectLocation', 'projectNotes', 'additionalNotes'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; }
+        });
+        ['labourCost', 'transportCost'].forEach(function (id) {
+            const el = document.getElementById(id);
+            if (el) { el.value = 0; }
+        });
+        const type = document.getElementById('projectType');
+        if (type) { type.value = ''; }
+        const preview = document.getElementById('previewSection');
+        if (preview) { preview.style.display = 'none'; }
+        renderItems();
+    }
+
+    // ── Save ─────────────────────────────────────────────────────────────
+    function payload() {
+        const rows = items.filter(function (item) { return (item.name || '').trim(); });
+        const materials = rows.reduce(function (sum, item) { return sum + item.qty * item.unit; }, 0);
+        return {
+            appointment_id: APPOINTMENT_ID,
+            client_name: val('clientName'),
+            client_phone: val('clientPhone'),
+            client_email: val('clientEmail'),
+            client_address: val('clientAddress'),
+            project_type: val('projectType'),
+            project_location: val('projectLocation'),
+            project_notes: val('projectNotes'),
+            notes: val('additionalNotes'),
+            items: rows.map(function (item) {
+                return { name: item.name, description: item.name, qty: item.qty,
+                         quantity: item.qty, unit: item.unit, unit_price: item.unit };
+            }),
+            labour_cost: num('labourCost'),
+            labor_cost: num('labourCost'),
+            transport_cost: num('transportCost'),
+            // The flat layout posts materials_cost AND the item lines, and
+            // Quotation.save() adds both — a known pre-existing double-count
+            // (CLAUDE.md). Sending 0 here would change every existing quote's
+            // total, so it is left as-is and fixed deliberately, not in passing.
+            materials_cost: materials,
+            total_amount: materials + num('labourCost') + num('transportCost')
+        };
+    }
+
+    async function saveQuotation() {
+        const name = val('clientName');
+        if (!name) {
+            showAlert('Please enter a client name before saving.', 'error');
+            document.getElementById('clientName').focus();
+            return;
+        }
+        if (!val('projectType')) {
+            showAlert('Please choose a project type before saving.', 'error');
+            document.getElementById('projectType').focus();
+            return;
+        }
+
+        const button = document.getElementById('saveBtn');
+        const original = button ? button.innerHTML : '';
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+        }
+
+        const url = MODE === 'edit'
+            ? '/quotations/' + QUOTATION_ID + '/edit/'
+            : (APPOINTMENT_ID ? '/api/quotations/create/' : '/api/quotations/create-standalone/');
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json',
+                           'Accept': 'application/json',
+                           'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify(payload())
+            });
+            const result = await response.json().catch(function () { return {}; });
+
+            if (response.ok && result.success !== false) {
+                showAlert('Quotation saved.', 'success');
+                const updated = document.getElementById('updatedDate');
+                if (updated) { updated.textContent = 'Just now'; }
+                const newId = result.quotation_id || result.id;
+                if (MODE !== 'edit' && newId) {
+                    window.location.href = '/quotations/' + newId + '/';
+                }
+            } else {
+                showAlert('Could not save: ' + (result.error || 'unknown error'), 'error');
+            }
+        } catch (error) {
+            showAlert('Could not reach the server. Check your connection.', 'error');
+        } finally {
+            if (button) { button.disabled = false; button.innerHTML = original; }
+        }
+    }
+
+    async function deleteQuotation() {
+        if (!QUOTATION_ID) { return; }
+        if (!confirm('Delete this quotation permanently?')) { return; }
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = '/quotations/' + QUOTATION_ID + '/delete/';
+        form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCsrfToken() + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // ── Prefill ──────────────────────────────────────────────────────────
+    async function loadAppointmentData(appointmentId) {
+        try {
+            const response = await fetch('/api/appointments/' + appointmentId + '/');
+            if (!response.ok) { return; }
+            const appointment = await response.json();
+            if (appointment.error) { return; }
+
+            const set = function (id, value) {
+                const el = document.getElementById(id);
+                if (el && !el.value) { el.value = value || ''; }
+            };
+            set('clientName', appointment.customer_name);
+            set('clientPhone', appointment.phone_number);
+            set('clientEmail', appointment.customer_email);
+            set('clientAddress', appointment.customer_area);
+            set('projectLocation', appointment.customer_area);
+
+            // The debrief's job notes are newer and more specific than
+            // project_description; this fetch must not blank what the plumber
+            // typed on site.
+            const notes = document.getElementById('projectNotes');
+            if (notes && notes.dataset.prefilled !== '1' && !notes.value) {
+                notes.value = appointment.project_description || '';
+            }
+        } catch (error) { /* prefill is a convenience, never a blocker */ }
+    }
+
+    async function loadQuotation(id) {
+        try {
+            const response = await fetch('/api/quotations/' + id + '/');
+            if (!response.ok) {
+                showAlert('Could not load this quotation.', 'error');
+                return;
+            }
+            const quote = await response.json();
+            const apt = quote.appointment || {};
+
+            const set = function (elId, value) {
+                const el = document.getElementById(elId);
+                if (el) { el.value = value || ''; }
+            };
+            set('clientName', apt.customer_name);
+            set('clientPhone', apt.phone_number);
+            set('clientEmail', apt.customer_email);
+            set('clientAddress', apt.customer_area);
+            set('projectType', apt.project_type);
+            set('projectLocation', apt.customer_area);
+            set('projectNotes', apt.project_description);
+            set('labourCost', quote.labor_cost || 0);
+            set('transportCost', quote.transport_cost || 0);
+            if (!val('additionalNotes')) { set('additionalNotes', quote.notes); }
+
+            items = (quote.items || []).map(function (item) {
+                return {
+                    id: nextItemId(),
+                    name: item.description || '',
+                    qty: parseFloat(item.quantity) || 0,
+                    unit: parseFloat(item.unit_price) || 0
+                };
+            });
+            renderItems();
+        } catch (error) {
+            showAlert('Could not load this quotation.', 'error');
+        }
+    }
+
+    // ── Templates ────────────────────────────────────────────────────────
+    async function openTemplateModal() {
+        const modal = document.getElementById('templateModal');
+        if (!modal) { return; }
+        modal.classList.add('is-open');
+        document.getElementById('templatesLoading').style.display = 'block';
+        document.getElementById('templatesEmpty').style.display = 'none';
+        try {
+            const response = await fetch('/api/quotation-templates/?active_only=true');
+            const data = await response.json();
+            allTemplates = data.templates || [];
+            displayTemplates(allTemplates);
+        } catch (error) {
+            showTemplatesEmpty();
+        } finally {
+            document.getElementById('templatesLoading').style.display = 'none';
+        }
+    }
+
+    function closeTemplateModal() {
+        const modal = document.getElementById('templateModal');
+        if (modal) { modal.classList.remove('is-open'); }
+    }
+
+    function displayTemplates(templates) {
+        const list = document.getElementById('templatesList');
+        if (!list) { return; }
+        if (!templates.length) { list.innerHTML = ''; showTemplatesEmpty(); return; }
+        document.getElementById('templatesEmpty').style.display = 'none';
+        list.innerHTML = templates.map(function (template) {
+            return '<button type="button" class="pbq-template-row" data-template="' + template.id + '">' +
+                '<span class="pbq-template-row__name">' + esc(template.name) + '</span>' +
+                '<span class="pbq-template-row__meta">' + esc(template.project_type_display || '') + '</span>' +
+            '</button>';
+        }).join('');
+    }
+
+    function showTemplatesEmpty() {
+        document.getElementById('templatesList').innerHTML = '';
+        document.getElementById('templatesEmpty').style.display = 'block';
+    }
+
+    async function useTemplate(templateId) {
+        try {
+            const response = await fetch('/api/quotation-templates/?template_id=' + templateId);
+            const data = await response.json();
+            const template = (data.templates || [])[0] || data.template;
+            if (!template) { return; }
+
+            const itemsResponse = await fetch('/api/quotation-templates/' + templateId + '/items/');
+            const itemsData = await itemsResponse.json();
+
+            items = (itemsData.items || []).map(function (item) {
+                return {
+                    id: nextItemId(),
+                    name: item.description || '',
+                    qty: parseFloat(item.quantity) || 1,
+                    unit: parseFloat(item.unit_price) || 0
+                };
+            });
+            const labour = document.getElementById('labourCost');
+            const transport = document.getElementById('transportCost');
+            if (labour) { labour.value = template.default_labor_cost || 0; }
+            if (transport) { transport.value = template.default_transport_cost || 0; }
+            if (template.project_type) {
+                const type = document.getElementById('projectType');
+                if (type) { type.value = template.project_type; }
+            }
+            renderItems();
+            closeTemplateModal();
+            showAlert('Template applied.', 'success');
+        } catch (error) {
+            showAlert('Could not load that template.', 'error');
+        }
+    }
+
+    function filterTemplates() {
+        const search = (document.getElementById('templateSearch') || {}).value || '';
+        const type = (document.getElementById('templateProjectFilter') || {}).value || '';
+        const needle = search.toLowerCase();
+        displayTemplates(allTemplates.filter(function (template) {
+            const matchesText = !needle
+                || (template.name || '').toLowerCase().includes(needle)
+                || (template.description || '').toLowerCase().includes(needle);
+            const matchesType = !type || template.project_type === type;
+            return matchesText && matchesType;
+        }));
+    }
+
+    // ── Wiring ───────────────────────────────────────────────────────────
+    // Delegated, so a rebuilt list never loses its handlers.
+    document.addEventListener('input', function (event) {
+        const target = event.target;
+        if (target.dataset && target.dataset.field) {
+            updateItem(parseInt(target.dataset.id, 10), target.dataset.field, target.value);
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        const remove = event.target.closest('[data-remove]');
+        if (remove) {
+            removeItem(parseInt(remove.dataset.remove, 10));
+            return;
+        }
+        const row = event.target.closest('[data-template]');
+        if (row) {
+            useTemplate(row.dataset.template);
+            return;
+        }
+        const modal = document.getElementById('templateModal');
+        if (modal && event.target === modal) { closeTemplateModal(); }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { closeTemplateModal(); }
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (MODE === 'edit') {
+            loadQuotation(QUOTATION_ID);
+        } else {
+            if (APPOINTMENT_ID) { loadAppointmentData(APPOINTMENT_ID); }
+            ensureBlankItem();
+            renderItems();
+        }
+        calculateTotals();
+    });
+
+    // The action bar and the template modal call these by name from inline
+    // handlers, so they have to leave this IIFE.
+    window.addItem = addItem;
+    window.calculateTotals = calculateTotals;
+    window.showPreview = showPreview;
+    window.downloadPDF = downloadPDF;
+    window.clearAll = clearAll;
+    window.saveQuotation = saveQuotation;
+    window.deleteQuotation = deleteQuotation;
+    window.openTemplateModal = openTemplateModal;
+    window.closeTemplateModal = closeTemplateModal;
+    window.searchTemplates = filterTemplates;
+    window.filterTemplates = filterTemplates;
+})();
+</script>
+{% endblock %}
