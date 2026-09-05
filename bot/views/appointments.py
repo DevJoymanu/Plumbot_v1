@@ -116,9 +116,12 @@ class ConversationsView(ListView):
         'oldest_lead': ['created_at',  'id'],
     }
     DEFAULT_SORT = 'recent'
-    # Campaign filter values: '' = every source, 'none' = leads that never
-    # clicked an ad, anything else = one Meta ad id (ctwa_source_id).
-    NO_CAMPAIGN = 'none'
+    # Campaign filter values: '' = every source, 'current' = whichever ad the
+    # newest click came from, 'any' = ad leads whatever the ad, 'none' = leads
+    # that never clicked an ad, anything else = one Meta ad id.
+    NO_CAMPAIGN      = 'none'
+    CAMPAIGN_ANY     = 'any'
+    CAMPAIGN_CURRENT = 'current'
 
     def _resolve_sort(self):
         """Return the requested sort key, falling back to the default."""
@@ -130,10 +133,82 @@ class ConversationsView(ListView):
         campaign = self.request.GET.get('campaign', '').strip()
         if not campaign:
             return ''
-        if campaign == self.NO_CAMPAIGN:
+        if campaign in (self.NO_CAMPAIGN, self.CAMPAIGN_ANY):
             return campaign
+        if campaign == self.CAMPAIGN_CURRENT:
+            # A tenant with no ads at all has no current campaign to mean.
+            return campaign if self._current_campaign() else ''
         known = {value for value, _ in self._campaign_options()}
         return campaign if campaign in known else ''
+
+    def _ad_leads(self):
+        """This tenant's leads that arrived through an ad click."""
+        return (
+            Appointment.objects
+            .for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
+            .exclude(ctwa_source_id='')
+        )
+
+    def _current_campaign(self):
+        """The ad behind the most recent click ('' when the tenant has none).
+
+        Resolved at request time on purpose: 'Current campaign' has to keep
+        meaning the live ad as new clicks arrive, rather than freezing today's
+        id into a URL the operator bookmarks.
+        """
+        cached = getattr(self, '_current_campaign_cache', None)
+        if cached is not None:
+            return cached
+        latest = (
+            self._ad_leads().filter(ctwa_entry_at__isnull=False)
+            .order_by('-ctwa_entry_at')
+            .values_list('ctwa_source_id', flat=True).first()
+        )
+        if not latest:
+            # A backfilled lead can carry the ad id without a click time.
+            latest = (self._ad_leads().order_by('-created_at')
+                      .values_list('ctwa_source_id', flat=True).first())
+        self._current_campaign_cache = latest or ''
+        return self._current_campaign_cache
+
+    def _apply_campaign(self, queryset, campaign):
+        """Scope a queryset to the chosen campaign.
+
+        The ONE place the filter is expressed, because it is applied twice: to
+        the rows AND to the figures behind them. A count that ignored it would
+        say 40 leads over a list showing four.
+        """
+        if not campaign:
+            return queryset
+        if campaign == self.NO_CAMPAIGN:
+            return queryset.filter(ctwa_source_id='')
+        if campaign == self.CAMPAIGN_ANY:
+            return queryset.exclude(ctwa_source_id='')
+        source_id = (self._current_campaign()
+                     if campaign == self.CAMPAIGN_CURRENT else campaign)
+        return queryset.filter(ctwa_source_id=source_id)
+
+    def _campaign_presets(self):
+        """(value, label) for the dropdown's presets, above the per-ad list."""
+        presets = [('', 'All leads')]
+        current = self._current_campaign()
+        if current:
+            label = dict(self._campaign_options()).get(current, current)
+            presets.append((self.CAMPAIGN_CURRENT, f'Current: {label}'))
+            presets.append((self.CAMPAIGN_ANY, 'All ad leads'))
+            presets.append((self.NO_CAMPAIGN, 'Organic (no ad)'))
+        return presets
+
+    def _campaign_scope_label(self, campaign):
+        """What the page is scoped to, in words, for the filter strip."""
+        if campaign == self.NO_CAMPAIGN:
+            return 'leads that did not come from an ad'
+        if campaign == self.CAMPAIGN_ANY:
+            return 'leads from any ad campaign'
+        source_id = (self._current_campaign()
+                     if campaign == self.CAMPAIGN_CURRENT else campaign)
+        label = dict(self._campaign_options()).get(source_id, source_id)
+        return f'leads from "{label}"'
 
     def _campaign_options(self):
         """(source_id, label) for every ad this tenant has ever had a lead from.
@@ -279,10 +354,7 @@ class ConversationsView(ListView):
                 ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS)
             )
 
-        if campaign == self.NO_CAMPAIGN:
-            queryset = queryset.filter(ctwa_source_id='')
-        elif campaign:
-            queryset = queryset.filter(ctwa_source_id=campaign)
+        queryset = self._apply_campaign(queryset, campaign)
 
         return queryset.order_by(*self.SORT_FIELDS[sort])
         
@@ -301,6 +373,11 @@ class ConversationsView(ListView):
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
+        # The campaign filter scopes EVERYTHING the page shows, not just the
+        # rows: the tab counts, the total, the delay countdowns and today's
+        # visits all hang off base_qs, and a figure that ignored the filter
+        # would describe a different set of leads than the list under it.
+        base_qs = self._apply_campaign(base_qs, campaign)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
         delayed_qs = base_qs.filter(
@@ -365,8 +442,10 @@ class ConversationsView(ListView):
         context['sort_options'] = self.SORT_OPTIONS
         context['selected_sort'] = sort
         context['campaign_options'] = self._campaign_options()
+        context['campaign_presets'] = self._campaign_presets()
         context['selected_campaign'] = campaign
-        context['no_campaign_value'] = self.NO_CAMPAIGN
+        context['campaign_scope_label'] = (
+            self._campaign_scope_label(campaign) if campaign else '')
         # Every control on the page is a link or a one-field form, so each one
         # has to carry the filters it does not itself set or it silently resets
         # them. tab_qs is for the status tabs, page_qs for the pager.

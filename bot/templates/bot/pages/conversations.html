@@ -80,6 +80,15 @@
   }
   .cv-filter:hover { color: var(--color-primary); }
   .cv-filter.active { background: var(--color-surface-lowest); color: var(--color-primary); box-shadow: 0 2px 8px rgba(14,165,233,0.12); }
+  .cv-scope {
+    margin: 6px 0 0; display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: var(--radius-pill);
+    background: var(--color-surface-low); border: var(--glass-border);
+    font-family: var(--font-label); font-size: 12px; color: var(--color-text-2);
+  }
+  .cv-scope i { color: var(--color-primary); font-size: 11px; }
+  .cv-scope a { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+  .cv-scope a:hover { text-decoration: underline; }
   .cv-selects { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 2px; }
   .cv-selects select {
     max-width: 190px;              /* a long ad headline must not push the row */
@@ -236,6 +245,11 @@
         <span class="cv-total">{{ status_counts.total }} Total</span>
       </div>
       <p class="cv-sub">Engage with your customers and manage live service requests.</p>
+      {% if campaign_scope_label %}
+      {# The counts above and the list below are both scoped, so say so once. #}
+      <p class="cv-scope"><i class="fas fa-filter"></i> This page is showing {{ campaign_scope_label }}.
+        <a href="?status_filter={{ selected_status_filter }}&amp;response_age={{ selected_response_age }}&amp;sort={{ selected_sort }}">Clear</a></p>
+      {% endif %}
     </div>
     <div class="cv-filters">
       {# Tabs carry the date/sort/campaign choices, or switching tab resets them. #}
@@ -263,11 +277,14 @@
         {% if campaign_options %}
         <select name="campaign" aria-label="Filter by campaign"
                 class="{% if selected_campaign %}is-set{% endif %}" onchange="this.form.submit()">
-          <option value="">All campaigns</option>
-          <option value="{{ no_campaign_value }}" {% if selected_campaign == no_campaign_value %}selected{% endif %}>No campaign</option>
-          {% for value, label in campaign_options %}
+          {% for value, label in campaign_presets %}
           <option value="{{ value }}" {% if selected_campaign == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
+          <optgroup label="By campaign">
+            {% for value, label in campaign_options %}
+            <option value="{{ value }}" {% if selected_campaign == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </optgroup>
         </select>
         {% endif %}
       </form>

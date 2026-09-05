@@ -149,6 +149,8 @@ class PageSmokeTests(StaffClientTestCase):
             conversations + '?sort=oldest_lead',
             conversations + '?sort=nonsense',
             conversations + '?campaign=none',
+            conversations + '?campaign=current',
+            conversations + '?campaign=any',
             conversations + '?campaign=ad-smoke-1',
             conversations + '?campaign=no-such-ad',
             conversations + '?status_filter=booked&sort=oldest&campaign=none&page=1',
@@ -320,6 +322,55 @@ class ConversationSortFilterTests(StaffClientTestCase):
         self.assertIn('Walk-in Lead', shown)
         self.assertNotIn('Drain Ad Lead', shown)
         self.assertNotIn('Geyser Ad Lead', shown)
+
+    def test_current_campaign_resolves_to_the_newest_click(self):
+        """'Current' is read per request, so it follows the live ad."""
+        self._make_ad_leads()
+        Appointment.objects.filter(pk=self.drain.pk).update(
+            ctwa_entry_at=timezone.now() - timedelta(days=2))
+        Appointment.objects.filter(pk=self.geyser.pk).update(
+            ctwa_entry_at=timezone.now() - timedelta(hours=1))
+        self.assertEqual(self._order('?response_age=all&campaign=current'),
+                         ['Geyser Ad Lead'])
+        # A newer click on the other ad moves what 'current' means, with no
+        # change to the operator's URL.
+        Appointment.objects.filter(pk=self.drain.pk).update(
+            ctwa_entry_at=timezone.now())
+        self.assertEqual(self._order('?response_age=all&campaign=current'),
+                         ['Drain Ad Lead'])
+
+    def test_any_ad_campaign_keeps_every_ad_lead_and_drops_the_rest(self):
+        self._make_ad_leads()
+        shown = self._order('?response_age=all&campaign=any')
+        self.assertEqual(sorted(shown), ['Drain Ad Lead', 'Geyser Ad Lead'])
+
+    def test_current_is_ignored_when_the_tenant_has_never_run_an_ad(self):
+        shown = self._order('?response_age=all&campaign=current')
+        self.assertIn('Old Arrival', shown)
+
+    def test_the_campaign_filter_scopes_the_counts_too(self):
+        """The tab counts describe the same leads as the list under them."""
+        self._make_ad_leads()
+        Appointment.objects.filter(pk=self.drain.pk).update(status='confirmed')
+        context = self.client.get(
+            self.url + '?response_age=all&campaign=ad-drain').context
+        counts = context['status_counts']
+        self.assertEqual(counts['total'], 1)
+        self.assertEqual(counts['confirmed'], 1)
+        self.assertEqual(counts['pending'], 0)
+
+    def test_the_campaign_filter_scopes_the_delay_countdowns(self):
+        """Every list on the page hangs off base_qs, so all of them scope."""
+        self._make_ad_leads()
+        for lead in (self.drain, self.walkin):
+            Appointment.objects.filter(pk=lead.pk).update(
+                status='pending', internal_notes='[DELAY_SIGNAL] later')
+        context = self.client.get(
+            self.url + '?response_age=all&campaign=ad-drain').context
+        delayed = [row['lead'].customer_name
+                   for row in context['delayed_leads_with_countdown']]
+        self.assertEqual(delayed, ['Drain Ad Lead'])
+        self.assertEqual(context['status_counts']['delayed'], 1)
 
     def test_an_unknown_campaign_shows_everything_rather_than_nothing(self):
         """An ad id that belongs to nobody must not read as an empty inbox."""
