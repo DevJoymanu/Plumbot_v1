@@ -67,10 +67,12 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local time, half-open) ─────────────────────────────────
 # Each entry is (open_hour, open_minute, close_hour, close_minute) in CAT.
-# Opens at 8:21 and closes at 20:53 (not round o'clock times) so sends don't
-# land at obvious bot times; half-open, so the last possible send is 20:52.
+# Two windows a day, around the hours the owner wants leads contacted in:
+# 12:33-13:57 and 16:03-18:30. Half-open, so the last possible send in each is
+# 13:56 and 18:29; the off-minute edges keep sends off obvious bot times.
 CONTACT_WINDOWS = [
-    (8, 21, 20, 53),
+    (12, 33, 13, 57),
+    (16, 3, 18, 30),
 ]
 
 # ─── How many follow-ups ──────────────────────────────────────────────────────
@@ -1335,11 +1337,11 @@ class Command(BaseCommand):
              pulled BACK to the last moment we can still send.
 
         Step 3 is the one that matters: without it a touch due at 02:00 on a
-        window that shuts at 06:00 waited for 08:21, by which time free-form
+        window that shuts at 06:00 waited for the next opening, by which time free-form
         sending was dead — so it sat there and went out only when the lead
         messaged again, arriving as a stale "just checking in" on top of their
-        live message. Sending it at 20:52 the evening before is both timely and
-        deliverable.
+        live message. Sending it in the last contact window before the close is
+        both timely and deliverable.
 
         Returns an aware datetime, or None when the lead has no usable
         timestamps to schedule from.

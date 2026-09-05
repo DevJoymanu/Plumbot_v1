@@ -7,7 +7,7 @@
             "name": "Follow_Ups",
             "schedule": "*/7 * * * * (set on the service in Railway)",
             "command": "PLUMBOT_CRON=send_followups",
-            "description": "Check non-responsive leads every 7 min; send_followups itself only sends inside CONTACT_WINDOWS (08:21-20:53 CAT), so off-hours ticks are no-ops. Each lead fires at its own jittered minute for natural human send times. Formerly named superb-tenderness."
+            "description": "Check non-responsive leads every 7 min; send_followups itself only sends inside CONTACT_WINDOWS (12:33-13:57 and 16:03-18:30 CAT), so off-hours ticks are no-ops. Each lead fires at its own jittered minute for natural human send times. Formerly named superb-tenderness."
         },
         {
             "name": "Reminders",

@@ -1999,6 +1999,26 @@ class Appointment(models.Model):
         self.save(update_fields=['ctwa_source_id', 'ctwa_referral', 'ctwa_entry_at', 'lead_source'])
         return True
 
+    # A campaign label comes off the referral Meta sent with the click; the ad's
+    # own headline is what the operator recognises, the numeric source_id is the
+    # fallback. Nothing here invents a name for a lead that never clicked an ad.
+    CAMPAIGN_LABEL_MAX = 60
+
+    @staticmethod
+    def campaign_label_for(referral):
+        """Readable ad name from a raw CTWA referral dict ('' when it has none)."""
+        if not isinstance(referral, dict):
+            return ''
+        for key in ('headline', 'body'):
+            value = str(referral.get(key) or '').strip()
+            if value:
+                return value[:Appointment.CAMPAIGN_LABEL_MAX]
+        return ''
+
+    def campaign_label(self):
+        """This lead's ad name, falling back to the Meta id, then '' (no ad)."""
+        return self.campaign_label_for(self.ctwa_referral) or self.ctwa_source_id
+
     @property
     def ctwa_window_expires_at(self):
         """When the 72h free-form messaging window closes (None if not a CTWA lead)."""

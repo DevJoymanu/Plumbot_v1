@@ -4534,11 +4534,11 @@ import bot.management.commands.send_followups as _fu_mod
 from datetime import datetime as _dt
 
 # The cadence helpers read the wall clock, and every due moment is rolled into
-# CONTACT_WINDOWS (08:21-20:53). Run against the REAL clock these cases pass by
+# CONTACT_WINDOWS (12:33-13:57, 16:03-18:30). Run against the REAL clock these cases pass by
 # day and fail every night, because a touch due at 02:00 is pushed to the next
 # window opening. Freeze the clock at a fixed in-window moment so the schedule
 # is what is under test, not the hour the suite happens to run.
-_FU_NOW = _fu_mod.SA_TIMEZONE.localize(_dt(2026, 8, 19, 14, 0))  # Wednesday
+_FU_NOW = _fu_mod.SA_TIMEZONE.localize(_dt(2026, 8, 19, 13, 0))  # Wednesday, in window
 
 
 class _FrozenClock:
@@ -4700,18 +4700,20 @@ results.log(
     got=_due_local.strftime('%H:%M') if _due_local else 'None',
 )
 
-# _next_window_open: a due moment outside 08:21-20:53 rolls to the next opening.
+# _next_window_open: a due moment outside the contact windows rolls to the next opening.
 import pytz as _pytz
 _sast = _pytz.timezone('Africa/Johannesburg')
 def _win(h, m):
     dt = _sast.localize(__import__('datetime').datetime(2026, 6, 23, h, m))
     return _tz.localtime(_fu._next_window_open(dt)).strftime('%Y-%m-%d %H:%M')
-results.log("next_window_open: 01:52 -> same-day 08:21",
-            _win(1, 52) == '2026-06-23 08:21', got=_win(1, 52))
-results.log("next_window_open: 12:00 stays 12:00 (in window)",
-            _win(12, 0) == '2026-06-23 12:00', got=_win(12, 0))
-results.log("next_window_open: 21:30 -> next-day 08:21",
-            _win(21, 30) == '2026-06-24 08:21', got=_win(21, 30))
+results.log("next_window_open: 01:52 -> same-day 12:33",
+            _win(1, 52) == '2026-06-23 12:33', got=_win(1, 52))
+results.log("next_window_open: 13:00 stays 13:00 (in the midday window)",
+            _win(13, 0) == '2026-06-23 13:00', got=_win(13, 0))
+results.log("next_window_open: 14:30 -> same-day 16:03 (between the windows)",
+            _win(14, 30) == '2026-06-23 16:03', got=_win(14, 30))
+results.log("next_window_open: 21:30 -> next-day 12:33",
+            _win(21, 30) == '2026-06-24 12:33', got=_win(21, 30))
 # Non-CTWA COLD lead, no follow-ups → attempt 1, ad flag false.
 _info2 = _due(_StubLead(False, 0, 0.0))
 results.log(
@@ -5460,19 +5462,22 @@ try:
         )
 
     # The mirror of _next_window_open: the last minute we may still send.
-    results.log("sending hours: 06:00 rolls BACK to the previous evening 20:52",
-                _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M') == '22 20:52',
+    results.log("sending hours: 06:00 rolls BACK to the previous evening 18:29",
+                _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M') == '22 18:29',
                 got=str(_fu2._window_moment_before(_at(6, 0))))
-    results.log("sending hours: a midday deadline stays where it is",
-                _fu2._window_moment_before(_at(12, 0)).strftime('%d %H:%M') == '23 12:00',
-                got=str(_fu2._window_moment_before(_at(12, 0))))
-    results.log("sending hours: 22:30 rolls back to the same evening's 20:52",
-                _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M') == '23 20:52',
+    results.log("sending hours: a deadline inside the midday window stays where it is",
+                _fu2._window_moment_before(_at(13, 0)).strftime('%d %H:%M') == '23 13:00',
+                got=str(_fu2._window_moment_before(_at(13, 0))))
+    results.log("sending hours: 15:00 rolls back to the midday window's 13:56",
+                _fu2._window_moment_before(_at(15, 0)).strftime('%d %H:%M') == '23 13:56',
+                got=str(_fu2._window_moment_before(_at(15, 0))))
+    results.log("sending hours: 22:30 rolls back to the same evening's 18:29",
+                _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M') == '23 18:29',
                 got=str(_fu2._window_moment_before(_at(22, 30))))
 
     # A lead who wrote at 09:00: the last touch would naturally land ~04:00, in
     # the quiet hours, and the window shuts at 09:00 before the next opening.
-    # It must be scheduled for the evening BEFORE, not left for 08:21.
+    # It must be scheduled for the evening BEFORE, not left for the next 12:33.
     _stranded = _ClockLead(_at(9, 0, day=22), count=3,
                            last_followup=_at(17, 0, day=22))
     with _frozen(_at(19, 0, day=22)):
@@ -5480,8 +5485,8 @@ try:
         _due_fz = _fu2._scheduled_due_at(_stranded)
         _deadline = _fu2._last_sendable_moment(_stranded)
     results.log("sending hours: the last touch is pulled back before the window shuts",
-                _due_fz is not None and _due_fz <= _at(20, 53, day=22),
-                expected="on the 22nd, before 20:53",
+                _due_fz is not None and _due_fz <= _at(18, 30, day=22),
+                expected="on the 22nd, before 18:30",
                 got=str(_due_fz.astimezone(_sast_fz)) if _due_fz else 'None')
     results.log("sending hours: the pull-back leaves the cron room to catch it",
                 _deadline is not None and _due_fz <= _deadline - _td2(minutes=_LC_GRACE - 1),

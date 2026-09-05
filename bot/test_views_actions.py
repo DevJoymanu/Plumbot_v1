@@ -116,6 +116,16 @@ class PageSmokeTests(StaffClientTestCase):
                 phone_number=f'whatsapp:+1555100{i:04d}',
                 customer_name=f'Bulk Lead {i}',
             )
+        # One ad lead, so the campaign dropdown has something to render.
+        cls.ad_lead = Appointment.objects.create(
+            phone_number='whatsapp:+15559990003',
+            customer_name='Ad Lead',
+            ctwa_source_id='ad-smoke-1',
+            ctwa_entry_at=now,
+            lead_source='facebook_ad',
+            ctwa_referral={'source_type': 'ad', 'source_id': 'ad-smoke-1',
+                           'headline': 'Blocked drain, same day'},
+        )
         cls.quote = Quotation.objects.create(appointment=cls.lead)
         cls.template = QuotationTemplate.objects.create(name='Standard Bathroom')
 
@@ -134,6 +144,14 @@ class PageSmokeTests(StaffClientTestCase):
             conversations + '?response_age=all',
             conversations + '?response_age=all&page=1',
             conversations + '?response_age=all&page=2',
+            conversations + '?sort=oldest',
+            conversations + '?sort=newest_lead',
+            conversations + '?sort=oldest_lead',
+            conversations + '?sort=nonsense',
+            conversations + '?campaign=none',
+            conversations + '?campaign=ad-smoke-1',
+            conversations + '?campaign=no-such-ad',
+            conversations + '?status_filter=booked&sort=oldest&campaign=none&page=1',
             reverse('conversation_detail', args=[self.lead.pk]),
             reverse('appointments_list'),
             reverse('priority_leads'),
@@ -218,6 +236,144 @@ class PageSmokeTests(StaffClientTestCase):
         self.assertContains(response, 'Job appointment')
         local = timezone.localtime(self.job.job_scheduled_datetime)
         self.assertContains(response, local.strftime('%H:%M'))
+
+
+# ======================================================================
+# 1b. Conversations sort + campaign filter
+# ======================================================================
+
+class ConversationSortFilterTests(StaffClientTestCase):
+    """The lead inbox sorts by date and filters by the ad that produced the lead.
+
+    Ordering is asserted on the rendered page order, not on the queryset, since
+    what the operator sees is the point.
+    """
+
+    def setUp(self):
+        super().setUp()
+        now = timezone.now()
+        self.url = reverse('conversations_list')
+        # created oldest -> newest, with activity in the OPPOSITE order, so a
+        # sort by arrival and a sort by activity can never accidentally agree.
+        self.old_lead = make_lead(1, customer_name='Old Arrival',
+                                  created_at=now - timedelta(days=30))
+        self.new_lead = make_lead(2, customer_name='New Arrival',
+                                  created_at=now - timedelta(days=1))
+        Appointment.objects.filter(pk=self.old_lead.pk).update(
+            updated_at=now - timedelta(minutes=1))
+        Appointment.objects.filter(pk=self.new_lead.pk).update(
+            updated_at=now - timedelta(days=5))
+
+    def _order(self, query=''):
+        """Names of the leads on the page, in the order they are rendered."""
+        body = self.client.get(self.url + query).content.decode()
+        found = [(body.index(name), name)
+                 for name in ('Old Arrival', 'New Arrival', 'Drain Ad Lead',
+                              'Geyser Ad Lead', 'Walk-in Lead')
+                 if name in body]
+        return [name for _, name in sorted(found)]
+
+    def _make_ad_leads(self):
+        self.drain = make_lead(11, customer_name='Drain Ad Lead',
+                               ctwa_source_id='ad-drain',
+                               lead_source='facebook_ad',
+                               ctwa_referral={'source_type': 'ad',
+                                              'source_id': 'ad-drain',
+                                              'headline': 'Blocked drain, same day'})
+        self.geyser = make_lead(12, customer_name='Geyser Ad Lead',
+                                ctwa_source_id='ad-geyser',
+                                lead_source='instagram_ad',
+                                ctwa_referral={'source_type': 'ad',
+                                               'source_id': 'ad-geyser',
+                                               'headline': 'Geyser not heating'})
+        self.walkin = make_lead(13, customer_name='Walk-in Lead')
+
+    def test_default_sort_is_newest_activity(self):
+        self.assertEqual(self._order('?response_age=all'),
+                         ['Old Arrival', 'New Arrival'])
+
+    def test_sort_by_oldest_activity_reverses_it(self):
+        self.assertEqual(self._order('?response_age=all&sort=oldest'),
+                         ['New Arrival', 'Old Arrival'])
+
+    def test_sort_by_arrival_date_uses_created_at(self):
+        self.assertEqual(self._order('?response_age=all&sort=newest_lead'),
+                         ['New Arrival', 'Old Arrival'])
+        self.assertEqual(self._order('?response_age=all&sort=oldest_lead'),
+                         ['Old Arrival', 'New Arrival'])
+
+    def test_an_unknown_sort_falls_back_to_the_default(self):
+        """A hand-edited URL must not 500 or silently order by nothing."""
+        response = self.client.get(self.url + '?response_age=all&sort=; DROP TABLE')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._order('?response_age=all&sort=; DROP TABLE'),
+                         ['Old Arrival', 'New Arrival'])
+
+    def test_campaign_filter_keeps_only_that_ads_leads(self):
+        self._make_ad_leads()
+        self.assertEqual(self._order('?response_age=all&campaign=ad-drain'),
+                         ['Drain Ad Lead'])
+
+    def test_no_campaign_filter_keeps_only_non_ad_leads(self):
+        self._make_ad_leads()
+        shown = self._order('?response_age=all&campaign=none')
+        self.assertIn('Walk-in Lead', shown)
+        self.assertNotIn('Drain Ad Lead', shown)
+        self.assertNotIn('Geyser Ad Lead', shown)
+
+    def test_an_unknown_campaign_shows_everything_rather_than_nothing(self):
+        """An ad id that belongs to nobody must not read as an empty inbox."""
+        self._make_ad_leads()
+        shown = self._order('?response_age=all&campaign=ad-that-never-ran')
+        self.assertIn('Walk-in Lead', shown)
+        self.assertIn('Drain Ad Lead', shown)
+
+    def test_the_dropdown_is_labelled_by_the_ads_own_headline(self):
+        self._make_ad_leads()
+        body = self.client.get(self.url + '?response_age=all').content.decode()
+        self.assertIn('Blocked drain, same day', body)
+        self.assertIn('Geyser not heating', body)
+
+    def test_an_ad_with_no_headline_falls_back_to_its_meta_id(self):
+        make_lead(14, customer_name='Bare Ad Lead', ctwa_source_id='ad-bare',
+                  ctwa_referral={'source_type': 'ad', 'source_id': 'ad-bare'})
+        body = self.client.get(self.url + '?response_age=all').content.decode()
+        self.assertIn('ad-bare', body)
+
+    def test_there_is_no_campaign_dropdown_without_ads(self):
+        body = self.client.get(self.url + '?response_age=all').content.decode()
+        self.assertNotIn('Filter by campaign', body)
+
+    def test_tabs_carry_the_sort_and_campaign(self):
+        """Switching tab must not silently reset the other controls."""
+        self._make_ad_leads()
+        body = self.client.get(
+            self.url + '?response_age=all&sort=oldest&campaign=ad-drain').content.decode()
+        self.assertIn('status_filter=booked&amp;response_age=all&amp;sort=oldest'
+                      '&amp;campaign=ad-drain', body)
+
+    def test_the_pager_carries_the_sort_and_campaign(self):
+        """Page 2 of a filtered view has to stay filtered and stay sorted."""
+        Appointment.objects.bulk_create([
+            Appointment(phone_number=f'whatsapp:+1555300{i:04d}',
+                        customer_name=f'Page Filler {i}')
+            for i in range(25)
+        ])
+        body = self.client.get(
+            self.url + '?response_age=all&sort=oldest&campaign=none').content.decode()
+        self.assertIn('page=2&amp;status_filter=all&amp;response_age=all'
+                      '&amp;sort=oldest&amp;campaign=none', body)
+
+    def test_one_tenants_campaigns_never_appear_in_anothers_dropdown(self):
+        """Ad names are the tenant's own copy, and the inbox is tenant-scoped."""
+        other = Tenant.objects.create(name='Other Plumbing', slug='other-plumbing')
+        make_lead(21, customer_name='Other Ad Lead', tenant=other,
+                  ctwa_source_id='ad-other',
+                  ctwa_referral={'source_type': 'ad', 'source_id': 'ad-other',
+                                 'headline': 'Someone elses ad'})
+        body = self.client.get(self.url + '?response_age=all').content.decode()
+        self.assertNotIn('Someone elses ad', body)
+        self.assertNotIn('ad-other', body)
 
 
 # ======================================================================
