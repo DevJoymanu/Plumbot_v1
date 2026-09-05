@@ -1,0 +1,28 @@
+# A quote for a WHOLE JOB must not be answered with a price sheet.
+# Prod, barmak 2026-09-05: "May I get a quote for a four bedroomed house..."
+# came back as "Our Facebook package is US$900, a freestanding tub and shower
+# cubicle. If you're looking at just a tub..." — a bathroom price list for a
+# whole-house job, and prices nobody asked for.
+#
+# Cause: the quote rule (a quote is delivered at the visit, never as a chat
+# price block) lived only inside STEP 2, gated on the classifier landing on a
+# priceable intent. A whole-job request names no product family, so it reached
+# STEP 3, where the word "quote" reads as a pricing objection and fires the
+# full pricing overview. Fixed by _routes_to_onsite_quote, asked before both
+# pricing gates.
+
+> May I get a quote for a four bedroomed house and 2 cottages
+expect: all-in figure
+expect: what area are you in
+reject: US$
+reject: package
+reject: tub
+
+> We are in Borrowdale
+reject: US$
+reject: package
+
+# An explicit how-much is still priced in chat — this scenario is about the
+# quote ask, not a blanket ban on figures.
+> How much is a shower cubicle
+expect: US$

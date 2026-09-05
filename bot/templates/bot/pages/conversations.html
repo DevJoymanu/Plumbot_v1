@@ -80,19 +80,8 @@
   }
   .cv-filter:hover { color: var(--color-primary); }
   .cv-filter.active { background: var(--color-surface-lowest); color: var(--color-primary); box-shadow: 0 2px 8px rgba(14,165,233,0.12); }
-  .cv-scope {
-    margin: 6px 0 0; display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 14px; border-radius: var(--radius-pill);
-    background: var(--color-surface-low); border: var(--glass-border);
-    font-family: var(--font-label); font-size: 12px; color: var(--color-text-2);
-  }
-  .cv-scope i { color: var(--color-primary); font-size: 11px; }
-  .cv-scope a { color: var(--color-primary); font-weight: 600; text-decoration: none; }
-  .cv-scope a:hover { text-decoration: underline; }
-  .cv-selects { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 2px; }
-  .cv-selects select {
-    max-width: 190px;              /* a long ad headline must not push the row */
-    text-overflow: ellipsis;
+  .cv-datefilter { display: inline-flex; margin-left: 2px; }
+  .cv-datefilter select {
     padding: 7px 28px 7px 14px;
     border: none;
     border-radius: var(--radius-pill);
@@ -108,9 +97,7 @@
     background-repeat: no-repeat;
     background-position: right 12px center;
   }
-  .cv-selects select:focus { outline: 2px solid rgba(14,165,233,0.35); }
-  /* A select holding a non-default choice reads as ON, like an active pill. */
-  .cv-selects select.is-set { background: var(--color-surface-low); color: var(--color-primary); }
+  .cv-datefilter select:focus { outline: 2px solid rgba(14,165,233,0.35); }
 
   /* Conversation cards */
   .cv-list { display: flex; flex-direction: column; gap: 8px; }
@@ -245,48 +232,20 @@
         <span class="cv-total">{{ status_counts.total }} Total</span>
       </div>
       <p class="cv-sub">Engage with your customers and manage live service requests.</p>
-      {% if campaign_scope_label %}
-      {# The counts above and the list below are both scoped, so say so once. #}
-      <p class="cv-scope"><i class="fas fa-filter"></i> This page is showing {{ campaign_scope_label }}.
-        <a href="?status_filter={{ selected_status_filter }}&amp;response_age={{ selected_response_age }}&amp;sort={{ selected_sort }}">Clear</a></p>
-      {% endif %}
     </div>
     <div class="cv-filters">
-      {# Tabs carry the date/sort/campaign choices, or switching tab resets them. #}
-      <a href="?status_filter=all&amp;{{ tab_qs }}" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
-      <a href="?status_filter=booked&amp;{{ tab_qs }}" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
-      <a href="?status_filter=pending&amp;{{ tab_qs }}" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
-      <a href="?status_filter=delayed&amp;{{ tab_qs }}" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
-      <a href="?status_filter=cancelled&amp;{{ tab_qs }}" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
-      {# One form for all three selects, so each submit keeps the other two. #}
-      {# No `page` field: changing a filter goes back to page 1. #}
-      <form method="get" class="cv-selects">
+      <a href="?status_filter=all&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
+      <a href="?status_filter=booked&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
+      <a href="?status_filter=pending&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
+      <a href="?status_filter=delayed&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
+      <a href="?status_filter=cancelled&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
+      <form method="get" class="cv-datefilter">
         <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
         <select name="response_age" aria-label="Filter by date" onchange="this.form.submit()">
           {% for value, label in age_filter_options %}
           <option value="{{ value }}" {% if selected_response_age == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
-        <select name="sort" aria-label="Sort by date"
-                class="{% if selected_sort != 'recent' %}is-set{% endif %}" onchange="this.form.submit()">
-          {% for value, label in sort_options %}
-          <option value="{{ value }}" {% if selected_sort == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-        {# No dropdown at all for a tenant who has never run an ad. #}
-        {% if campaign_options %}
-        <select name="campaign" aria-label="Filter by campaign"
-                class="{% if selected_campaign %}is-set{% endif %}" onchange="this.form.submit()">
-          {% for value, label in campaign_presets %}
-          <option value="{{ value }}" {% if selected_campaign == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-          <optgroup label="By campaign">
-            {% for value, label in campaign_options %}
-            <option value="{{ value }}" {% if selected_campaign == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </optgroup>
-        </select>
-        {% endif %}
       </form>
     </div>
   </div>
@@ -296,7 +255,7 @@
     {% with last=appointment.conversation_history|last %}
     {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
     <div class="cv-item"
-         data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }} {{ appointment.campaign_label|default:''|lower }}">
+         data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }}">
     <a class="cv-card" href="{% url 'conversation_detail' appointment.pk %}">
       <div class="cv-avatar" style="background:{% cycle '#006591' '#4648d4' '#0ea5e9' '#0f766e' '#8a5100' '#576065' %};">
         {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
@@ -305,7 +264,7 @@
         <div class="cv-row1">
           <span class="cv-name">{% firstof appointment.customer_name appointment.phone_number "Conversation" %}</span>
           {% if appointment.lead_source and appointment.lead_source != 'direct' %}
-          <span class="cv-pill cv-source" title="{% firstof appointment.campaign_label 'Lead source' %}">
+          <span class="cv-pill cv-source" title="Lead source">
             {% if appointment.lead_source == 'facebook_ad' %}<i class="fab fa-facebook" style="font-size:10px;"></i> Ad
             {% elif appointment.lead_source == 'instagram_ad' %}<i class="fab fa-instagram" style="font-size:10px;"></i> Ad
             {% elif appointment.lead_source == 'facebook' %}<i class="fab fa-facebook" style="font-size:10px;"></i> FB
@@ -363,18 +322,18 @@
       {# previous/next_page_number RAISE EmptyPage at the ends — resolve them only behind has_previous/has_next (prod 500 on /conversations/ page 1) #}
       {% if page_obj.has_previous %}
       <a class="cv-pg"
-         href="?page={{ page_obj.previous_page_number }}&amp;{{ page_qs }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
       {% else %}
       <span class="cv-pg is-disabled"><i class="fas fa-chevron-left" style="font-size:12px;"></i></span>
       {% endif %}
       {% for num in paginator.page_range %}
         {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
-        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&amp;{{ page_qs }}">{{ num }}</a>
+        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}">{{ num }}</a>
         {% endif %}
       {% endfor %}
       {% if page_obj.has_next %}
       <a class="cv-pg"
-         href="?page={{ page_obj.next_page_number }}&amp;{{ page_qs }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
       {% else %}
       <span class="cv-pg is-disabled"><i class="fas fa-chevron-right" style="font-size:12px;"></i></span>
       {% endif %}

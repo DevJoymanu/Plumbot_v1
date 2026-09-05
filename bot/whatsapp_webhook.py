@@ -245,6 +245,26 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
         return False
     return True
 
+
+def _routes_to_onsite_quote(appointment: Appointment, asks_quote: bool,
+                            asks_figure: bool) -> bool:
+    """True when a quote request is answered by the free on-site visit rather
+    than a chat price block.
+
+    The counterpart of _is_genuine_pricing_question, and it is asked FIRST:
+    both gates trigger on the word "quote", but only one of them is the
+    business rule. Asking for *a quote* is a request for the quote itself,
+    which we deliver at the visit; only an explicit how-much / price / cost
+    gets approximate figures in chat (_asks_for_quote vs _asks_price_figure).
+
+    A confirmed lead is excluded: they have already committed, so the visit is
+    not the answer to a quotation question from them, and pitching it again
+    would re-pitch someone who has booked.
+    """
+    if getattr(appointment, 'status', None) == 'confirmed':
+        return False
+    return bool(asks_quote) and not bool(asks_figure)
+
 # -----------------------------------------------------------------------------
 # Unchanged helpers
 # -----------------------------------------------------------------------------
@@ -3998,6 +4018,26 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                             print(f"⚠️ Could not build photo-led price reply: {_ppl_exc}")
                     if reply is None:
                         reply = plumbot.handle_service_inquiry(intent, message_body)
+
+        # -- STEP 2b: Quote request that named no product ------------------------
+        # The quote rule ("a quote is delivered at the visit, never as a chat
+        # price block") lived only inside STEP 2, gated on the classifier having
+        # landed on a priceable intent. A quote for a WHOLE JOB names no product
+        # family, so it arrives here with intent 'none' and the gate never sees
+        # it — then STEP 3 reads the word 'quote' as a pricing objection and
+        # sends the generic package + tub sheet. Prod 2026-09-05: "May I get a
+        # quote for a four bedroomed house..." was answered with the Facebook
+        # package and bathtub prices, a bathroom price list for a whole-house
+        # job. The rule is the same wherever the classifier lands.
+        #
+        # A confirmed lead is left to STEP 4: they have already committed, and
+        # the on-site quote is not the answer to a quotation question from them.
+        if reply is None and _routes_to_onsite_quote(
+                appointment, asks_quote, asks_figure):
+            print("Quote request with no product intent -> free on-site quote")
+            reply = plumbot._build_job_quote_reply(
+                language=detect_language(message_body), message=message_body
+            )
 
         # -- STEP 3: Full pricing overview --------------------------------------
         if reply is None:

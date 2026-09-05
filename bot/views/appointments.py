@@ -25,7 +25,6 @@ from django.core.files.storage import default_storage
 
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlencode
 import mimetypes
 import requests
 import pytz
@@ -98,153 +97,6 @@ class ConversationsView(ListView):
         ('all',      'All time'),
     ]
 
-    # Sort is always a DATE order — activity (updated_at) or arrival (created_at).
-    # The id tiebreaker is not decoration: created_at/updated_at collide freely
-    # on bulk-imported or same-second leads, and without it equal rows reshuffle
-    # between pages, so a lead can show twice or not at all (the quotes list
-    # learned this the same way).
-    SORT_OPTIONS = [
-        ('recent',      'Newest activity'),
-        ('oldest',      'Oldest activity'),
-        ('newest_lead', 'Newest lead'),
-        ('oldest_lead', 'Oldest lead'),
-    ]
-    SORT_FIELDS = {
-        'recent':      ['-updated_at', '-id'],
-        'oldest':      ['updated_at',  'id'],
-        'newest_lead': ['-created_at', '-id'],
-        'oldest_lead': ['created_at',  'id'],
-    }
-    DEFAULT_SORT = 'recent'
-    # Campaign filter values: '' = every source, 'current' = whichever ad the
-    # newest click came from, 'any' = ad leads whatever the ad, 'none' = leads
-    # that never clicked an ad, anything else = one Meta ad id.
-    NO_CAMPAIGN      = 'none'
-    CAMPAIGN_ANY     = 'any'
-    CAMPAIGN_CURRENT = 'current'
-
-    def _resolve_sort(self):
-        """Return the requested sort key, falling back to the default."""
-        sort = self.request.GET.get('sort', '').strip()
-        return sort if sort in self.SORT_FIELDS else self.DEFAULT_SORT
-
-    def _resolve_campaign(self):
-        """Return the requested campaign filter ('' when unset or unknown)."""
-        campaign = self.request.GET.get('campaign', '').strip()
-        if not campaign:
-            return ''
-        if campaign in (self.NO_CAMPAIGN, self.CAMPAIGN_ANY):
-            return campaign
-        if campaign == self.CAMPAIGN_CURRENT:
-            # A tenant with no ads at all has no current campaign to mean.
-            return campaign if self._current_campaign() else ''
-        known = {value for value, _ in self._campaign_options()}
-        return campaign if campaign in known else ''
-
-    def _ad_leads(self):
-        """This tenant's leads that arrived through an ad click."""
-        return (
-            Appointment.objects
-            .for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
-            .exclude(ctwa_source_id='')
-        )
-
-    def _current_campaign(self):
-        """The ad behind the most recent click ('' when the tenant has none).
-
-        Resolved at request time on purpose: 'Current campaign' has to keep
-        meaning the live ad as new clicks arrive, rather than freezing today's
-        id into a URL the operator bookmarks.
-        """
-        cached = getattr(self, '_current_campaign_cache', None)
-        if cached is not None:
-            return cached
-        latest = (
-            self._ad_leads().filter(ctwa_entry_at__isnull=False)
-            .order_by('-ctwa_entry_at')
-            .values_list('ctwa_source_id', flat=True).first()
-        )
-        if not latest:
-            # A backfilled lead can carry the ad id without a click time.
-            latest = (self._ad_leads().order_by('-created_at')
-                      .values_list('ctwa_source_id', flat=True).first())
-        self._current_campaign_cache = latest or ''
-        return self._current_campaign_cache
-
-    def _apply_campaign(self, queryset, campaign):
-        """Scope a queryset to the chosen campaign.
-
-        The ONE place the filter is expressed, because it is applied twice: to
-        the rows AND to the figures behind them. A count that ignored it would
-        say 40 leads over a list showing four.
-        """
-        if not campaign:
-            return queryset
-        if campaign == self.NO_CAMPAIGN:
-            return queryset.filter(ctwa_source_id='')
-        if campaign == self.CAMPAIGN_ANY:
-            return queryset.exclude(ctwa_source_id='')
-        source_id = (self._current_campaign()
-                     if campaign == self.CAMPAIGN_CURRENT else campaign)
-        return queryset.filter(ctwa_source_id=source_id)
-
-    def _campaign_presets(self):
-        """(value, label) for the dropdown's presets, above the per-ad list."""
-        presets = [('', 'All leads')]
-        current = self._current_campaign()
-        if current:
-            label = dict(self._campaign_options()).get(current, current)
-            presets.append((self.CAMPAIGN_CURRENT, f'Current: {label}'))
-            presets.append((self.CAMPAIGN_ANY, 'All ad leads'))
-            presets.append((self.NO_CAMPAIGN, 'Organic (no ad)'))
-        return presets
-
-    def _campaign_scope_label(self, campaign):
-        """What the page is scoped to, in words, for the filter strip."""
-        if campaign == self.NO_CAMPAIGN:
-            return 'leads that did not come from an ad'
-        if campaign == self.CAMPAIGN_ANY:
-            return 'leads from any ad campaign'
-        source_id = (self._current_campaign()
-                     if campaign == self.CAMPAIGN_CURRENT else campaign)
-        label = dict(self._campaign_options()).get(source_id, source_id)
-        return f'leads from "{label}"'
-
-    def _campaign_options(self):
-        """(source_id, label) for every ad this tenant has ever had a lead from.
-
-        Built over the whole tenant, not the current filters, so switching
-        campaign is never a dead end. Labelled by the ad's own headline where
-        Meta sent one; absent means the Meta id, never another ad's name.
-        """
-        if getattr(self, '_campaign_options_cache', None) is not None:
-            return self._campaign_options_cache
-        ad_leads = (
-            Appointment.objects
-            .for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
-            .exclude(ctwa_source_id='')
-        )
-        # The ids come from the database DISTINCT; the labels are then read off
-        # the newest referrals until every ad has one, so a tenant with a year
-        # of ad leads does not get all of them pulled on every page load.
-        ids = set(ad_leads.values_list('ctwa_source_id', flat=True).distinct())
-        labels = {}
-        if ids:
-            rows = (ad_leads.order_by('-created_at')
-                    .values_list('ctwa_source_id', 'ctwa_referral').iterator())
-            for source_id, referral in rows:
-                if source_id in labels:
-                    continue
-                label = Appointment.campaign_label_for(referral)
-                if label:
-                    labels[source_id] = label
-                    if len(labels) == len(ids):
-                        break
-        options = sorted(((sid, labels.get(sid) or sid) for sid in ids),
-                         key=lambda option: option[1].lower())
-        self._campaign_options_cache = options
-        return options
-
     def _resolve_age(self):
         """Return (status_filter, response_age) honouring per-tab defaults."""
         status_filter = self.request.GET.get('status_filter', 'all')
@@ -260,13 +112,9 @@ class ConversationsView(ListView):
         from django.db.models import Case, IntegerField, Q, Value, When
 
         status_filter, response_age = self._resolve_age()
-        sort     = self._resolve_sort()
-        campaign = self._resolve_campaign()
         # Cache for get_context_data
         self._status_filter = status_filter
         self._response_age  = response_age
-        self._sort          = sort
-        self._campaign      = campaign
 
         age_map_minus = self.TAB_AGE_MAP
 
@@ -354,9 +202,7 @@ class ConversationsView(ListView):
                 ctwa_entry_at__gt=timezone.now() - timedelta(hours=Appointment.CTWA_WINDOW_HOURS)
             )
 
-        queryset = self._apply_campaign(queryset, campaign)
-
-        return queryset.order_by(*self.SORT_FIELDS[sort])
+        return queryset
         
     #
     def get_context_data(self, **kwargs):
@@ -365,19 +211,12 @@ class ConversationsView(ListView):
         # Reuse values computed in get_queryset (called first by ListView)
         status_filter = getattr(self, '_status_filter', 'all')
         response_age  = getattr(self, '_response_age',  '1w_minus')
-        sort          = getattr(self, '_sort',          self.DEFAULT_SORT)
-        campaign      = getattr(self, '_campaign',      '')
         age_map_minus = self.TAB_AGE_MAP
 
         base_qs = Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
         if response_age != 'all' and response_age in age_map_minus:
             cutoff = timezone.now() - age_map_minus[response_age]
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
-        # The campaign filter scopes EVERYTHING the page shows, not just the
-        # rows: the tab counts, the total, the delay countdowns and today's
-        # visits all hang off base_qs, and a figure that ignored the filter
-        # would describe a different set of leads than the list under it.
-        base_qs = self._apply_campaign(base_qs, campaign)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
         delayed_qs = base_qs.filter(
@@ -439,21 +278,6 @@ class ConversationsView(ListView):
         context['selected_response_age'] = response_age
         context['selected_status_filter'] = status_filter
         context['age_filter_options'] = self.AGE_FILTER_OPTIONS
-        context['sort_options'] = self.SORT_OPTIONS
-        context['selected_sort'] = sort
-        context['campaign_options'] = self._campaign_options()
-        context['campaign_presets'] = self._campaign_presets()
-        context['selected_campaign'] = campaign
-        context['campaign_scope_label'] = (
-            self._campaign_scope_label(campaign) if campaign else '')
-        # Every control on the page is a link or a one-field form, so each one
-        # has to carry the filters it does not itself set or it silently resets
-        # them. tab_qs is for the status tabs, page_qs for the pager.
-        kept = [('response_age', response_age), ('sort', sort), ('campaign', campaign)]
-        context['tab_qs'] = urlencode([(k, v) for k, v in kept if v])
-        context['page_qs'] = urlencode(
-            [('status_filter', status_filter)] + [(k, v) for k, v in kept if v]
-        )
         return context
 
 

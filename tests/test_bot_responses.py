@@ -9688,6 +9688,70 @@ results.log(
     got=repr(_RealNoteCfg(10, True).visit_cost_sentence()),
 )
 
+# -- A quote for a WHOLE JOB still routes to the visit, not a price sheet -----
+# Prod, barmak 2026-09-05: "May I get a quote for a four bedroomed house..."
+# was answered with "Our Facebook package is US$900..." plus bathtub prices - a
+# bathroom price list for a whole-house job. The quote rule lived only inside
+# STEP 2, gated on the classifier landing on a priceable intent; a whole-job
+# request names no product family, so it arrived at STEP 3 where the word
+# "quote" reads as a pricing objection and fires the full pricing overview.
+from bot.whatsapp_webhook import (
+    _routes_to_onsite_quote as _rtoq,
+    _is_genuine_pricing_question as _igpq,
+    detect_objection_type as _dot,
+)
+
+
+class _FakeQuoteRoute:
+    _asks_for_quote = _RMix._asks_for_quote
+    _asks_price_figure = _RMix._asks_price_figure
+
+
+def _routes(msg, status='pending'):
+    _f = _FakeQuoteRoute()
+    return _rtoq(
+        _ty.SimpleNamespace(status=status),
+        _f._asks_for_quote(msg),
+        _f._asks_price_figure(msg, classification=None),
+    )
+
+
+_HOUSE_QUOTE = "May I get a quote for a four bedroomed house and 2 cottages"
+
+# The old path really would have priced it: both pricing gates say yes, which
+# is exactly why this one has to be asked first.
+results.log(
+    "whole-house quote: the pricing overview was the alternative",
+    _dot(_HOUSE_QUOTE) == 'pricing' and _igpq(
+        _HOUSE_QUOTE,
+        _ty.SimpleNamespace(pricing_overview_sent=False, sent_pricing_intents=[]),
+    ) is True,
+)
+results.log(
+    "whole-house quote: routes to the on-site quote, not a chat price block",
+    _routes(_HOUSE_QUOTE) is True,
+)
+# Naming no product is not what makes it a quote request - the ask is.
+results.log(
+    "quote request routing: a bare quote ask routes there too",
+    _routes("Can I get a quotation please") is True,
+)
+# An explicit how-much still gets the figures, quote word or not.
+results.log(
+    "quote request routing: a how-much is still priced in chat",
+    _routes("How much for a quote to fit a shower cubicle") is False,
+)
+results.log(
+    "quote request routing: a message with no quote ask is untouched",
+    _routes("I need someone to look at my geyser") is False,
+)
+# Never re-pitch the visit to someone who has already booked.
+results.log(
+    "quote request routing: a confirmed lead is left to the normal flow",
+    _routes(_HOUSE_QUOTE, status='confirmed') is False,
+)
+
+
 if GATE_ONLY:
     _finish()
 
