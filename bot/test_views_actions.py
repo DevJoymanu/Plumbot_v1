@@ -27,7 +27,7 @@ import re
 import unittest
 from decimal import Decimal
 from io import StringIO
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -37,6 +37,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .views.appointments import ConversationsView
 from .models import (
     Appointment,
     ConversationMessage,
@@ -219,6 +220,87 @@ class PageSmokeTests(StaffClientTestCase):
         local = timezone.localtime(self.job.job_scheduled_datetime)
         self.assertContains(response, local.strftime('%H:%M'))
 
+
+# ======================================================================
+# 1b. The lead inbox's default date window
+# ======================================================================
+
+class ConversationDateWindowTests(StaffClientTestCase):
+    """Every tab opens on the most recent Wednesday, measured on the lead's
+    own last response. The fixed-length options still widen it."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('conversations_list')
+        self.view = ConversationsView
+
+    def _names(self, query=''):
+        body = self.client.get(self.url + query).content.decode()
+        return [name for name in ('Replied Since', 'Replied Before')
+                if name in body]
+
+    def _leads_either_side_of_wednesday(self):
+        """One lead who answered after last Wednesday, one who answered before."""
+        opens = self.view._last_wednesday()
+        make_lead(1, customer_name='Replied Since',
+                  last_customer_response=opens + timedelta(hours=2))
+        make_lead(2, customer_name='Replied Before',
+                  last_customer_response=opens - timedelta(hours=2))
+
+    def test_last_wednesday_is_the_most_recent_one_before_today(self):
+        # Thursday 2026-09-03 -> the Wednesday one day back.
+        self.assertEqual(
+            self.view._last_wednesday(date(2026, 9, 3)).date(), date(2026, 9, 2))
+        # Saturday -> still that same Wednesday.
+        self.assertEqual(
+            self.view._last_wednesday(date(2026, 9, 5)).date(), date(2026, 9, 2))
+        # Tuesday -> six days back, not the one arriving tomorrow.
+        self.assertEqual(
+            self.view._last_wednesday(date(2026, 9, 8)).date(), date(2026, 9, 2))
+
+    def test_on_a_wednesday_the_window_is_a_full_week_not_this_morning(self):
+        """A window that collapsed to a few hours would read as an empty inbox."""
+        self.assertEqual(
+            self.view._last_wednesday(date(2026, 9, 9)).date(), date(2026, 9, 2))
+
+    def test_the_window_opens_at_local_midnight(self):
+        opens = timezone.localtime(self.view._last_wednesday(date(2026, 9, 5)))
+        self.assertEqual((opens.hour, opens.minute), (0, 0))
+
+    def test_the_default_window_is_since_last_wednesday(self):
+        self._leads_either_side_of_wednesday()
+        response = self.client.get(self.url)
+        self.assertEqual(response.context['selected_response_age'], 'since_wed')
+        self.assertEqual(self._names(), ['Replied Since'])
+
+    def test_the_default_holds_on_every_tab(self):
+        for tab in ('all', 'booked', 'pending', 'cancelled', 'delayed'):
+            response = self.client.get(self.url + f'?status_filter={tab}')
+            self.assertEqual(response.context['selected_response_age'], 'since_wed',
+                             msg=f'tab {tab}')
+
+    def test_the_counts_use_the_same_window_as_the_rows(self):
+        self._leads_either_side_of_wednesday()
+        counts = self.client.get(self.url).context['status_counts']
+        self.assertEqual(counts['total'], 1)
+
+    def test_the_longer_windows_still_widen_it(self):
+        self._leads_either_side_of_wednesday()
+        self.assertEqual(sorted(self._names('?response_age=4w_minus')),
+                         ['Replied Before', 'Replied Since'])
+        self.assertEqual(sorted(self._names('?response_age=all')),
+                         ['Replied Before', 'Replied Since'])
+
+    def test_an_unknown_window_falls_back_to_the_default(self):
+        self._leads_either_side_of_wednesday()
+        response = self.client.get(self.url + '?response_age=last_fortnight')
+        self.assertEqual(response.context['selected_response_age'], 'since_wed')
+        self.assertEqual(self._names('?response_age=last_fortnight'),
+                         ['Replied Since'])
+
+    def test_the_option_is_offered_in_the_dropdown(self):
+        body = self.client.get(self.url).content.decode()
+        self.assertIn('Since last Wednesday', body)
 
 # ======================================================================
 # 2. Appointment lifecycle actions

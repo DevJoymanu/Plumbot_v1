@@ -75,14 +75,19 @@ class ConversationsView(ListView):
     paginate_by = 20
     ordering = ['-updated_at']
 
-    # Every tab defaults to the last 7 days; the date filter lets staff widen it.
+    # The week the business works to starts on a WEDNESDAY, so that is where
+    # every tab's default window opens — leads whose last response landed since
+    # then. The fixed-length options are still there to widen it.
+    SINCE_WEDNESDAY = 'since_wed'
+    WEEK_START_WEEKDAY = 2  # Python numbers Monday 0, so Wednesday is 2.
+    DEFAULT_AGE = SINCE_WEDNESDAY
     TAB_AGE_DEFAULTS = {
-        'all':       '1w_minus',
-        'booked':    '1w_minus',
-        'pending':   '1w_minus',
-        'cancelled': '1w_minus',
-        'delayed':   '1w_minus',
-        'ad':        '1w_minus',
+        'all':       SINCE_WEDNESDAY,
+        'booked':    SINCE_WEDNESDAY,
+        'pending':   SINCE_WEDNESDAY,
+        'cancelled': SINCE_WEDNESDAY,
+        'delayed':   SINCE_WEDNESDAY,
+        'ad':        SINCE_WEDNESDAY,
     }
     TAB_AGE_MAP = {
         '1w_minus': timedelta(weeks=1),
@@ -91,21 +96,50 @@ class ConversationsView(ListView):
     }
     # (value, label) options for the date-filter dropdown, in display order.
     AGE_FILTER_OPTIONS = [
+        (SINCE_WEDNESDAY, 'Since last Wednesday'),
         ('1w_minus', 'Last 7 days'),
         ('3w_minus', 'Last 21 days'),
         ('4w_minus', 'Last 30 days'),
         ('all',      'All time'),
     ]
 
+    @classmethod
+    def _last_wednesday(cls, today=None):
+        """Local midnight on the most recent Wednesday BEFORE today.
+
+        On a Wednesday this reaches back a full week rather than to this
+        morning: the default window is what staff see without choosing
+        anything, and one that collapsed to a few hours every seventh day
+        would read as an empty inbox rather than as a filter.
+        """
+        today = today or timezone.localdate()
+        days_back = (today.weekday() - cls.WEEK_START_WEEKDAY) % 7 or 7
+        opens_on = today - timedelta(days=days_back)
+        return timezone.make_aware(datetime.combine(opens_on, datetime.min.time()))
+
+    def _age_cutoff(self, response_age):
+        """When the chosen window opens (None means all time).
+
+        The ONE place the window is turned into a moment — the rows and the
+        counts both read it, and they have to agree.
+        """
+        if response_age == self.SINCE_WEDNESDAY:
+            return self._last_wednesday()
+        if response_age in self.TAB_AGE_MAP:
+            return timezone.now() - self.TAB_AGE_MAP[response_age]
+        return None
+
     def _resolve_age(self):
         """Return (status_filter, response_age) honouring per-tab defaults."""
         status_filter = self.request.GET.get('status_filter', 'all')
+        valid = {value for value, _ in self.AGE_FILTER_OPTIONS}
+        default = self.TAB_AGE_DEFAULTS.get(status_filter, self.DEFAULT_AGE)
         if 'response_age' in self.request.GET:
             age = self.request.GET['response_age'].strip()
-            if age not in self.TAB_AGE_MAP and age != 'all':
-                age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+            if age not in valid:
+                age = default
         else:
-            age = self.TAB_AGE_DEFAULTS.get(status_filter, '1w_minus')
+            age = default
         return status_filter, age
 
     def get_queryset(self):
@@ -115,8 +149,6 @@ class ConversationsView(ListView):
         # Cache for get_context_data
         self._status_filter = status_filter
         self._response_age  = response_age
-
-        age_map_minus = self.TAB_AGE_MAP
 
         has_project_type = Case(
             When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
@@ -173,9 +205,7 @@ class ConversationsView(ListView):
             ).order_by('-updated_at')
         )
 
-        cutoff = None
-        if response_age != 'all' and response_age in age_map_minus:
-            cutoff = timezone.now() - age_map_minus[response_age]
+        cutoff = self._age_cutoff(response_age)
 
         # Booked = conversions, so its date window measures the booking date
         # (booked_at); every other tab measures the last customer response.
@@ -210,12 +240,11 @@ class ConversationsView(ListView):
 
         # Reuse values computed in get_queryset (called first by ListView)
         status_filter = getattr(self, '_status_filter', 'all')
-        response_age  = getattr(self, '_response_age',  '1w_minus')
-        age_map_minus = self.TAB_AGE_MAP
+        response_age  = getattr(self, '_response_age',  self.DEFAULT_AGE)
 
         base_qs = Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
-        if response_age != 'all' and response_age in age_map_minus:
-            cutoff = timezone.now() - age_map_minus[response_age]
+        cutoff = self._age_cutoff(response_age)
+        if cutoff:
             base_qs = base_qs.filter(last_customer_response__gte=cutoff)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
