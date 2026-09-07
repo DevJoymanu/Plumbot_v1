@@ -1509,6 +1509,18 @@ def _compute_followup_date(timeframe_message: str):
     return _compute_followup_date_keywords(timeframe_message)
 
 
+# Month names, shared by the day+month branch and the bare-month branch inside
+# the parser so the two can never disagree about what "Dec" means.
+_MONTHS = {
+    'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5,
+    'june': 6, 'july': 7, 'august': 8, 'september': 9, 'october': 10,
+    'november': 11, 'december': 12,
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7,
+    'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+}
+_MONTH_ALT = '|'.join(sorted(_MONTHS, key=len, reverse=True))
+
+
 def _compute_followup_date_keywords(timeframe_message: str):
     """
     Deterministic timeframe parser — the offline fallback for
@@ -1557,6 +1569,35 @@ def _compute_followup_date_keywords(timeframe_message: str):
     if weekday_info:
         _, target, _ = weekday_info
         return target.isoformat(), target.strftime('%A %d %B')
+
+    # -- 1b. A day AND a month together: "22nd of Dec", "22 December",
+    # "December 22", "Dec 22nd". MUST run before both the ordinal-day branch
+    # below and the bare-month branch further down, because each of those
+    # reads half of it and throws the other half away.
+    #
+    # Production, lead 1005: "My flight back to Zim..is on the 22nd of Dec"
+    # matched the ordinal branch, which took the 22 and applied the CURRENT
+    # month, so a customer abroad until 22 December was parked for 22
+    # September and then offered "tomorrow or this Tuesday". The bare-month
+    # branch is no better on the other wording: it answers the 15th and
+    # discards the day the customer actually named.
+    _day = r'(\d{1,2})\s*(?:st|nd|rd|th)?'
+    _mon = r'(' + _MONTH_ALT + r')'
+    m = (re.search(_day + r'\s*(?:of\s+)?' + _mon + r'\b', msg)
+         or re.search(_mon + r'\s+' + _day + r'\b', msg))
+    if m:
+        groups = m.groups()
+        # Whichever order matched, one group is the digits and one the month.
+        day_raw = next(g for g in groups if g and g.isdigit())
+        mon_raw = next(g for g in groups if g and not g.isdigit())
+        day, month = int(day_raw), _MONTHS[mon_raw]
+        if 1 <= day <= 31:
+            year = today.year
+            # A date already behind us means they mean next year.
+            if (month, day) < (today.month, today.day):
+                year += 1
+            target = _safe(year, month, day)
+            return target.isoformat(), target.strftime('%A %d %B')
 
     # ── 2. Ordinal day of month: "the 26th", "around the 26th", "by the 25th"
     m = re.search(r'\b(\d{1,2})\s*(?:st|nd|rd|th)\b', msg)
@@ -1640,17 +1681,9 @@ def _compute_followup_date_keywords(timeframe_message: str):
     # A bare month is a common timeframe answer; resolve it deterministically to
     # the 15th of its next occurrence rather than leaning on the LLM fallback
     # (which has returned empty strings and crashed on date.fromisoformat).
-    _months = {
-        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5,
-        'june': 6, 'july': 7, 'august': 8, 'september': 9, 'october': 10,
-        'november': 11, 'december': 12,
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7,
-        'aug': 8, 'sep': 9, 'sept': 9, 'oct': 10, 'nov': 11, 'dec': 12,
-    }
-    _month_alt = '|'.join(sorted(_months, key=len, reverse=True))
-    m = re.search(r'\b(' + _month_alt + r')\b', msg)
+    m = re.search(r'\b(' + _MONTH_ALT + r')\b', msg)
     if m:
-        month = _months[m.group(1)]
+        month = _MONTHS[m.group(1)]
         year  = today.year
         # Roll to next year if that month's mid-point is already behind us.
         if month < today.month or (month == today.month and today.day >= 15):
@@ -2359,6 +2392,44 @@ def release_deferred_visit(appointment, reason='', checkin_dt=None) -> bool:
         logger.exception("Plumber alert failed for released visit — apt %s",
                          getattr(appointment, 'pk', None))
     return True
+
+
+def _keep_timeframe_before_breakout(message, appointment):
+    """Harvest any date the message names, before the hold is released.
+
+    A breakout is the right call: the customer asked a live question and it
+    outranks whatever we were waiting for. But releasing the hold used to
+    DISCARD the rest of the same message, and people put both in one breath.
+
+    Production, barmak lead 1005: "My flight back to Zim..is on the 22nd of
+    Dec...so wanted to get a quote for the items". The word "quote" broke the
+    hold, the date went in the bin, and the very next thing the bot said was
+    "tomorrow or this Tuesday" to somebody who had just said they were out of
+    the country until December.
+
+    So capture first, then release. Deterministic only: this runs on a path
+    that already decided not to ask, and an LLM round-trip to salvage a date
+    the parser cannot read is not worth a turn of latency.
+    """
+    try:
+        iso, _friendly = _compute_followup_date_keywords(message or '')
+    except Exception:
+        logger.warning("Breakout timeframe harvest failed", exc_info=True)
+        return False
+    if not iso:
+        return False
+    try:
+        _store_delay_followup_date(appointment, iso, source_message=message)
+        # Their own words are also the timeline the rest of the flow reads, so
+        # the availability question can stop offering them tomorrow.
+        if not (getattr(appointment, 'timeline', '') or '').strip():
+            appointment.timeline = (message or '').strip()[:120]
+            appointment.save(update_fields=['timeline'])
+        logger.info("Breakout kept the timeframe the customer gave: %s", iso)
+        return True
+    except Exception:
+        logger.warning("Could not store the harvested timeframe", exc_info=True)
+        return False
 
 
 def _store_delay_followup_date(appointment, iso_date, source_message=None):
@@ -3620,6 +3691,7 @@ def handle_out_of_scope(
         if pending_cat in ("delay_timeframe", "delay_confirm", "delay_checkin") \
                 and _delay_breakout_inquiry(message):
             logger.info("Delay flow — live inquiry breaks holding pattern: '%s'", message[:60])
+            _keep_timeframe_before_breakout(message, appointment)
             _clear_pending(appointment)
             return None
 
@@ -3632,6 +3704,7 @@ def handle_out_of_scope(
         if pending_cat == "delay_email" and '@' not in (message or '') \
                 and _delay_breakout_inquiry(message):
             logger.info("Delay email step — live inquiry breaks holding pattern: '%s'", message[:60])
+            _keep_timeframe_before_breakout(message, appointment)
             _clear_pending(appointment)
             return None
 

@@ -230,11 +230,32 @@ def _subject(appointment) -> str:
 
 
 def _timeline_phrase(timeline: str) -> str:
-    """The timeline as a clause that can follow the job and the area."""
-    low = timeline.strip().rstrip('.').lower()
-    if low in ('asap', 'urgent', 'immediately', 'now', 'as soon as possible'):
+    """The timeline as a clause that can follow the job and the area.
+
+    Only the FIRST character is lowered, and only when the opening word is not
+    an acronym. Lowercasing the whole string turned "Back in Zimbabwe on the
+    22nd of December" into "back in zimbabwe on the 22nd of december": this is
+    the customer's own wording and it routinely carries proper nouns, so
+    flattening the case reads as though nobody proof-read it.
+    """
+    raw = timeline.strip().rstrip('.')
+    if raw.lower() in ('asap', 'urgent', 'immediately', 'now',
+                       'as soon as possible'):
         return 'looking to get it done as soon as possible'
-    return f'looking to get it done {low}'
+    # Lower the first letter only when the opening word is an ordinary one.
+    # Left alone: anything carrying internal capitals ("ASAP", "NOW-ish"), and
+    # month names, which are the single most common way a timeline opens on a
+    # proper noun ("December 22nd").
+    head = raw.split(' ', 1)[0].strip(',.')
+    _internal_caps = any(c.isupper() for c in head[1:])
+    try:
+        from .out_of_scope_handler import _MONTHS
+        _is_month = head.lower() in _MONTHS
+    except Exception:
+        _is_month = False
+    if head and not _internal_caps and not _is_month:
+        raw = raw[0].lower() + raw[1:]
+    return 'looking to get it done ' + raw
 
 
 def _tidy(text: str) -> str:

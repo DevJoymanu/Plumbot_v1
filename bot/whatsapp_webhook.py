@@ -10,6 +10,7 @@ FIXES IN THIS VERSION:
 5. Plan question dedup          — helper guards re-ask of plan_or_visit
 """
 from django.db.models import Value
+from django.db.models import Q
 from django.db.models.functions import Concat
 from django.db.models.functions import Replace
 from django.http import HttpResponse, JsonResponse
@@ -3011,6 +3012,31 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
         strip_repeat_free_visit, ensure_visit_price_note)
     from bot.utils import enforce_single_question, strip_dashes
 
+    # ── The model reads it back ───────────────────────────────────────────────
+    # Runs FIRST, on the composed draft, because everything below is a rule and
+    # a rule cannot catch the fault this is here for: a reply that breaks no
+    # rule and is still obviously wrong to anybody who read the conversation
+    # ("tomorrow or this Tuesday?" to a lead who just said they are out of the
+    # country until December — barmak 1005). It corrects the words; the chain
+    # below then applies to whatever comes back, because a refinement is just
+    # another draft and gets no exemption from the fee stripper, the
+    # free-visit rule, the one-question rule or the dash stripper.
+    #
+    # Fails open in every failure mode, and the correction is flagged on the
+    # lead so a human can see what was changed and why.
+    try:
+        from bot.response_check import verify_and_refine
+        reply, _check_note = verify_and_refine(reply, appointment, message_body)
+        if _check_note:
+            print(f"🔎 {_check_note}")
+            try:
+                from bot.utils import _append_admin_note
+                _append_admin_note(appointment, _check_note)
+            except Exception:
+                pass
+    except Exception as _chk_exc:
+        print(f"Reply check skipped: {_chk_exc}")
+
     reply, _re_asked = strip_known_questions(reply, appointment)
     if _re_asked:
         print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
@@ -3082,6 +3108,32 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # permanently. Marking the lead is the point: the crons read
         # [STOP_REQUESTED] too, so the decision survives this turn (prod lead
         # 872 was told to stop and then sent three more automated pitches).
+        # An email the customer volunteers is captured WHEREVER it appears.
+        #
+        # Until now customer_email was only ever written inside the delay-email
+        # step, so an address that arrived at any other moment was read by
+        # nobody. Barmak lead 1005 sent theirs four minutes after a live
+        # question had (correctly) released that hold; the address landed with
+        # no pending state waiting for it, was not captured, and the bot
+        # repeated its previous reply verbatim.
+        #
+        # Deterministic, additive, and it only ever fills a blank: the flow
+        # that asked for an email still owns the conversation, this just stops
+        # the answer falling on the floor when the flow has moved on. Same rule
+        # as everywhere else in this file: what the customer actually said
+        # outranks whatever state we happen to be holding.
+        try:
+            if not (appointment.customer_email or '').strip():
+                _found = re.search(
+                    r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}',
+                    message_body or '')
+                if _found:
+                    appointment.customer_email = _found.group(0).lower()
+                    appointment.save(update_fields=['customer_email'])
+                    print(f"EMAIL captured from the message: {appointment.customer_email}")
+        except Exception as _email_exc:
+            print(f"Could not capture a volunteered email: {_email_exc}")
+
         from .out_of_scope_handler import is_hard_stop_request, build_hard_stop_reply
         if is_hard_stop_request(message_body):
             _mark_stop_requested(appointment)
@@ -4452,6 +4504,7 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
                         # Only set has_plan=True if it hasn't been answered yet
                         Appointment.objects.filter(pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
 
+
                 elif media_type == 'video':
                     video_note = f"\n[VIDEO UPLOADED] {saved_path} | URL: {file_url} | {timezone.now().isoformat()}"
 
@@ -4509,14 +4562,57 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
                 pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
             appointment.refresh_from_db()
 
-        # A plan on file puts the lead on the PLAN path: the drawing carries
-        # the measurements, so there is no measure-up to sell and the plumber
-        # quotes off it. Creating the row here is what anchors the plumber
-        # notification and everything after it. Idempotent, so a lead who
-        # sends three shots of the same drawing gets one row, and best effort,
-        # because failing to start the quote chase must not cost them the
-        # acknowledgement of their file.
-        if is_plan_document:
+        # IS THIS ACTUALLY THEIR PLAN? One question, asked once, because two
+        # different things hang off the answer and they must not disagree.
+        #
+        # `is_plan_document` is only `mime_type == 'application/pdf'`, and a
+        # PDF is not evidence: barmak lead 966 is a SUPPLIER who opened with
+        # "I'm Primrose from Edenvine construction, a leading supplier" and
+        # sent "our catalogue". That set has_plan, and on this branch it would
+        # also have opened a quote request and chased the plumber four times
+        # about a sales pitch.
+        #
+        # So a plan is one we ASKED for, or an image vision confirms is a
+        # drawing. An unprompted PDF stays out: nothing can read it here
+        # (describe_customer_image returns None for PDFs), so we genuinely do
+        # not know, and the honest default is to leave it for the plumber to
+        # open rather than start a chase on a guess.
+        _verified_plan = bool(
+            _was_pending_upload
+            or (image_description and _description_is_a_plan(image_description))
+        )
+
+        if _verified_plan:
+            # ADVANCE plan_status. It is the field every authoritative reader
+            # checks: on_plan_path, apply_plan_path_gate, PlanQuoteRequest, the
+            # handoff draft. has_plan is NOT that field, because it goes true
+            # when a lead merely SAYS a drawing is coming.
+            #
+            # This used to fire only when plan_status was already
+            # 'pending_upload' — i.e. only when the bot had asked first. A lead
+            # who sent a plan unprompted got has_plan=True with
+            # plan_status=None and the whole plan path stayed dark: no quote
+            # request, the site visit never suppressed, and the bot kept
+            # pitching a visit to somebody who had already sent the drawing
+            # (prod, barmak lead 1005, 2026-09-06). Never overwrites
+            # 'plan_reviewed', which is a later state.
+            Appointment.objects.filter(
+                Q(plan_status__isnull=True)
+                | Q(plan_status__in=['', 'pending_upload']),
+                pk=appointment.pk,
+            ).update(
+                plan_status='plan_uploaded',
+                plan_uploaded_at=timezone.now(),
+            )
+            appointment.refresh_from_db()
+
+            # A plan on file puts the lead on the PLAN path: the drawing
+            # carries the measurements, so there is no measure-up to sell and
+            # the plumber quotes off it. Creating the row here anchors the
+            # plumber notification and everything after it. Idempotent, so a
+            # lead who sends three shots of one drawing gets one row, and best
+            # effort, because failing to start the chase must not cost them the
+            # acknowledgement of their file.
             try:
                 from bot.plan_quote import ensure_request
                 ensure_request(appointment)

@@ -452,3 +452,29 @@ class LeadMessageRecapTests(PhoneQuoteBase):
                         plan_status='plan_uploaded')
         self.assertIn('price it off the plan', msg)
         self.assertNotIn('what exactly needs doing', msg)
+
+
+class TimelineCasingTests(PhoneQuoteBase):
+    """The timeline is the customer's own wording, proper nouns included."""
+
+    def test_proper_nouns_survive_the_timeline_clause(self):
+        from bot.lead_handoff import _timeline_phrase
+        out = _timeline_phrase('Back in Zimbabwe on the 22nd of December')
+        self.assertIn('Zimbabwe', out)
+        self.assertIn('December', out)
+        self.assertTrue(out.startswith('looking to get it done back in'))
+
+    def test_an_acronym_is_left_alone(self):
+        from bot.lead_handoff import _timeline_phrase
+        self.assertEqual(_timeline_phrase('ASAP'),
+                         'looking to get it done as soon as possible')
+        self.assertIn('NOW-ish', _timeline_phrase('NOW-ish please'))
+
+    def test_a_month_name_keeps_its_capital(self):
+        from bot.lead_handoff import _timeline_phrase
+        self.assertIn('December 22nd', _timeline_phrase('December 22nd'))
+
+    def test_an_ordinary_phrase_still_flows_lowercase(self):
+        from bot.lead_handoff import _timeline_phrase
+        self.assertEqual(_timeline_phrase('In two weeks'),
+                         'looking to get it done in two weeks')

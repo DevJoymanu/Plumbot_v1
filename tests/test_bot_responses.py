@@ -7290,6 +7290,83 @@ try:
 except Exception as e:
     results.log("quoted photo pricing", False, got=str(e))
 
+# --- Lead 1005: four defects that stacked into one bad conversation ---------
+# A lead abroad until 22 December, who sent a plan and gave their email, was
+# offered "tomorrow or this Tuesday" twice and had neither the date nor the
+# address recorded. Each of these is separately pinned, because each was
+# separately capable of causing it.
+try:
+    from bot import out_of_scope_handler as _oos1005
+
+    # 1. A day AND a month named together. The ordinal branch used to take the
+    #    day and apply the CURRENT month; the bare-month branch answers the
+    #    15th and discards the day.
+    for _raw, _expect in (
+        ('22nd of Dec', '-12-22'),
+        ('22 December', '-12-22'),
+        ('December 22', '-12-22'),
+        ('Dec 22nd', '-12-22'),
+        ('My flight back to Zim..is on the 22nd of Dec...so wanted a quote',
+         '-12-22'),
+    ):
+        _iso, _ = _oos1005._compute_followup_date_keywords(_raw)
+        results.log("lead 1005: %r resolves to the day they named" % _raw[:28],
+                    bool(_iso) and _iso.endswith(_expect), got=_iso)
+
+    # ...without breaking the branches that were already right.
+    _iso_m, _ = _oos1005._compute_followup_date_keywords('August')
+    results.log("lead 1005: a bare month still answers mid-month",
+                bool(_iso_m) and _iso_m.endswith('-08-15'), got=_iso_m)
+    _iso_d, _ = _oos1005._compute_followup_date_keywords('the 26th')
+    results.log("lead 1005: a bare ordinal still uses the current month",
+                bool(_iso_d) and _iso_d.endswith('-26'), got=_iso_d)
+
+    # 2. The breakout captures the date before it releases the hold. Releasing
+    #    is right (they asked a live question); binning the rest of the same
+    #    message is not.
+    _src = _inspect_r.getsource(_oos1005)
+    # Indented, so the def line does not count as a call site.
+    results.log("lead 1005: the breakout keeps what the message also said",
+                _src.count('    _keep_timeframe_before_breakout(message, appointment)') == 2)
+    results.log("lead 1005: ...and it runs BEFORE the hold is cleared",
+                _src.find('_keep_timeframe_before_breakout(message, appointment)')
+                < _src.find('_clear_pending(appointment)',
+                            _src.find('_keep_timeframe_before_breakout(message, appointment)')))
+
+    # 3. A volunteered email is captured wherever it lands, not only while the
+    #    delay-email step happens to be pending.
+    _srcw = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
+    results.log("lead 1005: a volunteered email is captured outside the flow",
+                'EMAIL captured from the message' in _srcw)
+    results.log("lead 1005: ...and only ever fills a blank",
+                "if not (appointment.customer_email or '').strip():" in _srcw)
+
+    # 4. plan_status advances for a plan the lead sent unprompted. It is the
+    #    field on_plan_path, apply_plan_path_gate and PlanQuoteRequest read;
+    #    has_plan is not, because that goes true on a merely PROMISED plan.
+    _srcm = _inspect_r.getsource(_wwh)
+    _media = _srcm[_srcm.find('if is_plan_document or _was_pending_upload:'):]
+    _media = _media[:2200]
+    _verified = _srcm[_srcm.find('_verified_plan = bool('):]
+    _verified = _verified[:2600]
+    results.log("lead 1005: a verified plan advances plan_status",
+                "plan_status='plan_uploaded'" in _verified)
+    results.log("lead 1005: ...without overwriting plan_reviewed",
+                'plan_status__isnull=True' in _verified
+                and "'pending_upload'" in _verified)
+    # ...and a bare PDF is NOT a verified plan. Barmak lead 966 is a supplier
+    # who sent "our catalogue"; is_plan_document is only mime == pdf, so on
+    # that evidence alone the bot would advance the plan path and chase the
+    # plumber four times about a sales pitch.
+    results.log("lead 966: a plan must be asked for, or seen to be a drawing",
+                '_was_pending_upload' in _verified
+                and '_description_is_a_plan(image_description)' in _verified)
+    results.log("lead 966: an unprompted PDF opens no quote request",
+                _verified.find('_verified_plan') < _verified.find('ensure_request')
+                and 'if _verified_plan:' in _verified)
+except Exception as e:
+    results.log("lead 1005 fixes", False, got=str(e))
+
 # --- Fixes from the 100-conversation replay (7 Sep 2026) ---------------------
 # Every case here pins a defect the replay measured on real traffic, so a later
 # edit that reintroduces one fails here rather than in production.
