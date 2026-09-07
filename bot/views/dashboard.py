@@ -244,13 +244,21 @@ def priority_lead_count(tenant=None):
     )
 
 
-def _priority_leads_workspace_data(response_age='1w_minus', tenant=None):
+def _priority_leads_workspace_data(response_age='1w_minus', tenant=None, search=''):
     from django.db.models import F  # noqa: F401 — kept for parity with callers
+    from ..lead_search import filter_leads
 
     age_map_minus = _PRIORITY_AGE_MAP
 
     leads = priority_leads_qs(tenant)
-    if response_age != 'all' and response_age in age_map_minus:
+    # A SEARCH IGNORES THE TIME HORIZON, the same rule the lead inbox follows:
+    # you search to go and find one person, and on this board that person is
+    # usually the one who has gone quiet — which is exactly what the horizon
+    # filters out. Searching inside it answered "no such lead" about a lead
+    # sitting in the cold section.
+    if (search or '').strip():
+        leads = filter_leads(leads, search)
+    elif response_age != 'all' and response_age in age_map_minus:
         cutoff = timezone.now() - age_map_minus[response_age]
         leads = leads.filter(last_response_at__gte=cutoff)
 
@@ -262,6 +270,7 @@ def _priority_leads_workspace_data(response_age='1w_minus', tenant=None):
 
     return {
         'selected_response_age': response_age,
+        'search_query': (search or '').strip(),
         'total_leads': leads.count(),
         'very_hot_leads': very_hot,
         'hot_leads': hot,

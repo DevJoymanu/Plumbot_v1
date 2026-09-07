@@ -1,0 +1,519 @@
+{% extends "bot/layouts/base.html" %}
+{% load static %}
+
+{% comment %}
+THE quotation-template builder. One template for both editors.
+
+It is the QUOTE editor's layout (`quote_flat_form.html`), because building a
+template is building a quote: the same cards in the same order, the same item
+list where what is already added stays on screen, the same totals block, and
+the same pinned action bar at the foot. A builder that looked like a different
+product taught the plumber a second set of habits for the same job.
+
+Create and edit used to be two files (835 + 972 lines) that had drifted apart
+the way the three quote editors had before they were unified: the edit screen
+printed every figure in RAND ("R 0.00") on a business quoting in US dollars,
+put Add Item in the card header rather than under the list, and carried a
+warning block the create screen had never heard of.
+
+The items are a Django FORMSET, not the quote editor's JS array — the POST is
+`items-0-description` and so on, and that is unchanged. Only the markup around
+those inputs is the quote editor's: each form is one `.pbq-item` card instead
+of a row in a nine-column table.
+
+`template_mode` is 'new' or 'edit'.
+{% endcomment %}
+
+{% block title %}{% if template_mode == 'edit' %}Edit Template{% else %}New Template{% endif %}{% endblock %}
+
+{% block extra_css %}
+{% include "bot/includes/quote_responsive_css.html" %}
+<style>
+    /* Three actions, not the quote editor's four. */
+    .pbq-actionbar { grid-template-columns: repeat(3, 1fr); }
+
+    /* The formset's widgets carry Bootstrap's .form-control; inside a
+       .pbq-field they should look like every other field on a quote screen,
+       which is what the app's own input styling already does. These two only
+       undo the parts Bootstrap sets that the app does not. */
+    .pbq-page .form-control,
+    .pbq-page .form-select { box-shadow: none; }
+
+    .pbq-item .pbq-field { margin-bottom: 0; }
+
+    .qt-tick {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+    }
+
+    .qt-tick input { width: 1.15em; height: 1.15em; flex: 0 0 auto; }
+    .qt-tick label { margin: 0; font-size: 13px; }
+    .qt-tick__hint { display: block; margin-top: 2px; font-size: 12px; color: var(--color-muted); }
+
+    /* sort_order is bookkeeping the JS maintains, not something to fill in. */
+    .qt-hidden { display: none; }
+
+    .qt-errors { margin-top: 6px; font-size: 12.5px; color: var(--color-on-error-container); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pbq-page pbq-page--barred">
+
+    <div class="pbq-head pbq-no-print">
+        <div>
+            <h1 class="pbq-head__title">
+                {% if template_mode == 'edit' %}Edit Template{% else %}New Template{% endif %}
+            </h1>
+            <p class="pbq-head__sub">
+                {% if template_mode == 'edit' %}
+                    {{ object.name }}
+                {% else %}
+                    A set of items you can drop onto a quote, ready priced.
+                {% endif %}
+            </p>
+        </div>
+        <div class="pbq-head__actions">
+            <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Templates
+            </a>
+        </div>
+    </div>
+
+    <div id="alertContainer" class="pbq-no-print"></div>
+
+    {% if form.errors or formset.non_form_errors %}
+    <div class="pb-alert pb-alert--error">
+        Please check the highlighted fields and try again.
+        {% for error in formset.non_form_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" id="templateForm">
+        {% csrf_token %}
+
+        <!-- Template information -->
+        <div class="pbq-card">
+            <h2 class="pbq-section-title"><i class="fas fa-info-circle"></i> Template Information</h2>
+
+            <div class="pbq-field">
+                <label for="{{ form.name.id_for_label }}">Template Name *</label>
+                {{ form.name }}
+                {% if form.name.errors %}<div class="qt-errors">{{ form.name.errors }}</div>{% endif %}
+            </div>
+
+            <div class="pbq-field">
+                <label for="{{ form.project_type.id_for_label }}">Project Type *</label>
+                {{ form.project_type }}
+                {% if form.project_type.errors %}<div class="qt-errors">{{ form.project_type.errors }}</div>{% endif %}
+            </div>
+
+            <div class="pbq-field">
+                <label for="{{ form.description.id_for_label }}">Description</label>
+                {{ form.description }}
+                <small class="qt-tick__hint">What this template is for, so the next person knows when to reach for it.</small>
+            </div>
+
+            <div class="qt-tick">
+                {{ form.is_active }}
+                <label for="{{ form.is_active.id_for_label }}">Active (offered when building a quote)</label>
+            </div>
+
+            {% comment %}
+            Operator-only. Hidden from clients here AND re-checked server-side
+            in form_valid: hiding a checkbox is presentation, not permission,
+            and a posted is_global from a client must not be honoured.
+            {% endcomment %}
+            {% if can_create_global %}
+            <div class="qt-tick" style="margin-top:6px;">
+                <input class="form-check-input" type="checkbox" id="id_is_global" name="is_global"
+                       {% if object.is_global %}checked{% endif %}>
+                <label for="id_is_global">
+                    Share with every client
+                    <small class="qt-tick__hint">
+                        Global templates appear on every client's Templates page, read-only.
+                        They duplicate one to make their own editable copy.
+                    </small>
+                </label>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Items -->
+        <div class="pbq-card">
+            <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items &amp; Materials</h2>
+            {{ formset.management_form }}
+
+            {% comment %}
+            The same three-part panel as the quote editor: a running count and
+            subtotal pinned above, the list itself (which gets its own
+            scrollbar once it is long), and Add Item below — so what is already
+            on the template stays on screen while the next item is typed.
+            {% endcomment %}
+            <div class="pbq-items-panel">
+                <div class="pbq-items-bar" id="itemsBar">
+                    <span class="pbq-items-bar__count" id="itemsCount">No items yet</span>
+                    <span class="pbq-items-bar__total" id="itemsRunningTotal">{{ quote_currency }}0.00</span>
+                </div>
+
+                <div class="pbq-items-scroll" id="itemsScroll">
+                    <div class="pbq-items" id="itemsList">
+                        {% for item_form in formset %}
+                        <div class="pbq-item item-row" data-item-id="{{ forloop.counter }}"
+                             id="row-{{ forloop.counter }}">
+                            <div class="pbq-item__head">
+                                <span class="pbq-item__index">Item <span class="item-number">{{ forloop.counter }}</span></span>
+                                <button type="button" class="pbq-item__remove delete-btn"
+                                        data-row-id="{{ forloop.counter }}" aria-label="Remove item">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+
+                            {{ item_form.id }}
+
+                            <div class="pbq-field">
+                                <label for="{{ item_form.description.id_for_label }}">Description</label>
+                                {{ item_form.description }}
+                            </div>
+
+                            <div class="pbq-item__row">
+                                <div class="pbq-field">
+                                    <label for="{{ item_form.quantity.id_for_label }}">Qty</label>
+                                    {{ item_form.quantity }}
+                                </div>
+                                <div class="pbq-field">
+                                    <label for="{{ item_form.unit_price.id_for_label }}">Unit price</label>
+                                    {{ item_form.unit_price }}
+                                </div>
+                            </div>
+
+                            <div class="pbq-item__row">
+                                <div class="pbq-field">
+                                    <label for="{{ item_form.category.id_for_label }}">Category</label>
+                                    {{ item_form.category }}
+                                </div>
+                                <div class="qt-tick">
+                                    {{ item_form.is_optional }}
+                                    <label for="{{ item_form.is_optional.id_for_label }}">Optional</label>
+                                </div>
+                            </div>
+
+                            <div class="pbq-item__total">
+                                Total <span class="line-total">{{ quote_currency }}0.00</span>
+                            </div>
+
+                            {# Bookkeeping the JS maintains; nothing to fill in. #}
+                            <div class="qt-hidden">
+                                {{ item_form.sort_order }}
+                                {{ item_form.DELETE }}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="pbq-items-foot">
+                    <button type="button" class="btn btn-outline-primary pbq-add" id="addRowBtn">
+                        <i class="fas fa-plus"></i> Add Item
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Totals -->
+        <div class="pbq-card">
+            <h2 class="pbq-section-title"><i class="fas fa-calculator"></i> Default Costs</h2>
+            <p class="qt-tick__hint" style="margin:-6px 0 14px;">
+                What a quote starts from when it uses this template. The plumber
+                can change either figure on the quote itself.
+            </p>
+            <div class="pbq-totals">
+                <div class="pbq-total-row">
+                    <span>Items Subtotal</span>
+                    <span id="itemsSubtotal">{{ quote_currency }}0.00</span>
+                </div>
+                <div class="pbq-total-row">
+                    <span><label for="{{ form.default_labor_cost.id_for_label }}" style="margin:0;">Default Labour Cost</label></span>
+                    {{ form.default_labor_cost }}
+                </div>
+                <div class="pbq-total-row">
+                    <span><label for="{{ form.default_transport_cost.id_for_label }}" style="margin:0;">Default Transport Cost</label></span>
+                    {{ form.default_transport_cost }}
+                </div>
+                <div class="pbq-total-row pbq-total-row--grand">
+                    <span>Estimated Total</span>
+                    <span id="grandTotal">{{ quote_currency }}0.00</span>
+                </div>
+            </div>
+        </div>
+
+        {% comment %}
+        Sticky, not fixed, and offset by --bottom-nav-h — the same bar the quote
+        editor ends on, for the same reason: .pb-content__inner runs a keyframe
+        with animation-fill-mode both, and a retained transform would make it
+        the containing block for any fixed descendant (CLAUDE.md).
+        {% endcomment %}
+        <div class="pbq-actionbar pbq-no-print">
+            <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">
+                <i class="fas fa-times"></i> Cancel
+            </a>
+            <button type="button" class="btn btn-outline-primary" id="addRowBtnFoot">
+                <i class="fas fa-plus"></i> Add Item
+            </button>
+            <button type="submit" class="btn btn-primary" id="saveBtn">
+                <i class="fas fa-save"></i> Save Template
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        'use strict';
+
+        // How many cards before the list gets its own scrollbar. Declared
+        // BEFORE the first calculateAllTotals() below, which reads it: a
+        // `const` is in the temporal dead zone until its own line runs, and a
+        // ReferenceError here takes the whole handler down with it — no
+        // totals, no delete buttons, no auto-add, on a page still 200ing.
+        const ITEMS_CAP_AT = 4;
+
+        const CURRENCY = "{{ quote_currency|escapejs }}";
+        const totalForms = document.querySelector('#id_items-TOTAL_FORMS');
+        const list = document.getElementById('itemsList');
+        let formIdx = parseInt(totalForms.value, 10);
+        let isSubmitting = false;
+
+        function money(value) {
+            return CURRENCY + (Number(value) || 0).toFixed(2);
+        }
+
+        function num(input) {
+            return input ? (parseFloat(input.value) || 0) : 0;
+        }
+
+        function rowTotal(row) {
+            return num(row.querySelector('input[id$="-quantity"]'))
+                 * num(row.querySelector('input[id$="-unit_price"]'));
+        }
+
+        function liveRows() {
+            return Array.prototype.slice.call(
+                document.querySelectorAll('.item-row:not(.deleted-row)'));
+        }
+
+        // The single choke point for every figure on the page, so the running
+        // bar, the line totals and the totals card cannot drift apart.
+        function calculateAllTotals() {
+            const rows = liveRows();
+            let subtotal = 0;
+            let named = 0;
+
+            rows.forEach(function (row) {
+                const line = rowTotal(row);
+                subtotal += line;
+                const cell = row.querySelector('.line-total');
+                if (cell) { cell.textContent = money(line); }
+
+                // A blank card waiting to be filled is not yet an item.
+                const desc = row.querySelector('input[id$="-description"]');
+                if (desc && desc.value.trim()) { named++; }
+            });
+
+            const labour = num(document.querySelector('#id_default_labor_cost'));
+            const transport = num(document.querySelector('#id_default_transport_cost'));
+
+            document.getElementById('itemsSubtotal').textContent = money(subtotal);
+            document.getElementById('grandTotal').textContent = money(subtotal + labour + transport);
+
+            const count = document.getElementById('itemsCount');
+            if (count) {
+                count.textContent = named
+                    ? named + ' item' + (named === 1 ? '' : 's') + ' added'
+                    : 'No items yet';
+            }
+            const running = document.getElementById('itemsRunningTotal');
+            if (running) { running.textContent = money(subtotal); }
+
+            const box = document.getElementById('itemsScroll');
+            if (box) { box.classList.toggle('is-capped', rows.length > ITEMS_CAP_AT); }
+        }
+
+        calculateAllTotals();
+
+        // Delegated, so cards added later keep working.
+        document.addEventListener('input', function (event) {
+            if (event.target.matches('input[id$="-quantity"], input[id$="-unit_price"], input[id$="-description"]')) {
+                calculateAllTotals();
+                checkIfNewRowNeeded();
+            }
+        });
+
+        ['#id_default_labor_cost', '#id_default_transport_cost'].forEach(function (selector) {
+            const field = document.querySelector(selector);
+            if (field) { field.addEventListener('input', calculateAllTotals); }
+        });
+
+        // Removing a card ticks the formset's own DELETE box: the row has to
+        // reach the server marked for deletion, not simply vanish from the DOM.
+        document.addEventListener('click', function (event) {
+            const button = event.target.closest('.delete-btn');
+            if (!button) { return; }
+            event.preventDefault();
+            const row = button.closest('.item-row');
+            const flag = row.querySelector('input[id$="-DELETE"]');
+            if (flag) {
+                flag.checked = true;
+                row.classList.add('deleted-row');
+                row.style.display = 'none';
+            } else {
+                row.remove();
+            }
+            if (!liveRows().length) { addNewRow(false); }
+            renumber();
+            calculateAllTotals();
+        });
+
+        function renumber() {
+            let n = 0;
+            liveRows().forEach(function (row) {
+                n++;
+                const label = row.querySelector('.item-number');
+                if (label) { label.textContent = n; }
+            });
+        }
+
+        function checkIfNewRowNeeded() {
+            const rows = liveRows();
+            if (!rows.length) { return; }
+            const allFilled = rows.every(function (row) {
+                return row.querySelector('input[id$="-description"]').value.trim()
+                    && row.querySelector('input[id$="-quantity"]').value
+                    && row.querySelector('input[id$="-unit_price"]').value;
+            });
+            // Silent: this fires while the user is typing somewhere else, so
+            // it must not steal the caret.
+            if (allFilled) { addNewRow(false); }
+        }
+
+        function addNewRow(reveal) {
+            const template = list.querySelector('.item-row');
+            if (!template) { return; }
+            const row = template.cloneNode(true);
+
+            const index = formIdx;
+            formIdx++;
+            totalForms.value = formIdx;
+
+            row.querySelectorAll('input, select, textarea').forEach(function (field) {
+                ['name', 'id'].forEach(function (attribute) {
+                    const value = field.getAttribute(attribute);
+                    if (value) {
+                        field.setAttribute(attribute, value.replace(/items-\d+/, 'items-' + index));
+                    }
+                });
+                const id = field.getAttribute('id') || '';
+                if (id.endsWith('-quantity')) {
+                    field.value = '1';
+                } else if (id.endsWith('-sort_order')) {
+                    field.value = index;
+                } else if (field.tagName.toLowerCase() === 'select') {
+                    field.selectedIndex = 0;
+                } else if (field.type === 'checkbox') {
+                    field.checked = false;
+                } else {
+                    field.value = '';
+                }
+            });
+
+            row.querySelectorAll('label[for]').forEach(function (label) {
+                label.setAttribute('for',
+                    label.getAttribute('for').replace(/items-\d+/, 'items-' + index));
+            });
+
+            row.classList.remove('deleted-row');
+            row.style.display = '';
+            row.dataset.itemId = index + 1;
+            row.id = 'row-' + (index + 1);
+            const cell = row.querySelector('.line-total');
+            if (cell) { cell.textContent = money(0); }
+
+            // On the end, so every card already added stays exactly where it is.
+            list.appendChild(row);
+            renumber();
+            calculateAllTotals();
+            if (reveal) { revealRow(row); }
+        }
+
+        /* Bring the new card into view without displacing the ones already
+           added. 'nearest' scrolls the least amount that makes it visible;
+           once the list has its own scroll box, park the new card at the
+           bottom edge so the earlier ones stay on screen above it. */
+        function revealRow(row) {
+            const box = document.getElementById('itemsScroll');
+            if (box && box.classList.contains('is-capped')) {
+                box.scrollTop = box.scrollHeight;
+            } else {
+                row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            const desc = row.querySelector('input[id$="-description"]');
+            if (desc) { desc.focus({ preventScroll: true }); }
+        }
+
+        ['addRowBtn', 'addRowBtnFoot'].forEach(function (id) {
+            const button = document.getElementById(id);
+            // An explicit tap reveals and focuses the new card; the automatic
+            // add above must not, or it would yank the caret out of the field
+            // being typed in.
+            if (button) { button.addEventListener('click', function () { addNewRow(true); }); }
+        });
+
+        // Blank scaffolding rows are marked for deletion rather than posted:
+        // the formset validates unit_price, and an untouched spare card would
+        // fail the whole save.
+        function dropEmptyRows() {
+            const rows = liveRows();
+            if (rows.length <= 1) { return; }
+            rows.forEach(function (row) {
+                const desc = row.querySelector('input[id$="-description"]').value.trim();
+                const price = num(row.querySelector('input[id$="-unit_price"]'));
+                if (!desc && !price) {
+                    const flag = row.querySelector('input[id$="-DELETE"]');
+                    if (flag) {
+                        flag.checked = true;
+                        row.classList.add('deleted-row');
+                    }
+                }
+            });
+        }
+
+        document.getElementById('templateForm').addEventListener('submit', function (event) {
+            if (isSubmitting) { return true; }
+            event.preventDefault();
+
+            dropEmptyRows();
+            calculateAllTotals();
+
+            const complete = liveRows().some(function (row) {
+                return row.querySelector('input[id$="-description"]').value.trim()
+                    && row.querySelector('input[id$="-quantity"]').value
+                    && row.querySelector('input[id$="-unit_price"]').value;
+            });
+            if (!complete) {
+                const box = document.getElementById('alertContainer');
+                box.innerHTML = '<div class="pb-alert pb-alert--error">'
+                    + 'Add at least one item with a description, a quantity and a price.</div>';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                return false;
+            }
+
+            isSubmitting = true;
+            this.submit();
+        });
+    });
+</script>
+{% endblock %}

@@ -312,7 +312,7 @@ def appointment_search_api(request):
     leads anybody spoke to, so they never appear here.
     """
     from ..models import Appointment
-    from django.db.models import Q
+    from ..lead_search import filter_leads
 
     query = request.GET.get('q', '').strip()
 
@@ -321,15 +321,9 @@ def appointment_search_api(request):
         .exclude(phone_number__startswith='quotation_only_')
         .exclude(phone_number__startswith='email_')
     )
-    if query:
-        qs = qs.filter(
-            Q(customer_name__icontains=query)  |
-            Q(phone_number__icontains=query)   |
-            Q(customer_area__icontains=query)  |
-            Q(customer_email__icontains=query) |
-            Q(project_type__icontains=query)
-        )
-    qs = qs.order_by('-updated_at')[:15 if query else 8]
+    # The same resolver the lead inbox and the priority board use: a lead that
+    # turns up on one screen and not another reads as missing data.
+    qs = filter_leads(qs, query).order_by('-updated_at')[:15 if query else 8]
  
     results = []
     for a in qs:
@@ -401,15 +395,35 @@ class QuotationTemplatesListView(ListView):
         return context
 
 
+# THE template builder, for both editors. It is the quote editor's layout,
+# because building a template is building a quote — see the header comment in
+# the file itself. `create_quotation_template.html` / `edit_quotation_template.html`
+# are deleted: two copies had drifted into two different products, one of them
+# printing every figure in rand.
+TEMPLATE_FORM_TEMPLATE = 'bot/pages/quotation_template_form.html'
+
+
+def template_form_context(request, mode, template=None):
+    """What both builder screens need. The currency is the TENANT's own, never
+    a symbol typed into the markup."""
+    from ..tenant_config import get_config
+
+    return {
+        'template_mode': mode,
+        'quote_currency': get_config(getattr(request, 'tenant', None)).currency,
+    }
+
+
 @method_decorator(staff_required, name='dispatch')
 class CreateQuotationTemplateView(CreateView):
     """Create a new quotation template"""
     model = QuotationTemplate
     form_class = QuotationTemplateForm
-    template_name = 'bot/pages/create_quotation_template.html'
+    template_name = TEMPLATE_FORM_TEMPLATE
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context.update(template_form_context(self.request, 'new'))
         if self.request.POST:
             context['formset'] = QuotationTemplateItemFormSet(self.request.POST)
         else:
@@ -454,7 +468,7 @@ class EditQuotationTemplateView(UpdateView):
     """Edit an existing quotation template"""
     model = QuotationTemplate
     form_class = QuotationTemplateForm
-    template_name = 'bot/pages/edit_quotation_template.html'
+    template_name = TEMPLATE_FORM_TEMPLATE
     
 
     def get_queryset(self):
@@ -475,6 +489,10 @@ class EditQuotationTemplateView(UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context.update(template_form_context(self.request, 'edit', self.object))
+        # The operator edits a global template through the same screen they
+        # created it on, so the checkbox has to be offered there too.
+        context['can_create_global'] = is_platform_owner(self.request.user)
         if self.request.POST:
             context['formset'] = QuotationTemplateItemFormSet(self.request.POST, instance=self.object)
         else:
@@ -484,7 +502,12 @@ class EditQuotationTemplateView(UpdateView):
     def form_valid(self, form):
         context = self.get_context_data()
         formset = context['formset']
-        
+
+        # Same rule as the create screen: the operator decides, and it is
+        # re-checked server-side rather than trusting the posted field.
+        if is_platform_owner(self.request.user):
+            form.instance.is_global = bool(self.request.POST.get('is_global'))
+
         if formset.is_valid():
             self.object = form.save()
             formset.instance = self.object

@@ -61,6 +61,7 @@ from ..utils import (
 
 logger = logging.getLogger(__name__)
 from ..services.lead_scoring import refresh_lead_score, calculate_lead_score
+from ..lead_search import filter_leads
 
 @method_decorator(staff_required, name='dispatch')
 class ConversationsView(ListView):
@@ -129,6 +130,9 @@ class ConversationsView(ListView):
             return timezone.now() - self.TAB_AGE_MAP[response_age]
         return None
 
+    def _search_query(self) -> str:
+        return (self.request.GET.get('q') or '').strip()
+
     def _resolve_age(self):
         """Return (status_filter, response_age) honouring per-tab defaults."""
         status_filter = self.request.GET.get('status_filter', 'all')
@@ -149,6 +153,7 @@ class ConversationsView(ListView):
         # Cache for get_context_data
         self._status_filter = status_filter
         self._response_age  = response_age
+        self._search        = self._search_query()
 
         has_project_type = Case(
             When(Q(project_type__isnull=False) & ~Q(project_type=''), then=Value(1)),
@@ -205,6 +210,15 @@ class ConversationsView(ListView):
             ).order_by('-updated_at')
         )
 
+        # A SEARCH IGNORES THE DATE WINDOW. Searching is how you go and find
+        # one particular person, and they are usually the one who has gone
+        # quiet — so honouring the window here answered "no such lead" for a
+        # lead we hold, with nothing on screen to say a filter had hidden them.
+        # It also searches the whole inbox rather than the 20 rows on this
+        # page, which is all the old typeahead could reach.
+        if self._search:
+            return filter_leads(queryset, self._search)
+
         cutoff = self._age_cutoff(response_age)
 
         # Booked = conversions, so its date window measures the booking date
@@ -242,10 +256,17 @@ class ConversationsView(ListView):
         status_filter = getattr(self, '_status_filter', 'all')
         response_age  = getattr(self, '_response_age',  self.DEFAULT_AGE)
 
+        search = getattr(self, '_search', '')
+
         base_qs = Appointment.objects.for_tenant_or_seed(getattr(self.request, 'tenant', None)).real()
-        cutoff = self._age_cutoff(response_age)
-        if cutoff:
-            base_qs = base_qs.filter(last_customer_response__gte=cutoff)
+        # The tab counts describe the list, so they follow it: a search widens
+        # to all time and narrows to the match, exactly as the rows do.
+        if search:
+            base_qs = filter_leads(base_qs, search)
+        else:
+            cutoff = self._age_cutoff(response_age)
+            if cutoff:
+                base_qs = base_qs.filter(last_customer_response__gte=cutoff)
 
         # Delayed = leads with a [DELAY_SIGNAL] in internal_notes that are still active
         delayed_qs = base_qs.filter(
@@ -307,6 +328,7 @@ class ConversationsView(ListView):
         context['selected_response_age'] = response_age
         context['selected_status_filter'] = status_filter
         context['age_filter_options'] = self.AGE_FILTER_OPTIONS
+        context['search_query'] = search
         return context
 
 
@@ -558,7 +580,9 @@ class PriorityLeadsView(TemplateView):
             # consistent with the nav badge / dashboard hot-lead count (also 7
             # days). Users can still widen via the Window selector.
             response_age = '1w_minus'
-        workspace = _priority_leads_workspace_data(response_age, tenant=getattr(self.request, 'tenant', None))
+        search = (self.request.GET.get('q') or '').strip()
+        workspace = _priority_leads_workspace_data(
+            response_age, tenant=getattr(self.request, 'tenant', None), search=search)
         very_hot_leads = workspace['very_hot_leads']
         hot_leads = workspace['hot_leads']
         warm_leads = workspace['warm_leads']
@@ -663,6 +687,7 @@ class PriorityLeadsView(TemplateView):
                 'cold_by_date': self._group_leads_by_date(cold_leads),
                 'total_leads': total_leads,
                 'selected_response_age': response_age,
+                'search_query': search,
                 'manual_followup_pending_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if not lead.manual_followup_done]),
                 'manual_followup_done_count': len([lead for lead in very_hot_leads + hot_leads + warm_leads + luke_warm_leads + cold_leads if lead.manual_followup_done]),
                 'sections': sections,

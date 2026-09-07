@@ -33,6 +33,23 @@
     transition: box-shadow var(--transition), background var(--transition);
   }
   .cv-search input:focus { outline: none; background: var(--color-surface-lowest); box-shadow: 0 0 0 3px rgba(0,101,145,0.15); }
+  .cv-search__clear {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--color-surface-mid);
+    color: var(--color-text-2);
+    font-size: 16px;
+    line-height: 1;
+    text-decoration: none;
+  }
 
   .cv-page { padding: 24px 32px 48px; max-width: 1160px; margin: 0 auto; }
 
@@ -190,6 +207,20 @@
   }
   .cv-empty i { font-size: 34px; opacity: 0.35; display: block; margin-bottom: 12px; }
 
+  .cv-searchnote {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--color-primary-fixed);
+    color: var(--color-on-primary-fixed-variant);
+    font-size: 13px;
+  }
+  .cv-searchnote a { color: inherit; font-weight: 600; }
+
   /* Pagination */
   .cv-pager { display: flex; align-items: center; justify-content: space-between; padding: 28px 4px 0; gap: 16px; flex-wrap: wrap; }
   .cv-pager__info { font-size: 13px; color: var(--color-muted); }
@@ -209,8 +240,10 @@
 
   @media (max-width: 640px) {
     .cv-topbar, .cv-page { padding-left: 16px; padding-right: 16px; }
-    .cv-topbar { margin: 0 -16px; }
-    .cv-search { display: none; }
+    .cv-topbar { margin: 0 -16px; flex-wrap: wrap; }
+    /* It used to be display:none below 640px — the one control for finding a
+       lead, hidden on the device the plumber actually carries. */
+    .cv-search { width: 100%; }
   }
 </style>
 {% endblock %}
@@ -218,10 +251,26 @@
 {% block content %}
 <div class="cv-topbar">
   <h1>Conversations</h1>
-  <div class="cv-search">
+  {% comment %}
+  A real search, not a filter over the 20 rows already on screen. It submits,
+  so it reaches every lead in the workspace, and it deliberately IGNORES the
+  date window: searching is how you go and find one particular person, and
+  that person is usually the one who has gone quiet.
+
+  The clear button is a link rather than a reset, because "clear" means go
+  back to the inbox, not empty the box and leave the results up.
+  {% endcomment %}
+  <form method="get" class="cv-search" role="search">
+    <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
     <i class="fas fa-search"></i>
-    <input id="cvSearch" type="text" placeholder="Search chats...">
-  </div>
+    <input id="cvSearch" type="search" name="q" value="{{ search_query }}"
+           placeholder="Search name, number or area" autocomplete="off"
+           aria-label="Search leads">
+    {% if search_query %}
+    <a class="cv-search__clear" href="?status_filter={{ selected_status_filter }}"
+       aria-label="Clear the search">&times;</a>
+    {% endif %}
+  </form>
 </div>
 
 <div class="cv-page">
@@ -234,13 +283,14 @@
       <p class="cv-sub">Engage with your customers and manage live service requests.</p>
     </div>
     <div class="cv-filters">
-      <a href="?status_filter=all&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
-      <a href="?status_filter=booked&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
-      <a href="?status_filter=pending&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
-      <a href="?status_filter=delayed&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
-      <a href="?status_filter=cancelled&response_age={{ selected_response_age }}" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
+      <a href="?status_filter=all&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="cv-filter {% if selected_status_filter == 'all' %}active{% endif %}">All</a>
+      <a href="?status_filter=booked&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="cv-filter {% if selected_status_filter == 'booked' %}active{% endif %}">Booked</a>
+      <a href="?status_filter=pending&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="cv-filter {% if selected_status_filter == 'pending' %}active{% endif %}">Pending</a>
+      <a href="?status_filter=delayed&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="cv-filter {% if selected_status_filter == 'delayed' %}active{% endif %}">Delayed</a>
+      <a href="?status_filter=cancelled&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}" class="cv-filter {% if selected_status_filter == 'cancelled' %}active{% endif %}">Cancelled</a>
       <form method="get" class="cv-datefilter">
         <input type="hidden" name="status_filter" value="{{ selected_status_filter }}">
+        {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
         <select name="response_age" aria-label="Filter by date" onchange="this.form.submit()">
           {% for value, label in age_filter_options %}
           <option value="{{ value }}" {% if selected_response_age == value %}selected{% endif %}>{{ label }}</option>
@@ -250,12 +300,25 @@
     </div>
   </div>
 
+  {% comment %}
+  A search widens the window to all time, so the page says so. A filter that
+  silently changes what it is searching is how "we have no such lead" gets
+  believed.
+  {% endcomment %}
+  {% if search_query %}
+  <p class="cv-searchnote">
+    <i class="fas fa-search"></i>
+    Searching every lead for <strong>{{ search_query }}</strong>,
+    ignoring the date filter.
+    <a href="?status_filter={{ selected_status_filter }}">Back to the inbox</a>
+  </p>
+  {% endif %}
+
   <div class="cv-list" id="cvList">
     {% for appointment in appointments %}
     {% with last=appointment.conversation_history|last %}
     {% firstof appointment.customer_name appointment.phone_number "this lead" as lead_label %}
-    <div class="cv-item"
-         data-search="{{ appointment.customer_name|default:''|lower }} {{ appointment.phone_number|default:''|lower }} {{ appointment.project_type|default:''|lower }}">
+    <div class="cv-item">
     <a class="cv-card" href="{% url 'conversation_detail' appointment.pk %}">
       <div class="cv-avatar" style="background:{% cycle '#006591' '#4648d4' '#0ea5e9' '#0f766e' '#8a5100' '#576065' %};">
         {{ appointment.customer_name|default:appointment.phone_number|default:"AP"|slice:":2"|upper }}
@@ -308,9 +371,22 @@
     </div>
     {% endwith %}
     {% empty %}
+    {% comment %}
+    Two different messages: "you have nothing here" and "your search found
+    nothing" are not the same fact, and offering the date filter to someone who
+    is searching would send them the wrong way.
+    {% endcomment %}
     <div class="cv-empty">
+      {% if search_query %}
+      <i class="fas fa-search"></i>
+      <div>No lead matches &ldquo;{{ search_query }}&rdquo;.</div>
+      <div style="margin-top:10px;">
+        <a href="?status_filter={{ selected_status_filter }}">Back to the inbox</a>
+      </div>
+      {% else %}
       <i class="fas fa-comment-slash"></i>
       <div>No conversations in this view.</div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -322,18 +398,18 @@
       {# previous/next_page_number RAISE EmptyPage at the ends — resolve them only behind has_previous/has_next (prod 500 on /conversations/ page 1) #}
       {% if page_obj.has_previous %}
       <a class="cv-pg"
-         href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.previous_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"><i class="fas fa-chevron-left" style="font-size:12px;"></i></a>
       {% else %}
       <span class="cv-pg is-disabled"><i class="fas fa-chevron-left" style="font-size:12px;"></i></span>
       {% endif %}
       {% for num in paginator.page_range %}
         {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
-        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}">{{ num }}</a>
+        <a class="cv-pg {% if page_obj.number == num %}active{% endif %}" href="?page={{ num }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}">{{ num }}</a>
         {% endif %}
       {% endfor %}
       {% if page_obj.has_next %}
       <a class="cv-pg"
-         href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
+         href="?page={{ page_obj.next_page_number }}&status_filter={{ selected_status_filter }}&response_age={{ selected_response_age }}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}"><i class="fas fa-chevron-right" style="font-size:12px;"></i></a>
       {% else %}
       <span class="cv-pg is-disabled"><i class="fas fa-chevron-right" style="font-size:12px;"></i></span>
       {% endif %}
@@ -352,18 +428,9 @@
         if (f) el.textContent = f;
       });
     }
-    var search = document.getElementById('cvSearch');
-    // Hide the whole row (card + delete control), not just the card.
-    var cards = Array.prototype.slice.call(document.querySelectorAll('#cvList .cv-item'));
-    if (search) {
-      search.addEventListener('input', function () {
-        var term = search.value.trim().toLowerCase();
-        cards.forEach(function (c) {
-          var hay = c.getAttribute('data-search') || '';
-          c.style.display = hay.indexOf(term) > -1 ? '' : 'none';
-        });
-      });
-    }
   });
+  // NOTE: the search is submitted, not filtered in the browser. Hiding rows
+  // could only ever reach the 20 already on this page, so a lead on page 2 or
+  // outside the date window looked like a lead we do not have.
 </script>
 {% endblock %}

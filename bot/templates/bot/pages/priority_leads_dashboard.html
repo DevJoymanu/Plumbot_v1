@@ -107,6 +107,39 @@
 
     .filter-field { flex: 1 1 260px; min-width: 0; }
 
+    /* The search box matches the select beside it: same pill, same height,
+       so the filter row reads as one control strip rather than two. */
+    .filter-row input[type="search"] {
+        width: 100%;
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        border-radius: var(--radius-pill);
+        padding: 12px 18px;
+        font-size: 0.95rem;
+        background-color: var(--color-surface-low);
+        color: var(--color-text);
+        min-height: 48px;
+        font-family: inherit;
+    }
+
+    .filter-row input[type="search"]:focus {
+        outline: 2px solid rgba(14, 165, 233, 0.35);
+        background-color: var(--color-surface-lowest);
+    }
+
+    .pl-searchnote {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 12px 0 0;
+        padding: 10px 14px;
+        border-radius: var(--radius-md);
+        background: var(--color-primary-fixed);
+        color: var(--color-on-primary-fixed-variant);
+        font-size: 13px;
+    }
+    .pl-searchnote a { color: inherit; font-weight: 600; }
+
     .filter-row select {
         width: 100%;
         border: 1px solid rgba(0, 101, 145, 0.12);
@@ -722,6 +755,17 @@
 
     <div class="filter-card">
         <form method="get" class="filter-row">
+            {% comment %}
+            One box, and it searches every lead on the board: name, number,
+            area, email or job type. It deliberately IGNORES the time horizon,
+            because the lead you go looking for by name is usually the quiet
+            one the horizon has already filtered out.
+            {% endcomment %}
+            <div class="filter-field">
+                <label class="filter-label" for="pl-search">Find a lead</label>
+                <input type="search" id="pl-search" name="q" value="{{ search_query }}"
+                       placeholder="Name, number or area" autocomplete="off">
+            </div>
             <div class="filter-field">
                 <label class="filter-label" for="pl-response-age">Time horizon</label>
                 <select id="pl-response-age" name="response_age" aria-label="Filter by response age">
@@ -735,6 +779,14 @@
                 <a href="{% url 'priority_leads' %}" class="btn btn-light" role="button">Reset</a>
             </div>
         </form>
+        {% if search_query %}
+        <p class="pl-searchnote">
+            <i class="fas fa-search"></i>
+            Showing every lead matching <strong>{{ search_query }}</strong>,
+            ignoring the time horizon.
+            <a href="{% url 'priority_leads' %}">Back to the board</a>
+        </p>
+        {% endif %}
     </div>
 
     <div class="chip-row" role="tablist">

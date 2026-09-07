@@ -45,6 +45,7 @@ from .models import (
     Quotation,
     QuotationItem,
     QuotationTemplate,
+    QuotationTemplateItem,
     ScheduledFollowup,
     ScheduledReminder,
     Tenant,
@@ -853,13 +854,24 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
                               self._html(url),
                               f'{name} does not include quote_responsive_css.html')
 
-    def test_editable_item_tables_stack_on_mobile(self):
-        """The item editors opt into the stacked-card treatment."""
-        for name in ('edit_quotation', 'create_quotation_template',
-                     'edit_quotation_template'):
+    def test_no_item_editor_builds_its_list_as_a_wide_table(self):
+        """A nine-column table cannot be read on a phone.
+
+        The template builders used one and opted into `.pbq-table--edit` to
+        stack it; they now use the quote editor's `.pbq-item` cards instead,
+        which is the same answer arrived at properly. Either is acceptable —
+        a bare <table> of item rows is not.
+        """
+        for name in self.ITEM_EDITORS:
             with self.subTest(page=name):
-                self.assertIn('pbq-table--edit', self._html(self.quote_pages()[name]),
-                              f'{name} keeps a desktop-only item table')
+                html = self._html(self.quote_pages()[name])
+                # Only the entry list itself — the quote editors also render a
+                # read-only preview table, which is a document, not an editor.
+                panel = html.split('id="itemsScroll"', 1)[1].split('pbq-items-foot', 1)[0]
+                self.assertNotIn('<table', panel,
+                                 f'{name} builds its item list as a table')
+                self.assertIn('pbq-item', panel,
+                              f'{name} has no stacked item cards')
 
     #: Every screen where the user builds up a list of line items.
     ITEM_EDITORS = ('create_quotation', 'standalone_quotation', 'edit_quotation',
@@ -892,9 +904,10 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
                                  f'{name} still holds its totals inside the table')
                 self.assertIn('pbq-total-row--grand', html,
                               f'{name} has no totals block below the list')
-                # The rows scroll; the totals must sit outside that box.
+                # The list scrolls in its own box; the totals must sit outside
+                # it, which means after the box closes.
                 after_scroll_box = html.split('id="itemsScroll"', 1)[1]
-                self.assertLess(after_scroll_box.index('</table>'),
+                self.assertLess(after_scroll_box.index('pbq-items-foot'),
                                 after_scroll_box.index('pbq-total-row--grand'),
                                 f'{name} renders its totals inside the scroll box')
 
@@ -7753,3 +7766,354 @@ class SectionedEditorWorkflowTests(TestCase):
         html = self._html(reverse('create_quotation', args=[self.lead.pk]))
         self.assertIn('Quote workflow — shared responsive layer', html)
         self.assertEqual(html.count('<!DOCTYPE'), 1)
+
+
+class LeadSearchTests(StaffClientTestCase):
+    """One search, three screens.
+
+    The lead inbox filtered the 20 rows already on the page in JavaScript and
+    hid the box entirely on a phone; the priority board had no search at all.
+    Both now go through the same resolver as the quote editors' lead picker, so
+    a lead that turns up on one screen turns up on all of them.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.recent = make_lead(9660, customer_name='Rudo Chikafu',
+                                customer_area='Borrowdale',
+                                customer_email='rudo@example.com',
+                                project_type='bathroom_renovation',
+                                last_customer_response=timezone.now())
+        # The lead you go looking for by name is usually the quiet one, which
+        # is exactly what every default window filters out.
+        self.old = make_lead(9661, customer_name='Rudo Ncube',
+                             customer_area='Mabelreign',
+                             last_customer_response=timezone.now() - timedelta(days=120))
+
+    # -- the resolver --------------------------------------------------------
+
+    def test_a_number_is_matched_on_its_digits(self):
+        """People type a number the way they read it off a phone."""
+        from bot.lead_search import filter_leads
+        lead = make_lead(9662, customer_name='Digits')
+        lead.phone_number = 'whatsapp:+263771234567'
+        lead.save(update_fields=['phone_number'])
+
+        for typed in ('+263 77 123 4567', '263771234567', '0771234567', '771234567'):
+            with self.subTest(typed=typed):
+                found = filter_leads(Appointment.objects.all(), typed)
+                self.assertIn(lead, list(found), typed)
+
+    def test_the_same_fields_are_searched_everywhere(self):
+        from bot.lead_search import filter_leads
+        for query in ('Rudo Chikafu', 'Borrowdale', 'rudo@example.com',
+                      'bathroom_renovation'):
+            with self.subTest(query=query):
+                self.assertIn(self.recent,
+                              list(filter_leads(Appointment.objects.all(), query)))
+
+    def test_an_empty_search_changes_nothing(self):
+        from bot.lead_search import filter_leads
+        everything = Appointment.objects.all()
+        self.assertEqual(list(filter_leads(everything, '')), list(everything))
+        self.assertEqual(list(filter_leads(everything, '   ')), list(everything))
+
+    # -- the lead inbox ------------------------------------------------------
+
+    def _conversations(self, **params):
+        response = self.client.get(reverse('conversations_list'), params)
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def test_the_inbox_search_reaches_every_lead_not_just_this_page(self):
+        rows = self._conversations(q='Rudo').context['appointments']
+        self.assertEqual({lead.pk for lead in rows}, {self.recent.pk, self.old.pk})
+
+    def test_the_inbox_search_ignores_the_date_window(self):
+        """Honouring it answered "no such lead" about a lead we hold, with
+        nothing on screen to say a filter had hidden them."""
+        rows = self._conversations(q='Ncube', response_age='1w_minus').context['appointments']
+        self.assertEqual([lead.pk for lead in rows], [self.old.pk])
+
+    def test_the_inbox_says_the_window_is_off_while_searching(self):
+        body = self._conversations(q='Ncube').content.decode()
+        self.assertIn('ignoring the date filter', body)
+
+    def test_the_tab_counts_follow_the_search(self):
+        """Counts that described a different set from the rows would make the
+        tabs read as broken."""
+        counts = self._conversations(q='Ncube').context['status_counts']
+        self.assertEqual(counts['total'], 1)
+
+    def test_a_search_that_finds_nothing_says_so_in_its_own_words(self):
+        body = self._conversations(q='Nobody At All').content.decode()
+        self.assertIn('No lead matches', body)
+        self.assertNotIn('No conversations in this view', body)
+
+    def test_the_search_survives_the_tabs_and_the_pager(self):
+        body = self._conversations(q='Rudo').content.decode()
+        self.assertIn('q=Rudo', body)
+
+    def test_the_box_is_a_form_and_is_not_hidden_on_a_phone(self):
+        """It was display:none below 640px — the one control for finding a
+        lead, hidden on the device the plumber actually carries."""
+        body = self._conversations().content.decode()
+        self.assertIn('name="q"', body)
+        self.assertNotIn('.cv-search { display: none; }', body)
+
+    def test_the_search_stays_inside_the_workspace(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-search')
+        make_lead(9663, tenant=other, customer_name='Rudo Elsewhere')
+        rows = self._conversations(q='Rudo').context['appointments']
+        self.assertEqual({lead.pk for lead in rows}, {self.recent.pk, self.old.pk})
+
+    # -- the priority board --------------------------------------------------
+
+    def _priority(self, **params):
+        response = self.client.get(reverse('priority_leads'), params)
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def _priority_pks(self, response):
+        found = set()
+        for key in ('very_hot_leads', 'hot_leads', 'warm_leads',
+                    'luke_warm_leads', 'cold_leads'):
+            found |= {lead.pk for lead in response.context[key]}
+        return found
+
+    def test_the_board_has_a_search_box(self):
+        self.assertIn('name="q"', self._priority().content.decode())
+
+    def test_the_board_search_narrows_to_the_match(self):
+        response = self._priority(q='Chikafu')
+        self.assertEqual(self._priority_pks(response), {self.recent.pk})
+        self.assertEqual(response.context['total_leads'], 1)
+
+    def test_the_board_search_ignores_the_time_horizon(self):
+        """On this board the lead you search for by name is usually the quiet
+        one the horizon has already filtered out."""
+        response = self._priority(q='Ncube', response_age='1w_minus')
+        self.assertEqual(self._priority_pks(response), {self.old.pk})
+
+    def test_the_board_says_the_horizon_is_off_while_searching(self):
+        self.assertIn('ignoring the time horizon',
+                      self._priority(q='Ncube').content.decode())
+
+    def test_the_board_search_stays_inside_the_workspace(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-board')
+        make_lead(9664, tenant=other, customer_name='Rudo Elsewhere')
+        self.assertEqual(self._priority_pks(self._priority(q='Rudo')),
+                         {self.recent.pk, self.old.pk})
+
+    # -- and the quote editors' picker, on the same resolver -----------------
+
+    def test_the_quote_picker_finds_what_the_other_screens_find(self):
+        response = self.client.get(reverse('appointment_search_api'), {'q': 'Ncube'})
+        self.assertEqual([row['id'] for row in response.json()['appointments']],
+                         [self.old.pk])
+
+
+class OneTemplateBuilderTests(StaffClientTestCase):
+    """Building a template looks like building a quote, on ONE screen.
+
+    Create and edit were two files (835 + 972 lines) that had drifted the way
+    the three quote editors had before they were unified: the edit screen
+    printed every figure in RAND on a business quoting in US dollars, put Add
+    Item in a card header rather than under the list, and carried a warning
+    block the create screen had never heard of.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.template = QuotationTemplate.objects.create(
+            name='Standard Bathroom', project_type='bathroom_renovation',
+            tenant=Tenant.objects.get(slug='homebase'),
+            default_labor_cost=Decimal('120'),
+            default_transport_cost=Decimal('15'))
+        QuotationTemplateItem.objects.create(
+            template=self.template, description='Toilet suite',
+            quantity=1, unit_price=Decimal('180'))
+
+    def _builders(self):
+        return {
+            'create': reverse('create_quotation_template'),
+            'edit': reverse('edit_quotation_template', args=[self.template.pk]),
+        }
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    def test_both_builders_render_the_one_template(self):
+        for name, url in self._builders().items():
+            with self.subTest(screen=name):
+                response = self.client.get(url)
+                self.assertIn('bot/pages/quotation_template_form.html',
+                              [t.name for t in response.templates])
+
+    def test_the_two_old_files_are_gone(self):
+        """They are deleted, not merely unused: a file left behind is a file
+        somebody edits, and the drift starts again."""
+        from django.template.loader import get_template
+        from django.template import TemplateDoesNotExist
+
+        for name in ('bot/pages/create_quotation_template.html',
+                     'bot/pages/edit_quotation_template.html'):
+            with self.subTest(template=name):
+                with self.assertRaises(TemplateDoesNotExist):
+                    get_template(name)
+
+    def test_the_builder_is_laid_out_like_the_quote_editor(self):
+        """Same cards, same item panel, same totals block, same pinned bar."""
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                for marker in ('pbq-page', 'pbq-head__title', 'pbq-card',
+                               'pbq-section-title', 'pbq-items-panel',
+                               'pbq-items-bar', 'pbq-totals', 'pbq-actionbar'):
+                    self.assertIn(marker, html, f'{name} is missing {marker}')
+
+    def test_saving_is_the_last_thing_on_the_page(self):
+        """The quote editor ends on its action bar; a builder whose Save sat
+        in a card of its own halfway down taught a different habit."""
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                self.assertLess(html.index('pbq-items-panel'), html.index('id="saveBtn"'),
+                                f'{name} puts Save above the items')
+                self.assertLess(html.index('pbq-total-row--grand'), html.index('id="saveBtn"'),
+                                f'{name} puts Save above the totals')
+
+    def test_every_figure_is_in_the_tenants_own_currency(self):
+        """The edit screen printed "R 0.00" — rand, on a business quoting in
+        US dollars — because the symbol was typed into the markup."""
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                body = html[html.rindex('</style>'):]
+                self.assertIn('US$0.00', body, f'{name} does not use the tenant currency')
+                self.assertNotIn('R 0.00', body, f'{name} still prints rand')
+
+    def test_another_tenants_currency_follows_their_own_config(self):
+        other = Tenant.objects.create(name='Rand Plumbing', slug='rand-plumbing')
+        TenantProfile.objects.create(tenant=other, currency='R')
+        user = get_user_model().objects.create_user(
+            username='rand-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=other, role='staff')
+
+        from django.test import Client
+        client = Client()
+        client.force_login(user)
+        html = client.get(reverse('create_quotation_template')).content.decode()
+        self.assertIn('R0.00', html)
+
+    def test_the_item_list_is_cards_not_a_nine_column_table(self):
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                panel = html.split('id="itemsScroll"', 1)[1].split('pbq-items-foot', 1)[0]
+                self.assertNotIn('<table', panel)
+                self.assertIn('pbq-item__row', panel)
+
+    def test_the_list_opens_with_one_spare_card_not_five(self):
+        """Five blank forms were cheap as table rows and are five screens of
+        scaffolding as cards; the builder adds another as soon as the last is
+        filled."""
+        response = self.client.get(reverse('create_quotation_template'))
+        self.assertLessEqual(len(response.context['formset'].forms), 2)
+
+    # -- it still saves through the formset ---------------------------------
+
+    def _payload(self, **extra):
+        payload = {
+            'name': 'Kitchen Refit', 'project_type': 'kitchen_renovation',
+            'description': 'The usual kitchen job',
+            'default_labor_cost': '120', 'default_transport_cost': '15',
+            'is_active': 'on',
+            'items-TOTAL_FORMS': '2', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-description': 'Sink mixer', 'items-0-quantity': '1',
+            'items-0-unit_price': '75', 'items-0-category': 'fixtures',
+            'items-0-sort_order': '0',
+            'items-1-description': 'Waste trap', 'items-1-quantity': '2',
+            'items-1-unit_price': '12', 'items-1-category': 'pipes',
+            'items-1-sort_order': '1',
+        }
+        payload.update(extra)
+        return payload
+
+    def test_creating_a_template_still_works(self):
+        response = self.client.post(reverse('create_quotation_template'), self._payload())
+        self.assertEqual(response.status_code, 302)
+        created = QuotationTemplate.objects.get(name='Kitchen Refit')
+        self.assertEqual(
+            sorted(item.description for item in created.items.all()),
+            ['Sink mixer', 'Waste trap'])
+        self.assertEqual(created.default_labor_cost, Decimal('120'))
+
+    def test_editing_a_template_still_works(self):
+        item = self.template.items.first()
+        response = self.client.post(
+            reverse('edit_quotation_template', args=[self.template.pk]),
+            self._payload(**{
+                'name': 'Standard Bathroom v2',
+                'items-INITIAL_FORMS': '1',
+                'items-0-id': str(item.pk),
+                'items-0-description': 'Toilet suite',
+                'items-0-quantity': '1', 'items-0-unit_price': '190',
+                'items-0-category': 'fixtures', 'items-0-sort_order': '0',
+            }))
+        self.assertEqual(response.status_code, 302)
+        self.template.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual(self.template.name, 'Standard Bathroom v2')
+        self.assertEqual(item.unit_price, Decimal('190'))
+
+    def test_a_removed_item_reaches_the_server_as_a_deletion(self):
+        """The card is hidden in the browser, but the row has to arrive marked
+        DELETE or the formset simply keeps it."""
+        item = self.template.items.first()
+        self.client.post(
+            reverse('edit_quotation_template', args=[self.template.pk]),
+            self._payload(**{
+                'name': 'Standard Bathroom',
+                'items-TOTAL_FORMS': '2', 'items-INITIAL_FORMS': '1',
+                'items-0-id': str(item.pk),
+                'items-0-description': 'Toilet suite', 'items-0-quantity': '1',
+                'items-0-unit_price': '180', 'items-0-category': 'fixtures',
+                'items-0-sort_order': '0', 'items-0-DELETE': 'on',
+            }))
+        self.assertFalse(self.template.items.filter(pk=item.pk).exists())
+
+    # -- the global checkbox, on both screens --------------------------------
+
+    def _owner(self):
+        owner = get_user_model().objects.create_user(
+            username='adminJ', password='pass12345', is_staff=True, is_superuser=True)
+        TenantMembership.objects.create(
+            user=owner, tenant=Tenant.objects.get(slug='homebase'), role='staff')
+        self.client.force_login(owner)
+        return owner
+
+    def test_the_operator_can_unshare_a_template_from_the_edit_screen(self):
+        """The checkbox was create-only, so a template shared by mistake could
+        never be taken back."""
+        self.template.is_global = True
+        self.template.save(update_fields=['is_global'])
+        self._owner()
+
+        html = self._html(reverse('edit_quotation_template', args=[self.template.pk]))
+        self.assertIn('name="is_global"', html)
+
+        self.client.post(reverse('edit_quotation_template', args=[self.template.pk]),
+                         self._payload(name='Standard Bathroom'))
+        self.template.refresh_from_db()
+        self.assertFalse(self.template.is_global)
+
+    def test_a_client_editing_cannot_share_a_template(self):
+        """Hiding a checkbox is presentation, not permission."""
+        self.client.post(reverse('edit_quotation_template', args=[self.template.pk]),
+                         self._payload(name='Standard Bathroom', is_global='on'))
+        self.template.refresh_from_db()
+        self.assertFalse(self.template.is_global)
