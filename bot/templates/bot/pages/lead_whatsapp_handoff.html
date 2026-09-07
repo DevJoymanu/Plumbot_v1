@@ -1,0 +1,191 @@
+{% extends "bot/layouts/base.html" %}
+{% comment %}
+Message this lead from the plumber's OWN WhatsApp, with the message drafted.
+
+Two audiences on one page, deliberately separated:
+  * the panels show the plumber everything on file and everything missing;
+  * the textarea holds the message the CUSTOMER gets, short and asking one
+    thing, and it is editable because the draft is a starting point.
+
+The wa.me href is rebuilt from the textarea on every keystroke, so what the
+plumber edits is what actually goes. A link cannot carry anything but text, and
+nothing here sends: WhatsApp opens with the message ready and the plumber
+decides.
+{% endcomment %}
+{% block title %}Message {{ lead_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .lh-wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 64px; display: grid; gap: 18px; }
+  .lh-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .lh-head h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  .lh-head__sub { color: var(--color-muted); font-size: 13.5px; }
+
+  .lh-card {
+    background: var(--color-surface-lowest, #fff);
+    border: 1px solid rgba(0, 101, 145, 0.10);
+    border-radius: var(--radius-lg, 16px);
+    padding: 18px 20px;
+  }
+  .lh-card__label {
+    font-family: var(--font-label); font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--color-muted);
+    display: block; margin-bottom: 12px;
+  }
+
+  .lh-facts { display: grid; gap: 9px; margin: 0; }
+  .lh-fact { display: flex; gap: 12px; align-items: baseline; }
+  .lh-fact dt {
+    width: 92px; flex-shrink: 0; color: var(--color-muted); font-size: 12.5px;
+  }
+  .lh-fact dd { margin: 0; font-size: 14.5px; overflow-wrap: anywhere; }
+
+  .lh-gaps { display: flex; flex-wrap: wrap; gap: 7px; }
+  .lh-gap {
+    font-size: 12.5px; padding: 5px 12px; border-radius: 999px;
+    background: rgba(245, 158, 11, .14); color: #92600a;
+  }
+  .lh-none { color: var(--color-muted); font-size: 13.5px; margin: 0; }
+
+  #lhMessage {
+    width: 100%; min-height: 168px; resize: vertical;
+    border: 1.5px solid rgba(0, 101, 145, 0.12); border-radius: 12px;
+    background: var(--color-surface-low, #f4f8fb);
+    padding: 14px 16px; font: inherit; font-size: 15px; line-height: 1.55;
+    color: var(--color-text);
+  }
+  #lhMessage:focus { outline: none; box-shadow: 0 0 0 3px rgba(0,101,145,.16); }
+  .lh-hint { color: var(--color-muted); font-size: 12.5px; margin: 10px 0 0; }
+
+  .lh-actions { display: grid; gap: 10px; }
+  .lh-btn {
+    display: flex; align-items: center; gap: 13px;
+    padding: 15px 18px; border-radius: 14px; text-decoration: none;
+    border: 1px solid rgba(0, 101, 145, 0.12); background: var(--color-surface-lowest, #fff);
+    color: var(--color-text); cursor: pointer; font: inherit; text-align: left;
+    transition: transform .15s ease, opacity .15s ease;
+  }
+  .lh-btn:hover { transform: translateY(-1px); }
+  .lh-btn:active { transform: scale(.99); }
+  .lh-btn--wa { background: #25D366; border-color: #25D366; color: #fff; }
+  .lh-btn__icon { font-size: 19px; width: 26px; text-align: center; }
+  .lh-btn strong { display: block; font-size: 14.5px; font-weight: 600; }
+  .lh-btn small { display: block; font-size: 12.5px; opacity: .82; }
+  .lh-warn {
+    background: rgba(245, 158, 11, .12); border: 1px solid rgba(245, 158, 11, .3);
+    border-radius: 12px; padding: 13px 16px; font-size: 13.5px;
+  }
+  @media (max-width: 560px) { .lh-fact { flex-direction: column; gap: 2px; }
+    .lh-fact dt { width: auto; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lh-wrap">
+
+  <div class="lh-head">
+    <a href="{% url 'appointment_detail' appointment.pk %}" class="lh-btn" style="padding:9px 14px;">
+      <span class="lh-btn__icon"><i class="fas fa-arrow-left"></i></span>
+    </a>
+    <div>
+      <h1>Message {{ lead_name }}</h1>
+      <span class="lh-head__sub">
+        {% if lead_wa_digits %}+{{ lead_wa_digits }}{% else %}No WhatsApp number on this lead{% endif %}
+        &middot; sends from your own WhatsApp
+      </span>
+    </div>
+  </div>
+
+  <div class="lh-card">
+    <span class="lh-card__label">What we have</span>
+    {% if collected %}
+    <dl class="lh-facts">
+      {% for label, value in collected %}
+      <div class="lh-fact"><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% else %}
+    <p class="lh-none">Nothing on file yet. They have not told us anything the bot could pick up.</p>
+    {% endif %}
+  </div>
+
+  <div class="lh-card">
+    <span class="lh-card__label">Still missing</span>
+    {% if missing %}
+    <div class="lh-gaps">
+      {% for label, question in missing %}<span class="lh-gap">{{ label }}</span>{% endfor %}
+    </div>
+    <p class="lh-hint">The draft asks for the first of these. Ask for one thing at a time; people answer the last question only.</p>
+    {% else %}
+    <p class="lh-none">Nothing. You have everything you need to book them in.</p>
+    {% endif %}
+  </div>
+
+  <div class="lh-card">
+    <span class="lh-card__label">Your message</span>
+    <textarea id="lhMessage" spellcheck="true">{{ prefilled_message }}</textarea>
+    <p class="lh-hint">Edit it however you like. What is in this box is what WhatsApp opens with.</p>
+  </div>
+
+  <div class="lh-actions">
+    {% if lead_wa_digits %}
+    <a class="lh-btn lh-btn--wa" id="lhOpen" target="_blank" rel="noopener"
+       href="https://wa.me/{{ lead_wa_digits }}?text={{ prefilled_message|urlencode }}">
+      <span class="lh-btn__icon"><i class="fab fa-whatsapp"></i></span>
+      <span>
+        <strong>Open {{ lead_name }}'s chat</strong>
+        <small>Goes straight to their chat with this message ready to send.</small>
+      </span>
+    </a>
+    {% else %}
+    <div class="lh-warn">
+      This lead has no WhatsApp number on file, so there is no chat to open.
+      Copy the message and reach them another way.
+    </div>
+    {% endif %}
+
+    <button type="button" class="lh-btn" id="lhCopy">
+      <span class="lh-btn__icon"><i class="far fa-copy"></i></span>
+      <span>
+        <strong>Copy the message</strong>
+        <small id="lhCopyHint">Puts it on the clipboard.</small>
+      </span>
+    </button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var box  = document.getElementById('lhMessage');
+    var open = document.getElementById('lhOpen');
+    var copy = document.getElementById('lhCopy');
+    var hint = document.getElementById('lhCopyHint');
+    var digits = "{{ lead_wa_digits|escapejs }}";
+
+    // Rebuild the link from the box on every edit, or the plumber's changes
+    // are shown on screen and thrown away at the moment they tap send.
+    function sync() {
+      if (!open || !digits) { return; }
+      open.href = 'https://wa.me/' + digits +
+                  '?text=' + encodeURIComponent(box.value);
+    }
+    if (box) { box.addEventListener('input', sync); sync(); }
+
+    if (copy && box) {
+      copy.addEventListener('click', function () {
+        var done = function () {
+          hint.textContent = 'Copied.';
+          setTimeout(function () { hint.textContent = 'Puts it on the clipboard.'; }, 2200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(box.value).then(done, function () {
+            box.select(); document.execCommand('copy'); done();
+          });
+        } else {
+          box.select(); document.execCommand('copy'); done();
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

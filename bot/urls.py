@@ -113,6 +113,8 @@ urlpatterns = [
     # token-gated single-use form the other two quote paths use.
     path('appointments/<int:pk>/phone-quote/', phone_quote_views.phone_quote_start, name='phone_quote_start'),
     path('phone-quote/<str:token>/', phone_quote_views.phone_quote_form, name='phone_quote_form'),
+    # Message the lead from the plumber's own WhatsApp, drafted.
+    path('appointments/<int:pk>/message/', phone_quote_views.lead_whatsapp_handoff, name='lead_whatsapp_handoff'),
     path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
     # Public and token-gated, like the site-visit form: the plumber taps it
     # from an email on their phone with no session. Added to

@@ -168,3 +168,34 @@ def _route_other_outcome(row, outcome, user=None):
         apt.is_lead_active = False
         apt.save(update_fields=['is_lead_active'])
         _append_admin_note(apt, 'Lead not proceeding (said so on the phone).')
+
+
+@staff_required
+def lead_whatsapp_handoff(request, pk):
+    """Message this lead from the plumber's OWN WhatsApp, message drafted.
+
+    Same handoff as the quote, for the same two reasons: it comes from the
+    number the customer already knows, and a wa.me link is not bound by the 24h
+    messaging window that stops the bot's own sends. What is added is the
+    drafting, so the plumber does not have to read back through the transcript
+    to work out what we know and what is still missing.
+
+    Nothing is sent from here and nothing is recorded as sent: the link opens
+    WhatsApp with the text ready and the plumber decides what goes.
+    """
+    from ..lead_handoff import build_message, collected, missing
+    from ..utils import clean_phone_number
+
+    appointment = get_object_or_404(
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)),
+        pk=pk)
+
+    return render(request, 'bot/pages/lead_whatsapp_handoff.html', {
+        'appointment': appointment,
+        'lead_name': (appointment.customer_name or '').strip() or 'this lead',
+        'lead_wa_digits': clean_phone_number(appointment.phone_number or ''),
+        'collected': collected(appointment),
+        'missing': missing(appointment),
+        'prefilled_message': build_message(appointment),
+        'active_nav': 'appointments',
+    })

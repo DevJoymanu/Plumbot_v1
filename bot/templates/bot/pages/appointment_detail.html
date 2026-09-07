@@ -2229,6 +2229,10 @@
                  class="visit-prompt-btn visit-prompt-btn--ghost">
                 <i class="fas fa-phone"></i> Quote on the phone
               </a>
+              <a href="{% url 'lead_whatsapp_handoff' appointment.pk %}"
+                 class="visit-prompt-btn visit-prompt-btn--ghost">
+                <i class="fab fa-whatsapp"></i> Message them
+              </a>
             </div>
           </div>
           {% endif %}
