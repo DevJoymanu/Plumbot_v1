@@ -1,0 +1,70 @@
+{% comment %}
+What the lead sees after tapping yes or no in the check-in email.
+
+Four states: confirmed, declined, already answered, and a failed diary write.
+The last one matters most: if the booking did not save we must not tell them it
+did, so it says plainly that we will be in touch instead.
+{% endcomment %}<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>{{ appointment.tenant.name|default:"Plumbot" }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&amp;family=Geist:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+  :root { --primary: #006591; --on-surface: #0b1c30; --variant: #3e4850; }
+  body {
+    margin: 0; padding: 64px 16px; min-height: 100vh;
+    font-family: Inter, -apple-system, "Segoe UI", Arial, sans-serif;
+    font-weight: 300; font-size: 16px; line-height: 24px;
+    background: #f8f9ff; color: var(--on-surface);
+  }
+  .glow {
+    max-width: 560px; margin: 0 auto; padding: 40px 32px; text-align: center;
+    background: rgba(248, 249, 255, 0.85); backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 101, 145, 0.1); border-radius: 16px;
+    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08);
+  }
+  .kicker {
+    font-family: Geist, Inter, sans-serif; font-weight: 500; font-size: 12px;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--primary); margin: 0 0 8px;
+  }
+  h1 { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 12px; }
+  p { color: var(--variant); margin: 0 0 12px; }
+  .icon {
+    font-family: 'Material Symbols Outlined'; font-size: 48px; color: var(--primary);
+    font-variation-settings: 'FILL' 0, 'wght' 300; display: block; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+  <div class="glow">
+    {% if state == 'error' %}
+      <span class="icon">error</span>
+      <p class="kicker">Something went wrong</p>
+      <h1>We could not save that</h1>
+      <p>Nothing has been booked. We will be in touch to sort it out.</p>
+    {% elif state == 'already' %}
+      <span class="icon">check_circle</span>
+      <p class="kicker">Already answered</p>
+      <h1>We have got this one</h1>
+      <p>You have already answered about this visit, so there is nothing more
+         to do here.</p>
+    {% elif state == 'confirmed' %}
+      <span class="icon">event_available</span>
+      <p class="kicker">Booked</p>
+      <h1>See you on {{ row.proposed_date|date:"l d F" }}</h1>
+      <p>That is in the diary. We will come and measure up, and you get an
+         exact price with nothing added later.</p>
+    {% else %}
+      <span class="icon">event_busy</span>
+      <p class="kicker">Noted</p>
+      <h1>No problem</h1>
+      <p>We have taken that day off the diary. Message us whenever suits and we
+         will find one that works.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Slow lead nudge (reasoning controller, Phase 1).
+# A lead who has gone quiet but is still ready gets the ask LOWERED, not the
+# destination dropped. A lead blocked on logistics gets two real days. Nobody
+# in this state gets offered a catalogue or asked for an email: given a way
+# out, they take it, and the booking never happens.
+#
+# The portfolio and the email ask still belong to the genuinely future dated
+# lead, where the portfolio is the reason we can ask for an email at all.
+
+> Hie, I need my bathroom done
+reject: US$
+
+> Full redo, new tub and shower
+reject: US$
+
+> I'm at work most days so it's hard
+expect: evenings and weekends
+reject: portfolio
+reject: email
+reject: catalogue

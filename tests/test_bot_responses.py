@@ -1132,11 +1132,63 @@ try:
     _photo_ack = _compose_media_ack('complete', 'confirmed', 'image',
                                     is_plan_document=False)
     results.log(
-        "plan ack: a plan is quoted, an ordinary photo is still kept for the visit",
-        ("written quotation" in _plan_ack
-         and "when we come round" in _photo_ack
-         and "written quotation" not in _photo_ack),
+        "plan ack: a plan is not filed for the visit the way a photo is",
+        ("when we come round" in _photo_ack
+         and "when we come round" not in _plan_ack),
         got=f"plan={_plan_ack!r} photo={_photo_ack!r}",
+    )
+    # THE QUOTE IS RAISED ONLY WHEN THE CUSTOMER ASKS FOR ONE. Sending a plan
+    # is not asking, so no acknowledgement of one mentions a quote.
+    _plan_desc = _compose_media_ack('project_description', 'pending', 'document',
+                                    is_plan_document=True)
+    for _label, _txt in (('complete', _plan_ack), ('description', _plan_desc)):
+        results.log(
+            f"plan ack ({_label}): never raises the quote unasked",
+            'quot' not in _txt.lower(), got=repr(_txt))
+        # And the bot never claims it will write one. It prices nothing, and it
+        # speaks as the business, not about a third party.
+        results.log(
+            f"plan ack ({_label}): no first-person quoting claim",
+            not any(c in _txt.lower() for c in
+                    ("i'll put", "i will put", "i'll go through",
+                     "i'll work through", "come back with a written")),
+            got=repr(_txt))
+    results.log(
+        "plan ack: the description ask names the work AND the requirements",
+        ("what work you need done" in _plan_desc
+         and "requirements or changes" in _plan_desc
+         and "a few words is fine" not in _plan_desc),
+        got=repr(_plan_desc),
+    )
+    results.log(
+        "plan ack: a photo still gets the short ask",
+        "a few words is fine" in _compose_media_ack(
+            'project_description', 'pending', 'image', is_plan_document=False),
+    )
+    # THE BOT DOES NOT QUOTE. It used to say "I'll go through it and put a
+    # written quotation together for you", which promises the customer a
+    # document from the wrong party — the plumber prices the drawing.
+    results.log(
+        "plan ack: the bot never claims it will write the quote",
+        not any(claim in _plan_ack.lower() for claim in
+                ("i'll put", "i will put", "i'll go through",
+                 "i'll work through", "come back with a written")),
+        got=repr(_plan_ack),
+    )
+    # A plan being priced needs a fuller answer than a photo does: the changes
+    # the customer wants are the whole point and are not on the paper.
+    _plan_desc = _compose_media_ack('project_description', 'pending', 'document',
+                                    is_plan_document=True)
+    results.log(
+        "plan ack: the description ask names the work AND the changes",
+        ("work you need done" in _plan_desc and "changes" in _plan_desc
+         and "a few words is fine" not in _plan_desc),
+        got=repr(_plan_desc),
+    )
+    results.log(
+        "plan ack: a photo still gets the short ask",
+        "a few words is fine" in _compose_media_ack(
+            'project_description', 'pending', 'image', is_plan_document=False),
     )
 except Exception as e:
     results.log("definition / plan-by-sight handling", False, got=str(e))
@@ -2610,10 +2662,19 @@ try:
     # earlier).
     _jq_plan = _FakeSelfJQ("availability_date", area="Magunje", plan=True
                            )._build_job_quote_reply("english", "quote those please")
+    # This path is reached only because the customer ASKED for a quote, which
+    # is the one place the quote may be raised at all.
     results.log(
-        "job quote reply: a plan on file is quoted, not answered with the visit pitch",
-        ("written quotation" in _jq_plan.lower()
+        "job quote reply: a plan on file is priced, not answered with the visit pitch",
+        ("price it off the plan" in _jq_plan.lower()
          and "all-in figure free on a quick on-site visit" not in _jq_plan),
+        got=repr(_jq_plan),
+    )
+    results.log(
+        "job quote reply: we price it, not a third party, and not the bot alone",
+        ("we'll" in _jq_plan.lower() and 'plumber will' not in _jq_plan.lower()
+         and not any(c in _jq_plan.lower() for c in
+                     ("i'll work through", "come back with a written", "i'll put"))),
         got=repr(_jq_plan),
     )
     _jq_noplan = _FakeSelfJQ("availability_date", area="Magunje", plan=False
@@ -2890,6 +2951,13 @@ try:
             return False
         def _customer_name_declined(self):
             return False
+        # These cases are all the ORDINARY order. The plan path has its own
+        # question sequence and its own tests (PlanQuestionOrderTests); the
+        # fake-self only has to say it is not on it.
+        def _on_plan_path(self):
+            return False
+        def _plan_timeline_is_near(self):
+            return True
     results.log(
         "next question: captured description satisfies service_type (no opener bounce)",
         _FakeSelfNQ().get_next_question_to_ask() == "area",
@@ -4572,25 +4640,28 @@ class _StubLead:
 _fu = _FollowupCmd()
 
 # (label, ctwa, followup_count, hours_since_resp, expected_ready)
-# The cadence is 2 touches in the first 24h, 1 in 24-48h, 1 in 48-72h, measured
-# from the lead's last message. An ad lead has the full 72h window, so those
-# land at their written hours (COLD: 6, 13, 33, 60). Use +/-2h margins so the
+# FOUR touches for every lead, spread across the 24h they can actually be
+# reached in (COLD: ~3.6, ~8.6, ~13.5, ~18.9h). Use +/-2h margins so the
 # deterministic jitter (3-57 min) never flips a result.
+#
+# An ad lead is on the SAME schedule. They used to be given the three-day band
+# placement (6, 13, 33, 60h) on the belief that the 72h ad window let us keep
+# messaging. It does not: that window governs price, and permission is 24h from
+# the customer's last message for everyone. Real traffic settled it — sends to
+# ad leads between 24h and 48h bounced 131047 thirty-three times against ten
+# delivered, so touches three and four were mostly thrown away.
 _CTWA_CADENCE_CASES = [
-    ("ad FU1 before 6h",  True, 0, 4.0,  False),
-    ("ad FU1 after 6h",   True, 0, 8.5,  True),
-    ("ad FU2 before 13h", True, 1, 11.0, False),
-    ("ad FU2 after 13h",  True, 1, 15.5, True),
-    # Day two: exactly one touch in the 24-48h band.
-    ("ad FU3 before 33h", True, 2, 31.0, False),
-    ("ad FU3 after 33h",  True, 2, 35.5, True),
-    # Day three: the last chance before free-form sending shuts off for good.
-    ("ad FU4 before 60h", True, 3, 58.0, False),
-    ("ad FU4 after 60h",  True, 3, 62.5, True),
-    # A standard lead gets the same FOUR touches, but not the band placement -
-    # a touch written for 33h could only bounce with 131047 on a window that
-    # shut at 24h. They are spread across the window they have instead
-    # (COLD: ~3.6, ~8.6, ~13.5, ~18.9h).
+    ("ad FU1 before 3.6h",  True, 0, 2.0,  False),
+    ("ad FU1 after 3.6h",   True, 0, 5.5,  True),
+    ("ad FU2 before 8.6h",  True, 1, 7.0,  False),
+    ("ad FU2 after 8.6h",   True, 1, 10.5, True),
+    # The touches that used to sit on day two and day three now land inside the
+    # window, where they can be delivered.
+    ("ad FU3 before 13.5h", True, 2, 12.0, False),
+    ("ad FU3 after 13.5h",  True, 2, 15.5, True),
+    ("ad FU4 before 18.9h", True, 3, 17.0, False),
+    ("ad FU4 after 18.9h",  True, 3, 21.0, True),
+    # A standard lead: identical, and always was.
     ("organic FU1 before 3.6h",  False, 0, 2.0,  False),
     ("organic FU1 after 3.6h",   False, 0, 5.5,  True),
     ("organic FU2 before 8.6h",  False, 1, 7.0,  False),
@@ -4654,15 +4725,34 @@ results.log(
     got=f"ctwa={_max_fu_ctwa(_StubLead(True, 0, 0.0))} "
         f"organic={_max_fu_ctwa(_StubLead(False, 0, 0.0))}",
 )
-# ...and only the 72h lead is on the band placement.
+# ...and NOBODY is on the band placement any more, ad lead included.
+#
+# The bands describe a three-day schedule, and no lead has three days. Meta
+# gives 24h from the customer's last message, to everyone: the 72h ad window is
+# a price, not permission. We believed otherwise and it cost us — over 30 days,
+# sends to ad leads between 24h and 48h bounced 131047 thirty-three times and
+# landed ten, so those leads were getting two of their four touches.
+#
+# The band table stays as the documented shape the fractions are derived from,
+# and would come back into play if Meta ever grants longer. Today it is
+# unreachable, and this case is what says so out loud.
 _org_offs_sl = _fu._followup_offsets(_StubLead(False, 0, 0.0))
+_ad_offs_sl = _fu._followup_offsets(_StubLead(True, 0, 0.0))
 results.log(
-    "followup cadence: only a 72h window uses the literal band hours",
-    _fu._followup_offsets(_StubLead(True, 0, 0.0)) == _BAND_OFFS[_LS.COLD]
-    and _org_offs_sl != _BAND_OFFS[_LS.COLD]
-    and all(o < 24 for o in _org_offs_sl),
-    got=f"ad={_fu._followup_offsets(_StubLead(True, 0, 0.0))} organic="
-        f"{[round(o, 1) for o in _org_offs_sl]}",
+    "followup cadence: an ad lead is scheduled inside the day it can be reached",
+    all(o < 24 for o in _ad_offs_sl) and len(_ad_offs_sl) == 4,
+    got=f"ad={[round(o, 1) for o in _ad_offs_sl]}",
+)
+results.log(
+    "followup cadence: the ad lead gets the same placement as anyone else",
+    [round(o, 1) for o in _ad_offs_sl] == [round(o, 1) for o in _org_offs_sl],
+    got=f"ad={[round(o, 1) for o in _ad_offs_sl]} "
+        f"organic={[round(o, 1) for o in _org_offs_sl]}",
+)
+results.log(
+    "followup cadence: nothing reaches the three-day band hours now",
+    _ad_offs_sl != _BAND_OFFS[_LS.COLD] and _org_offs_sl != _BAND_OFFS[_LS.COLD],
+    got=f"bands={_BAND_OFFS[_LS.COLD]}",
 )
 
 # next_followup_due_at powers the UI "next follow-up" chip. It must agree with the
@@ -4710,8 +4800,10 @@ results.log("next_window_open: 01:52 -> same-day 12:33",
             _win(1, 52) == '2026-06-23 12:33', got=_win(1, 52))
 results.log("next_window_open: 13:00 stays 13:00 (in the midday window)",
             _win(13, 0) == '2026-06-23 13:00', got=_win(13, 0))
-results.log("next_window_open: 14:30 -> same-day 16:03 (between the windows)",
-            _win(14, 30) == '2026-06-23 16:03', got=_win(14, 30))
+from bot.management.commands import send_followups as _fu_mod
+_EVE_OPEN = '{:02d}:{:02d}'.format(*_fu_mod.CONTACT_WINDOWS[1][:2])
+results.log("next_window_open: between the windows -> the evening opening",
+            _win(14, 45) == f'2026-06-23 {_EVE_OPEN}', got=_win(14, 45))
 results.log("next_window_open: 21:30 -> next-day 12:33",
             _win(21, 30) == '2026-06-24 12:33', got=_win(21, 30))
 # Non-CTWA COLD lead, no follow-ups → attempt 1, ad flag false.
@@ -4761,20 +4853,35 @@ results.log("messaging window: organic closes ~23h out",
 results.log("messaging window: organic closed after 25h",
             _mk_appt(last_msg_hours_ago=25).messaging_window_open is False)
 
-# Fresh ad lead (entry 1h ago) → 72h window, closes ~71h out (entry+72h wins).
+# An ad lead gets the SAME 24h to send in as anyone else. The 72h free entry
+# point governs what a send COSTS, never whether it is allowed, and treating it
+# as permission is what had ad follow-ups bouncing: over 30 days of real
+# traffic, sends between 24h and 48h after the lead's last message bounced
+# 131047 thirty-three times and landed ten.
 _ad = _mk_appt(ctwa_hours_ago=1, last_msg_hours_ago=1)
-results.log("messaging window: ad kind=72h",
-            _ad.messaging_window_kind == '72h', got=_ad.messaging_window_kind)
+results.log("messaging window: an ad lead is still a 24h window",
+            _ad.messaging_window_kind == '24h', got=_ad.messaging_window_kind)
 _ad_h = (_ad.messaging_window_closes_at - _tz.now()).total_seconds() / 3600
-results.log("messaging window: ad closes ~71h out (72h from entry)",
-            70.5 <= _ad_h <= 71.5, got=f"{_ad_h:.2f}h")
+results.log("messaging window: the ad window does not extend permission",
+            22.5 <= _ad_h <= 23.5, got=f"{_ad_h:.2f}h")
 
-# Ad lead 80h past entry but messaged 1h ago → 24h rule keeps it open (max wins).
+# Two days after the tap, with no reply, an ad lead is shut like anyone else.
+results.log("messaging window: an ad lead is closed 25h after their message",
+            _mk_appt(ctwa_hours_ago=48, last_msg_hours_ago=25)
+            .messaging_window_open is False)
+
+# But a reply reopens it, whatever the ad window is doing.
 _ad2 = _mk_appt(ctwa_hours_ago=80, last_msg_hours_ago=1)
-results.log("messaging window: ad past 72h but recent msg stays open",
+results.log("messaging window: a reply reopens it long after the ad window",
             _ad2.messaging_window_open is True)
-results.log("messaging window: still tagged 72h (lead type)",
-            _ad2.messaging_window_kind == '72h')
+
+# The tap is a last-resort anchor when no inbound was recorded. Still 24h from
+# it — an anchor, not an extension.
+_ad3 = _mk_appt(ctwa_hours_ago=1)
+results.log("messaging window: an ad tap anchors the window when nothing else does",
+            _ad3.messaging_window_open is True)
+results.log("messaging window: and it anchors 24h, not 72h",
+            22.5 <= (_ad3.messaging_window_closes_at - _tz.now()).total_seconds() / 3600 <= 23.5)
 
 # Ad lead 80h past entry and last message 30h ago → fully closed.
 results.log("messaging window: ad fully closed",
@@ -5462,17 +5569,30 @@ try:
         )
 
     # The mirror of _next_window_open: the last minute we may still send.
-    results.log("sending hours: 06:00 rolls BACK to the previous evening 18:29",
-                _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M') == '22 18:29',
+    # Derived from CONTACT_WINDOWS: the last sendable minute is one before the
+    # close, because the windows are half-open. Computed here rather than added
+    # to send_followups — production code should not grow a helper that only a
+    # test needs.
+    def _last_minute(window):
+        mins = window[2] * 60 + window[3] - 1
+        return '{:02d}:{:02d}'.format(mins // 60, mins % 60)
+
+    _MID_LAST = _last_minute(_fu_mod.CONTACT_WINDOWS[0])
+    _EVE_LAST = _last_minute(_fu_mod.CONTACT_WINDOWS[1])
+    results.log("sending hours: 06:00 rolls BACK to the previous evening's last minute",
+                _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M')
+                == f'22 {_EVE_LAST}',
                 got=str(_fu2._window_moment_before(_at(6, 0))))
     results.log("sending hours: a deadline inside the midday window stays where it is",
                 _fu2._window_moment_before(_at(13, 0)).strftime('%d %H:%M') == '23 13:00',
                 got=str(_fu2._window_moment_before(_at(13, 0))))
-    results.log("sending hours: 15:00 rolls back to the midday window's 13:56",
-                _fu2._window_moment_before(_at(15, 0)).strftime('%d %H:%M') == '23 13:56',
+    results.log("sending hours: between the windows rolls back to the midday close",
+                _fu2._window_moment_before(_at(15, 0)).strftime('%d %H:%M')
+                == f'23 {_MID_LAST}',
                 got=str(_fu2._window_moment_before(_at(15, 0))))
-    results.log("sending hours: 22:30 rolls back to the same evening's 18:29",
-                _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M') == '23 18:29',
+    results.log("sending hours: after hours rolls back to the same evening's close",
+                _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M')
+                == f'23 {_EVE_LAST}',
                 got=str(_fu2._window_moment_before(_at(22, 30))))
 
     # A lead who wrote at 09:00: the last touch would naturally land ~04:00, in
@@ -5484,9 +5604,11 @@ try:
         _stranded._now = _at(19, 0, day=22)
         _due_fz = _fu2._scheduled_due_at(_stranded)
         _deadline = _fu2._last_sendable_moment(_stranded)
+    _eve_close_h, _eve_close_m = _fu_mod.CONTACT_WINDOWS[1][2:]
     results.log("sending hours: the last touch is pulled back before the window shuts",
-                _due_fz is not None and _due_fz <= _at(18, 30, day=22),
-                expected="on the 22nd, before 18:30",
+                _due_fz is not None
+                and _due_fz <= _at(_eve_close_h, _eve_close_m, day=22),
+                expected="on the 22nd, before the evening close",
                 got=str(_due_fz.astimezone(_sast_fz)) if _due_fz else 'None')
     results.log("sending hours: the pull-back leaves the cron room to catch it",
                 _deadline is not None and _due_fz <= _deadline - _td2(minutes=_LC_GRACE - 1),
@@ -5868,7 +5990,8 @@ try:
     _ack_plan = _compose_media_ack('area', 'pending', 'document',
                                    is_plan_document=True)
     results.log("media ack: a PDF is acknowledged as the plan, not as a photo",
-                _ack_plan.startswith("Got the plan"), got=_ack_plan)
+                _ack_plan.startswith("Thanks for sending the plan")
+                and 'photo' not in _ack_plan.lower(), got=_ack_plan)
 
     _ack_split = _compose_media_ack('availability_date', 'pending', 'image')
     results.log("media ack: ack and question go as two messages, not one block",
@@ -7167,6 +7290,203 @@ try:
 except Exception as e:
     results.log("quoted photo pricing", False, got=str(e))
 
+# --- Fixes from the 100-conversation replay (7 Sep 2026) ---------------------
+# Every case here pins a defect the replay measured on real traffic, so a later
+# edit that reintroduces one fails here rather than in production.
+try:
+    from bot import controller as _rctl
+    from bot.utils import enforce_single_question as _esq
+    from bot import whatsapp_webhook as _rwh
+
+    # 1. The projection may promote show_work. The model picked it on 2 of 215
+    #    eligible turns; the projection wanted it on 61 of the same turns.
+    class _RLead:
+        def __init__(self, desc='a full bathroom redo', shown=None, plan=None):
+            self.project_description = desc
+            self.previous_work_photos_sent_at = shown
+            self.plan_status = plan
+            self.has_plan = bool(plan)
+            self.conversation_history = []
+            self.customer_area = 'Ruwa'
+            self.project_type = 'bathroom_renovation'
+
+    _uc_ask = {'next_move': 'ask_qualifying_question', 'move_confidence': 0.9,
+               'intent': 'none', 'confidence': 'HIGH',
+               'state_update': {'want_level': 'interested'}}
+    _orig_proj = _rctl.project_next_move
+    try:
+        _rctl.project_next_move = lambda u, a: 'show_work'
+        results.log("replay fix: the projection promotes show_work over a question",
+                    _rctl.decide_move(_uc_ask, _RLead()) == 'show_work')
+        # ...but never past the gate that says the proof already went.
+        results.log("replay fix: promotion still respects 'shown once'",
+                    _rctl.decide_move(_uc_ask, _RLead(shown='2026-09-07')) is None)
+        # ...nor before we know what to match photos against.
+        results.log("replay fix: promotion still needs the job described",
+                    _rctl.decide_move(_uc_ask, _RLead(desc='')) is None)
+
+        # 2. book_visit is promoted ONLY at wants_it, because it states the fee.
+        _rctl.project_next_move = lambda u, a: 'book_visit'
+        _uc_wants = dict(_uc_ask, state_update={'want_level': 'wants_it'})
+        results.log("replay fix: the close fires when the lead says they want it",
+                    _rctl.decide_move(_uc_wants, _RLead(shown='2026-09-07')) == 'book_visit')
+        results.log("replay fix: below wants_it the fee is still held back",
+                    _rctl.decide_move(_uc_ask, _RLead(shown='2026-09-07')) is None)
+    finally:
+        _rctl.project_next_move = _orig_proj
+
+    # 3. One question per message: a trailing tie-down goes, a real ask stays.
+    results.log("replay fix: a trailing tie-down is dropped",
+                _esq("Just to confirm, is that the area you're in? Sharp?")
+                == "Just to confirm, is that the area you're in?")
+    results.log("replay fix: the budget tie-down survives (it is the only question)",
+                _esq("Toilet replacement starts from US$140. That sit alright "
+                     "with your budget?").endswith('budget?'))
+    results.log("replay fix: an either/or clarifier is left whole",
+                _esq("You're not in a specific area? Or did you mean you're not "
+                     "sure yet? Let me know.").count('?') == 2)
+    results.log("replay fix: a lone question is untouched",
+                _esq('What area are you in?') == 'What area are you in?')
+
+    # 4. A media turn is OUR words, never a request for the gallery.
+    for _d in ('[Sent image] This is a photo of a bathroom with a wall-hung basin.',
+               '[Sent image] A picture of a leaking pipe under a kitchen sink.',
+               '[Sent document] This is a hand-drawn floor plan, not a photo.'):
+        results.log("replay fix: a vision description is not a photo request",
+                    _rwh._explicitly_requests_photos(_d) is False
+                    and _rwh._explicitly_requests_catalogue(_d) is False,
+                    got=_d[:60])
+    results.log("replay fix: a real photo request still sends photos",
+                _rwh._explicitly_requests_photos('can I see some pics') is True)
+    results.log("replay fix: a real catalogue request still sends the catalogue",
+                _rwh._explicitly_requests_catalogue('send your products and prices')
+                is True)
+    # The re-entry must carry the marker, or the guard above never sees it.
+    _src_media = _inspect_r.getsource(_rwh.handle_media_message) if hasattr(
+        _rwh, 'handle_media_message') else _inspect_r.getsource(_rwh)
+    results.log("replay fix: the media re-entry carries the marker",
+                'MEDIA_TURN_PREFIX}{media_type}]' in _src_media)
+
+    # 5. Every send path goes through the outbound chain. 51 of 337 replies in
+    #    the replay carried dash punctuation because 21 sites skipped it.
+    _src_wh = _inspect_r.getsource(_rwh)
+    _launches = _src_wh.count('target=delayed_response')
+    _finalised = _src_wh.count('finalise_outbound(')
+    results.log("replay fix: finalise_outbound covers the send sites",
+                _finalised >= _launches - 5,
+                got='%d launches, %d finalise calls' % (_launches, _finalised))
+    # The catalogue branch is the one the replay caught red-handed.
+    # Slice from the BLOCK header, not the earlier comment that refers to it.
+    _cat = _src_wh[_src_wh.find('-- STEP 0d:'):]
+    _cat = _cat[:_cat.find('-- STEP 1:')]
+    results.log("replay fix: STEP 0d finalises before it logs and sends",
+                'finalise_outbound(price_text' in _cat
+                and _cat.find('finalise_outbound(price_text')
+                    < _cat.find('add_conversation_message'))
+except Exception as e:
+    results.log("replay fixes", False, got=str(e))
+
+# ── The proof step matches on the VISION DESCRIPTIONS ────────────────────────
+# The gallery is what we send as proof, and it only matches a lead's job
+# because every photo carries a written description of what is in it. Matching
+# on the curated `keywords` alone hit 4% of 328 real lead descriptions; reading
+# the descriptions took it to 97%. Nothing else in the code says the
+# descriptions must stay in the haystack, so it is said here: drop `vision`
+# from _job_haystack and these cases fail rather than the match rate silently
+# collapsing back to 4% in production.
+try:
+    from bot import portfolio_catalog as _pcj
+
+    _GALLERY = [
+        {'title': 'Piece one', 'price': '', 'description': '', 'keywords': [],
+         'vision': 'A white freestanding tub in a tiled bathroom.'},
+        {'title': 'Piece two', 'price': '', 'description': '', 'keywords': [],
+         'vision': 'A kitchen sink with a chrome mixer tap.'},
+        {'title': 'Piece three', 'price': '', 'description': '', 'keywords': [],
+         'vision': 'An electric geyser mounted above a ceiling hatch.'},
+    ]
+    _orig_items_for = _pcj.items_for
+    _orig_available = _pcj.item_is_available
+    try:
+        _pcj.items_for = lambda tenant=None: list(_GALLERY)
+        _pcj.item_is_available = lambda item: True
+
+        _m = _pcj.items_for_job('my geyser is leaking')
+        results.log("proof match: a job resolves off the vision description alone",
+                    bool(_m) and _m[0]['title'] == 'Piece three',
+                    got=[i['title'] for i in _m])
+
+        # Three-letter words are the trade's own words. A four-letter floor in
+        # _job_words threw away "tub" and "tap", so a lead who typed just "tub"
+        # matched nothing at all.
+        results.log("proof match: 'tub' is not filtered out as too short",
+                    [i['title'] for i in _pcj.items_for_job('tub')] == ['Piece one'])
+        results.log("proof match: 'tap' is not filtered out as too short",
+                    [i['title'] for i in _pcj.items_for_job('tap')] == ['Piece two'])
+
+        # UNDESCRIBED IS NOT SHOWN, and a title is not a description. The
+        # title is typed by hand on upload, so it records what the tenant
+        # meant to add. What was actually sitting in real galleries under
+        # plumbing titles: a chocolate biscuit advert titled "Toilet install",
+        # a screenshot of this CRM showing a customer's name and phone number
+        # titled "Cistern repair", a courier firm's admin panel with a staff
+        # username titled "Vanity unit", and a historical illustration of the
+        # slave trade titled "Pipe section replacement". Each matched a lead's
+        # job on its title alone and would have gone out as an example of the
+        # tenant's work.
+        _junk = {'title': 'Toilet install', 'price': '', 'description': '',
+                 'keywords': [], 'vision': ''}
+        _pcj.items_for = lambda tenant=None: [_junk]
+        results.log("proof match: an undescribed photo is never proof",
+                    _pcj.items_for_job('my toilet is blocked') == [])
+        results.log("proof match: a plumbing TITLE does not make it proof",
+                    _pcj.items_for_job('toilet install') == [])
+        # Same rule on the whole-gallery send, or "send me your portfolio"
+        # walks straight past the gate that the job match just closed.
+        results.log("gallery send: an undescribed photo is not in the gallery",
+                    _pcj.available_items() == [])
+        _pcj.items_for = lambda tenant=None: list(_GALLERY)
+        results.log("gallery send: a described photo still is",
+                    len(_pcj.available_items()) == len(_GALLERY))
+        results.log("both paths share one rule",
+                    _pcj.is_described({'vision': 'a tub'}) is True
+                    and _pcj.is_described({'vision': '   '}) is False
+                    and _pcj.is_described({'title': 'Toilet install'}) is False)
+
+        # A description of nothing we have must return nothing, never a
+        # default piece: an unrelated photo sent as "proof" reads as a bot
+        # that did not read the message.
+        results.log("proof match: an unrelated job matches nothing",
+                    _pcj.items_for_job('I need my driveway paved') == [])
+        results.log("proof match: an empty description matches nothing",
+                    _pcj.items_for_job('') == [])
+
+        # Scoring must not pay for a storage round-trip per photo. On R2
+        # item_is_available is a network call, so scoring the gallery through
+        # it meant fifteen of them before we knew we wanted to send anything.
+        _checked = []
+        _pcj.item_is_available = lambda item: (_checked.append(item['title']), True)[1]
+        _pcj.items_for_job('geyser', limit=1)
+        results.log("proof match: availability is checked only on what we send",
+                    len(_checked) == 1, got=_checked)
+
+        # A missing file falls through to the next best match rather than
+        # leaving us a photo short.
+        _pcj.item_is_available = lambda item: item['title'] != 'Piece three'
+        _gone = _pcj.items_for_job('geyser tub', limit=1)
+        results.log("proof match: a missing file is replaced, not left as a gap",
+                    [i['title'] for i in _gone] == ['Piece one'],
+                    got=[i['title'] for i in _gone])
+    finally:
+        _pcj.items_for = _orig_items_for
+        _pcj.item_is_available = _orig_available
+
+    _src_hay = _inspect_r.getsource(_pcj._job_haystack)
+    results.log("proof match: the descriptions are still in the haystack",
+                "'vision'" in _src_hay)
+except Exception as e:
+    results.log("proof match on vision descriptions", False, got=str(e))
+
 # ── The repeat-price recap is the TENANT's offer, not Homebase's ─────────────
 # It was a hardcoded "Our Facebook package is US$800 - freestanding tub and side
 # chamber" sent to every tenant's customers. Barmak's is US$900 with different
@@ -7253,6 +7573,684 @@ try:
                 'painting' in _uc._out_of_scope_services(None))
 except Exception as e:
     results.log("oos tenant-awareness", False, got=str(e))
+
+# ---- Reasoning controller, Phase 0: the planning half (spec §1, §4, §5) ----
+# Everything here is API-free by design. The controller's whole safety story is
+# that deterministic code decides what the model is ALLOWED to do, so that code
+# has to be pinned at the gate, not left to a live call.
+try:
+    from bot import controller as _ctl
+
+    class _FakeLead:
+        def __init__(self, **kw):
+            self.project_type = kw.get('project_type', '')
+            self.project_description = kw.get('project_description', '')
+            self.customer_area = kw.get('customer_area', '')
+            self.previous_work_photos_sent_at = kw.get('photos_at', None)
+            self.conversation_history = kw.get('history', [])
+            self.plan_status = kw.get('plan_status', None)
+            self.has_plan = kw.get('has_plan', None)
+
+    def _uc(**kw):
+        """A minimal unified_turn payload."""
+        base = {'intent': 'in_scope', 'confidence': 'HIGH',
+                'next_move': 'ask_qualifying_question', 'move_confidence': 0.8}
+        base.update(kw)
+        return base
+
+    # -- Validation: the planning half must be well-formed or it is dropped ---
+    results.log("controller: a complete plan validates",
+                _ctl.validate_turn(_uc()) == [])
+    results.log("controller: an unknown next_move is rejected",
+                bool(_ctl.validate_turn(_uc(next_move='wing_it'))))
+    results.log("controller: move_confidence out of range is rejected",
+                bool(_ctl.validate_turn(_uc(move_confidence=1.7))))
+    results.log("controller: mode=template with no template_id is rejected",
+                bool(_ctl.validate_turn(_uc(response={'mode': 'template'}))))
+    results.log("controller: an unknown template_id is rejected",
+                bool(_ctl.validate_turn(
+                    _uc(response={'mode': 'template',
+                                  'template_id': 'freestyle'}))))
+
+    # `confidence` already means the CLASSIFICATION's HIGH/LOW and is read by
+    # gates all over the bot. If the planner ever reclaims that key, a 0.8 would
+    # silently answer "is this classification reliable?" — so the planning
+    # number lives on its own key and the two must not collide.
+    _both = _uc(confidence='HIGH', move_confidence=0.9)
+    results.log("controller: planning confidence does not clobber HIGH/LOW",
+                _ctl.plan_confidence(_both) == 0.9
+                and _both.get('confidence') == 'HIGH')
+
+    # -- A missing plan degrades the planner and NOTHING else ----------------
+    # The classifier is load-bearing today; the planner drives nothing. A
+    # planless payload must therefore still be a usable classification.
+    _planless = {'intent': 'delay_signal', 'confidence': 'HIGH'}
+    results.log("controller: a planless payload is not 'attempted'",
+                not _ctl.planning_attempted(_planless))
+    results.log("controller: a planless payload yields no move",
+                _ctl.plan_next_move(_planless) is None)
+    results.log("controller: an absent move_confidence reads as 0.0, not neutral",
+                _ctl.plan_confidence(_planless) == 0.0)
+    results.log("controller: a malformed-but-present plan IS 'attempted'",
+                _ctl.planning_attempted(_uc(next_move='nonsense')))
+
+    # -- work_shown is a fact we own, never the model's opinion --------------
+    _said_shown = _uc(state_update={'work_shown': True, 'want_level': 'wants_it'})
+    results.log("controller: the model cannot claim photos were sent",
+                _ctl.work_already_shown(_FakeLead()) is False
+                and 'work_shown' not in _ctl.plan_state_update(_said_shown))
+    results.log("controller: work_shown reads the send timestamp",
+                _ctl.work_already_shown(_FakeLead(photos_at='2026-09-05')) is True)
+    results.log("controller: state_update drops invented keys",
+                _ctl.plan_state_update(
+                    _uc(state_update={'suburb': 'Budiriro',
+                                      'discount': '10%'})) == {'suburb': 'Budiriro'})
+
+    # -- The fee gate (spec §5): the fee never precedes the want -------------
+    _cold = _FakeLead(project_description='full ensuite redo')
+    results.log("fee gate: book_visit is held back below wants_it",
+                _ctl.apply_fee_gate('book_visit', _cold, 'interested') == 'show_work')
+    results.log("fee gate: once work is shown, held-back becomes a question",
+                _ctl.apply_fee_gate(
+                    'book_visit',
+                    _FakeLead(project_description='x', photos_at='2026-09-05'),
+                    'cold') == 'ask_qualifying_question')
+    results.log("fee gate: wants_it passes book_visit through",
+                _ctl.apply_fee_gate('book_visit', _cold, 'wants_it') == 'book_visit')
+    results.log("fee gate: it touches no other move",
+                _ctl.apply_fee_gate('show_work', _cold, 'cold') == 'show_work')
+
+    # -- The plan-path gate (spec §10): a held plan replaces the measure-up ---
+    # The lead's own drawing already carries the measurements, so pitching the
+    # paid visit asks them to pay for work they have already done. The rest of
+    # the flow is unchanged — description, area and timeline are still collected.
+    _plan_lead = _FakeLead(project_description='full ensuite redo',
+                           customer_area='Budiriro', photos_at='2026-09-05',
+                           plan_status='plan_uploaded')
+    results.log("plan path: a plan on file is recognised",
+                _ctl.on_plan_path(_plan_lead) is True)
+    results.log("plan path: book_visit is suppressed for a plan lead",
+                _ctl.apply_plan_path_gate('book_visit', _plan_lead)
+                == 'ask_qualifying_question')
+    results.log("plan path: the gate touches no other move",
+                _ctl.apply_plan_path_gate('show_work', _plan_lead) == 'show_work')
+
+    # A PROMISED plan is not a plan. has_plan=True with pending_upload is a lead
+    # saying one is coming — there is still nothing to quote from, so the visit
+    # close stays available to them.
+    _promised = _FakeLead(project_description='x', customer_area='Budiriro',
+                          photos_at='2026-09-05', has_plan=True,
+                          plan_status='pending_upload')
+    results.log("plan path: a merely PROMISED plan does not switch the path",
+                _ctl.on_plan_path(_promised) is False
+                and _ctl.apply_plan_path_gate('book_visit', _promised) == 'book_visit')
+    results.log("plan path: a reviewed plan still counts as on file",
+                _ctl.on_plan_path(_FakeLead(plan_status='plan_reviewed')) is True)
+
+    # -- The deterministic projection (spec §1) ------------------------------
+    # This is both the fallback when the model omits a plan and the baseline
+    # shadow mode scores the model against. The revised close order (spec §2)
+    # is the case that matters most: the description comes BEFORE the photos.
+    _two_turns = [{'role': 'user', 'content': 'hi'},
+                  {'role': 'user', 'content': 'I want my ensuite designed'}]
+    PROJECTION_CASES = [
+        ("named a want, no description yet -> ask, NOT show_work",
+         _uc(), _FakeLead(project_type='bathroom_renovation', history=_two_turns),
+         'ask_qualifying_question'),
+        ("description captured, work not shown -> show_work",
+         _uc(), _FakeLead(project_type='bathroom_renovation',
+                          project_description='full ensuite redo',
+                          history=_two_turns), 'show_work'),
+        ("work shown and area known -> book_visit",
+         _uc(), _FakeLead(project_type='bathroom_renovation',
+                          project_description='full ensuite redo',
+                          customer_area='Budiriro', photos_at='2026-09-05',
+                          history=_two_turns), 'book_visit'),
+        ("work shown, area still unknown -> keep qualifying",
+         _uc(), _FakeLead(project_type='bathroom_renovation',
+                          project_description='full ensuite redo',
+                          photos_at='2026-09-05', history=_two_turns),
+         'ask_qualifying_question'),
+        ("a plan on file never gets the visit close",
+         _uc(), _FakeLead(project_type='bathroom_renovation',
+                          project_description='full ensuite redo',
+                          customer_area='Budiriro', photos_at='2026-09-05',
+                          plan_status='plan_uploaded', history=_two_turns),
+         'ask_qualifying_question'),
+        ("a complaint outranks every flow signal",
+         _uc(intent='complaint'),
+         _FakeLead(project_description='x', customer_area='Budiriro',
+                   photos_at='2026-09-05', history=_two_turns),
+         'escalate_to_human'),
+        ("a delay signal outranks the close",
+         _uc(intent='delay_signal'),
+         _FakeLead(project_description='x', customer_area='Budiriro',
+                   photos_at='2026-09-05', history=_two_turns),
+         'slow_lead_nudge'),
+        ("a timeframe instead of the answer is a slow lead",
+         _uc(pivoted_to_timeline=True),
+         _FakeLead(project_description='x', customer_area='Budiriro',
+                   photos_at='2026-09-05', history=_two_turns),
+         'slow_lead_nudge'),
+        ("out of scope redirects",
+         _uc(intent='out_of_scope'), _FakeLead(history=_two_turns),
+         'out_of_scope_redirect'),
+        ("a bare ack needs nothing back",
+         _uc(intent='ack'), _FakeLead(project_description='x',
+                                      history=_two_turns), 'close_pleasantry'),
+        # Asking us to price a whole job has no honest figure before someone
+        # has seen it, so it goes to the visit.
+        ("a whole-job quote request gets value, not a figure",
+         _uc(speech_act='quote_request'), _FakeLead(history=_two_turns),
+         'present_value'),
+        # But a plain price question still gets answered. The visit fee is the
+        # only price we VOLUNTEER; a lead who ASKS what a fixture costs gets
+        # the from-price, same as today. Refusing a number they asked for reads
+        # as dodging, and they go ask someone who answers.
+        ("a plain price ask is not deflected to a value frame",
+         _uc(speech_act='price_ask'), _FakeLead(history=_two_turns),
+         'ask_qualifying_question'),
+        ("first contact greets",
+         _uc(), _FakeLead(history=[{'role': 'user', 'content': 'hi'}]), 'greet'),
+    ]
+    for label, payload, lead, expected in PROJECTION_CASES:
+        got = _ctl.project_next_move(payload, lead)
+        results.log(f"projection: {label}", got == expected,
+                    expected=expected, got=got)
+
+    # The projection must only ever name a move the vocabulary knows, or the
+    # router would be handed a branch that does not exist.
+    results.log("projection: every case stays inside the vocabulary",
+                all(_ctl.project_next_move(p, l) in _ctl.NEXT_MOVES
+                    for _, p, l, _ in PROJECTION_CASES))
+
+    # -- Phase 1: the days we offer, and the slow lead nudge -----------------
+    from datetime import date as _d
+    from bot import visit_slots as _vs
+    from bot.controller_templates import slow_lead_nudge as _nudge
+
+    class _Cfg:
+        def __init__(self, closed): self._closed = closed
+        def is_open_on(self, wd): return wd not in self._closed
+
+    _sat_closed = _Cfg({5})          # closed Saturdays, like homebase
+    _open_all = _Cfg(set())
+    _thu = _d(2026, 9, 3)            # a Thursday
+    _fri = _d(2026, 9, 4)            # a Friday: tomorrow is the closed day
+
+    results.log("slots: open all week gives tomorrow and the day after",
+                _vs.slot_offer(_open_all, today=_thu)
+                == 'Tomorrow or the day after?')
+    results.log("slots: a closed day is rolled past, not offered",
+                [s.date for s in _vs.next_two_slots(_sat_closed, today=_thu)]
+                == [_d(2026, 9, 4), _d(2026, 9, 6)])
+
+    # "the day after" only means something once "tomorrow" has been said. On a
+    # Friday with Saturday closed the first day IS the day after tomorrow, and
+    # offering it by that name asks the lead to work out the day after what.
+    results.log("slots: never opens on a bare 'the day after'",
+                'day after' not in _vs.slot_offer(_sat_closed, today=_fri))
+    results.log("slots: it names the real days instead",
+                _vs.slot_offer(_sat_closed, today=_fri) == 'Sunday or Monday?')
+
+    # A Shona lead must not be handed English day names. The Shona weekdays
+    # match the mapping the classifier prompt uses, so the day we offer and the
+    # day their reply is read back as cannot drift apart.
+    _sn_offer = _vs.slot_offer(_sat_closed, today=_thu, is_shona=True)
+    results.log("slots: Shona offers Shona days",
+                _sn_offer == 'Mangwana kana Svondo?', got=_sn_offer)
+    results.log("slots: no English day word leaks into Shona",
+                not any(w.lower() in _sn_offer.lower() for w in
+                        ('tomorrow', 'day after', 'Sunday', 'Monday')))
+
+    # A tenant closed every day must yield nothing rather than a day they are
+    # shut. The caller drops the offer instead of promising a visit.
+    results.log("slots: a tenant closed all week offers no day",
+                _vs.slot_offer(_Cfg(set(range(7))), today=_thu) == '')
+
+    # The future dated lead (spec §11): a real day before their target.
+    _prop = _vs.proposed_visit_date(_d(2026, 10, 20), _sat_closed, today=_thu)
+    results.log("proposed visit: lands before the target and after today",
+                _prop is not None and _thu < _prop.date < _d(2026, 10, 20))
+    results.log("proposed visit: never on a day the tenant is shut",
+                _prop is not None and _prop.date.weekday() != 5)
+    results.log("proposed visit: a target too close to fit gives nothing",
+                _vs.proposed_visit_date(_d(2026, 9, 4), _sat_closed,
+                                        today=_thu) is None)
+    results.log("proposed visit: a target in the past gives nothing",
+                _vs.proposed_visit_date(_d(2026, 8, 1), _sat_closed,
+                                        today=_thu) is None)
+
+    # The nudge itself. Two shapes: a lead blocked on logistics gets days, a
+    # lead who is away or unknown gets the lowered ask.
+    _busy = _nudge(None, subtype='busy', tenant_cfg=_sat_closed, today=_thu)
+    _away = _nudge(None, subtype='travelling', tenant_cfg=_sat_closed, today=_thu)
+    _unk = _nudge(None, subtype='unknown', tenant_cfg=_sat_closed, today=_thu)
+    results.log("nudge: a lead blocked on logistics is offered two days",
+                _busy.endswith('Tomorrow or Sunday?'), got=_busy)
+    results.log("nudge: a lead who is away is asked when they are back",
+                'back?' in _away and 'Tomorrow' not in _away, got=_away)
+    results.log("nudge: an unknown delay lowers the ask to a rough when",
+                'When were you hoping' in _unk and 'month end' in _unk,
+                got=_unk)
+
+    # This is the leak Phase 1 exists to close. A lead who is still ready now
+    # must not be handed a catalogue or asked for an email: offered a way out,
+    # they take it.
+    for _label, _text in (('busy', _busy), ('away', _away), ('unknown', _unk)):
+        results.log(
+            f"nudge ({_label}): no catalogue or email escape",
+            not any(w in _text.lower() for w in
+                    ('portfolio', 'catalog', 'email', 'brochure')),
+            got=_text)
+        # House voice: no emojis, no dash punctuation, and one question.
+        results.log(
+            f"nudge ({_label}): no emoji and no dash punctuation",
+            not any(ch in _text for ch in ('—', '–')) and ' - ' not in _text
+            and all(ord(c) < 0x2500 for c in _text),
+            got=_text)
+        results.log(f"nudge ({_label}): asks exactly one question",
+                    _text.count('?') == 1, got=_text)
+
+    # The old fixed replies stay as the fallback, so a failure in the template
+    # degrades to today's behaviour rather than to an empty message.
+    from bot.out_of_scope_handler import _DELAY_SUBTYPE_REPLIES as _old
+    results.log("nudge: the previous fixed replies are still there as fallback",
+                set(_old) >= {'busy', 'access', 'travelling', 'unknown'})
+
+    # -- Plan detection: which product path the file puts them on (§10.1) ----
+    # Getting this wrong costs money both ways. A plan read as a photo sends a
+    # $10 call-out for measuring someone's architect already did. A photo read
+    # as a plan sends the plumber something they cannot quote from.
+    from bot import plan_detection as _pd
+
+    results.log("media: a PDF is a plan, no vision needed",
+                _pd.classify_media_kind('application/pdf') == _pd.PLAN_PDF)
+    results.log("media: a floor plan drawing is a plan",
+                _pd.classify_media_kind(
+                    'image/jpeg',
+                    'This is a floor plan drawing, not a photo.') == _pd.PLAN_IMAGE)
+    results.log("media: a bathroom photo is a photo",
+                _pd.classify_media_kind(
+                    'image/jpeg',
+                    'A tiled bathroom with a corner bath and a basin '
+                    'installed against the wall.') == _pd.PHOTO)
+    results.log("media: vision failing leaves them on the flow that works",
+                _pd.classify_media_kind('image/jpeg', '') == _pd.PHOTO)
+
+    # The gap this closes. _description_is_a_plan rejects a lone "drawing" or
+    # "layout" on purpose, because both describe photographs too. Those used to
+    # fall through as ordinary photos with nobody asking.
+    results.log("media: a lone drawing word is asked about, not assumed",
+                _pd.classify_media_kind(
+                    'image/jpeg',
+                    'A drawing of a bathroom with a bath and a toilet.')
+                == _pd.AMBIGUOUS)
+    # But a real room outranks a stray layout word, so an ordinary photo is
+    # never queried.
+    results.log("media: a room description beats a stray layout word",
+                _pd.classify_media_kind(
+                    'image/jpeg',
+                    'The layout of an existing bathroom, tiled, with a '
+                    'basin fitted to the wall.') == _pd.PHOTO)
+
+    results.log("media: only plans go to the plumber as quotable",
+                _pd.is_plan_kind(_pd.PLAN_PDF)
+                and _pd.is_plan_kind(_pd.PLAN_IMAGE)
+                and not _pd.is_plan_kind(_pd.PHOTO)
+                and not _pd.is_plan_kind(_pd.AMBIGUOUS))
+    results.log("media: every verdict is a known kind",
+                all(_pd.classify_media_kind(m, d) in _pd.MEDIA_KINDS
+                    for m, d in (('application/pdf', ''), ('image/png', 'a drawing'),
+                                 ('image/jpeg', 'a tiled wall'), ('', ''))))
+    _clar = _pd.plan_clarifier()
+    results.log("media: the clarifier is one plain question",
+                _clar.count('?') == 1 and len(_clar.split()) <= 12, got=_clar)
+    results.log("media: the clarifier has a Shona version",
+                _pd.plan_clarifier(is_shona=True) != _clar)
+
+    # -- The controller chooses the question, within limits ------------------
+    # This is the model doing the thinking rather than the reading: picking the
+    # question that moves THIS conversation on instead of the next item in a
+    # list. What is pinned here is the boundary on that freedom.
+    def _q(pick, conf=0.9):
+        return {'next_question': pick, 'move_confidence': conf}
+
+    _fresh = _FakeLead(history=_two_turns)
+    results.log("question choice: a confident pick is taken",
+                _ctl.choose_question(_q('timeline'), _fresh, 'area') == 'timeline')
+    results.log("question choice: below the floor the order wins",
+                _ctl.choose_question(_q('timeline', 0.4), _fresh, 'area') == 'area')
+    results.log("question choice: an invented question is discarded",
+                _ctl.choose_question(_q('favourite_colour'), _fresh, 'area') == 'area')
+    results.log("question choice: silence keeps the order",
+                _ctl.choose_question({}, _fresh, 'area') == 'area')
+
+    # THE GUARD THAT EARNS ITS PLACE. Asking for something the customer already
+    # told us is the most repeated bug in this codebase; letting a model pick
+    # the question is the most direct way to bring it back. It may reorder the
+    # questions, never re-open a closed one.
+    _known = _FakeLead(project_description='full ensuite redo',
+                       customer_area='Budiriro', history=_two_turns)
+    _known.timeline = 'next month'
+    _known.customer_name = 'Rudo'
+    for _held in ('area', 'project_description', 'timeline', 'name'):
+        results.log(
+            f"question choice: never re-asks {_held}, we already hold it",
+            _ctl.choose_question(_q(_held), _known, 'availability_date')
+            == 'availability_date')
+
+    # The day is held on a different column, so it gets its own check.
+    _booked = _FakeLead(project_description='x', customer_area='Budiriro',
+                        history=_two_turns)
+    _booked.scheduled_datetime = '2026-10-20 09:00'
+    results.log("question choice: never re-asks the day once one is on file",
+                _ctl.choose_question(_q('availability_date'), _booked,
+                                     'availability_time') == 'availability_time')
+
+    # Disagreement with the deterministic order is the POINT, not an error: a
+    # lead who has just described the job in detail should be asked where they
+    # are, not asked to describe it again.
+    results.log("question choice: reordering is allowed, that is the feature",
+                _ctl.choose_question(_q('area'), _fresh, 'project_description')
+                == 'area')
+
+    # -- The proof step: show the work before the fee ------------------------
+    # The close is describe -> SHOW -> area -> fee. Without this step the fee
+    # lands on a lead who has seen nothing of what they are buying, which is
+    # the step the whole sequence was built around.
+    from bot import portfolio_catalog as _pcat
+
+    _ready = _FakeLead(project_description='full ensuite redo, walk-in shower',
+                       history=_two_turns)
+    results.log("proof: shown once the job is known",
+                _ctl.should_show_work(_ready) is True)
+    results.log("proof: not before we know the job, there is nothing to match",
+                _ctl.should_show_work(_FakeLead(history=_two_turns)) is False)
+    results.log("proof: not twice",
+                _ctl.should_show_work(
+                    _FakeLead(project_description='x', photos_at='2026-09-07',
+                              history=_two_turns)) is False)
+    results.log("proof: show_work is a move the controller can actually take",
+                'show_work' in _ctl.DRIVABLE_MOVES)
+
+    # Matched to their own words. A lead who described a geyser must not be
+    # shown a kitchen, so no match means send nothing rather than pad.
+    _shower = _pcat.items_for_job('full ensuite redo with a walk-in shower')
+    results.log("proof: photos match what they described",
+                bool(_shower) and 'shower' in _shower[0]['title'].lower(),
+                got=str([i['title'] for i in _shower]))
+    results.log("proof: an unmatched job sends nothing rather than anything",
+                _pcat.items_for_job('something entirely unrelated') == []
+                and _pcat.proof_images_for_job('') == [])
+    results.log("proof: capped at a handful, not the whole gallery",
+                len(_pcat.items_for_job('bathroom shower tub toilet kitchen',
+                                        limit=3)) <= 3)
+
+    # The intro carries no question: on this step the question rides out BEHIND
+    # the images, and putting it on the intro too asks it twice.
+    from bot.controller_templates import show_examples as _show_ex
+    results.log("proof: the intro asks nothing, the question follows the photos",
+                '?' not in _show_ex(_ready))
+    results.log("proof: an explicit question is still honoured",
+                _show_ex(_ready, next_question='Whereabouts are you?')
+                .endswith('Whereabouts are you?'))
+
+    # THE LOCK. It returns True when it blocks, meaning "handled". A proactive
+    # send that consumed it would make a genuine "send me photos" an hour later
+    # silently do nothing while the caller believed it had sent.
+    import inspect as _isp3
+    import bot.whatsapp_webhook as _ww3
+    _spw = _isp3.getsource(_ww3.send_previous_work_photos)
+    results.log("proof: an unasked send never claims the 24h slot",
+                'asked_for' in _spw and 'return False' in _spw)
+    results.log("proof: a real request is still answered, never swallowed",
+                'if asked_for:' in _spw)
+
+    # -- Repeats get a better answer, not the same one -----------------------
+    # A repeated question means the first answer did not land. Repeating it is
+    # the one response guaranteed not to help, and an open "what is unclear?"
+    # hands the customer the job of diagnosing what we missed.
+    import inspect as _isp2
+    from bot import repeated_question_detector as _rq
+
+    _rq_src = _isp2.getsource(_rq.generate_repeat_clarification)
+    results.log("repeat: told to answer differently, not repeat",
+                'do NOT repeat' in _rq_src and 'different way' in _rq_src)
+    results.log("repeat: asks for an assumptive clarifier, not an open one",
+                'ASSUMPTIVE CLARIFYING QUESTION' in _rq_src
+                and 'what is still unclear' in _rq_src)
+    results.log("repeat: no longer hands every repeat to the plumber",
+                'Only mention the plumber if' in _rq_src)
+    results.log("repeat: held to one question and a short message",
+                'ONE question mark' in _rq_src and 'under 70 words' in _rq_src)
+    # The house copy rules still apply to it.
+    results.log("repeat: still bans emojis and dash punctuation",
+                'No emojis' in _rq_src and 'em dashes' in _rq_src)
+
+    # The same rule in the controller, so it holds for every clarifier and not
+    # only the repeat path.
+    import bot.unified_classifier as _uc_mod2
+    _uc_src2 = _isp2.getsource(_uc_mod2)
+    results.log("clarifiers: the controller is told to assume, not ask openly",
+                'WHEN SOMETHING IS UNCLEAR, ASSUME' in _uc_src2
+                and 'could you clarify' in _uc_src2)
+    results.log("clarifiers: and to re-answer rather than repeat",
+                'the first answer did not land' in _uc_src2)
+
+    # And the retry generator offers two choices from the FIRST rephrase, not
+    # the second: a question they skipped once will be skipped again if it comes
+    # back in the same open shape.
+    from bot.views.plumbot import response_mixin as _rm_mod2
+    _retry_src = _isp2.getsource(_rm_mod2.ResponseMixin._generate_retry_response)
+    _first = _retry_src.split('retry_count == 1', 1)[1].split('elif', 1)[0]
+    results.log("retry: the first rephrase already offers two choices",
+                'two explicit choices' in _first, got=_first.strip()[:120])
+
+    # -- Phase 3: the photo follow-up stops costing a call -------------------
+    # This was a DeepSeek call per photo send, and what it produced was a nudge
+    # toward the free on-site visit — the exact sentence strip_repeat_free_visit
+    # then removed, because the visit has usually been pitched by then. We paid
+    # for a call to write a line another part of the system deleted.
+    import inspect as _isp
+    from bot.controller_templates import photo_followup as _pf
+    import bot.whatsapp_webhook as _wwmod
+
+    results.log("photo follow-up: no API call left in it",
+                'deepseek_call' not in _isp.getsource(
+                    _wwmod.generate_photo_followup))
+    results.log("photo follow-up: it asks for the description when we lack one",
+                'looking to get done' in _pf(_FakeLead()))
+    results.log("photo follow-up: then the area",
+                _pf(_FakeLead(project_description='full redo'))
+                == 'Whereabouts are you?')
+    results.log("photo follow-up: a lead we know gets an open look, not a 4th ask",
+                '?' in _pf(_FakeLead(project_description='full redo',
+                                     customer_area='Budiriro')))
+    # The re-pitch is the thing being removed. It must not come back.
+    for _state in (_FakeLead(),
+                   _FakeLead(project_description='full redo'),
+                   _FakeLead(project_description='x', customer_area='Budiriro')):
+        _line = _pf(_state)
+        results.log("photo follow-up: never re-pitches the visit",
+                    not any(w in _line.lower()
+                            for w in ('free', 'site visit', 'on-site')),
+                    got=_line)
+    results.log("photo follow-up: Shona stays Shona",
+                _pf(_FakeLead(), is_shona=True) == 'Chii chaicho chamunoda kuitwa?')
+
+    # Calls per turn is the metric Phases 3 and 4 are judged on, and it did not
+    # exist. Every DeepSeek call goes through deepseek_call, so counting there
+    # covers the fallback classifiers, which is where the cost actually is.
+    from bot.services.clients import (
+        start_turn_count as _stc, turn_call_count as _tcc, _count_call as _cc,
+    )
+    _stc()
+    results.log("call count: a turn starts at zero", _tcc() == 0)
+    _cc(); _cc()
+    results.log("call count: it counts", _tcc() == 2)
+    _stc()
+    results.log("call count: the next turn starts clean", _tcc() == 0)
+
+    # -- Phase 2: the close, the objection, and the routing gate -------------
+    from bot.controller_templates import (
+        paid_visit_close as _close, fee_objection as _obj,
+        show_examples as _examples,
+    )
+
+    class _FeeCfg:
+        def __init__(self, fee=None, waived=False, closed=frozenset({5})):
+            self.consultation_fee = fee
+            self.currency = 'US$'
+            self._waived = waived
+            self._closed = closed
+        def visit_fee_waived_on_job(self): return self._waived
+        def is_open_on(self, wd): return wd not in self._closed
+
+    _waived_cfg = _FeeCfg(10, True)
+    _flat_cfg = _FeeCfg(10, False)
+    _free_cfg = _FeeCfg()
+    _close_waived = _close(_waived_cfg, today=_thu)
+
+    # The fee and the refund share ONE sentence. Split apart the fee lands on
+    # its own and the lead has a beat to react before the refund arrives.
+    _fee_sentence = next((s for s in _close_waived.split('.') if 'US$10' in s), '')
+    results.log("close: the fee and the refund are one sentence",
+                'comes off the job' in _fee_sentence, got=_fee_sentence)
+    results.log("close: it ends by offering two days",
+                _close_waived.rstrip().endswith('Tomorrow or Sunday?'),
+                got=_close_waived)
+    results.log("close: a tenant with no fee says free, and borrows no figure",
+                'free' in _close(_free_cfg, today=_thu)
+                and 'US$' not in _close(_free_cfg, today=_thu))
+    results.log("close: a flat fee states the fee and promises no refund",
+                'US$10' in _close(_flat_cfg, today=_thu)
+                and 'comes off' not in _close(_flat_cfg, today=_thu))
+    results.log("close: Shona keeps Shona days",
+                'Mangwana' in _close(_waived_cfg, is_shona=True, today=_thu))
+
+    # The objection answer must not invent an objection. A lead told the visit
+    # is free has no fee to argue about.
+    results.log("objection: a free-visit tenant never mentions a figure",
+                'US$' not in _obj(_free_cfg, today=_thu))
+    results.log("objection: a fee tenant reframes and names a day",
+                'costs you nothing' in _obj(_waived_cfg, today=_thu)
+                and 'lock in tomorrow' in _obj(_waived_cfg, today=_thu))
+
+    for _name, _txt in (('close', _close_waived),
+                        ('objection', _obj(_waived_cfg, today=_thu)),
+                        ('examples', _examples())):
+        results.log(f"{_name}: no emoji and no dash punctuation",
+                    not any(c in _txt for c in ('—', '–')) and ' - ' not in _txt
+                    and all(ord(c) < 0x2500 for c in _txt), got=_txt)
+        # Never MORE than one. The proof intro carries none on purpose: its
+        # question rides out behind the images, and asking on the intro too
+        # would ask it twice, once before they have seen anything.
+        results.log(f"{_name}: never stacks two questions",
+                    _txt.count('?') <= 1, got=_txt)
+
+    # The controller drives now, by owner decision: the model chooses the move
+    # and the question, not just the classification. What makes that safe is
+    # everything below, not the flag — and the flag can be turned off with
+    # PLUMBOT_CONTROLLER_ROUTING=0 without a deploy.
+    results.log("routing: the controller drives",
+                _ctl.CONTROLLER_DRIVES_ROUTING is True)
+
+    _was_on = _ctl.CONTROLLER_DRIVES_ROUTING
+    _ctl.CONTROLLER_DRIVES_ROUTING = False
+    try:
+        results.log("routing: turning it off falls back to the old branches",
+                    _ctl.decide_move(_uc(next_move='book_visit'), _cold) is None)
+        results.log("routing: turning it off keeps the deterministic question",
+                    _ctl.question_for(_cold, 'area') == 'area')
+    finally:
+        _ctl.CONTROLLER_DRIVES_ROUTING = _was_on
+
+    # The floor and both gates still apply while it is on.
+    _ctl.CONTROLLER_DRIVES_ROUTING = True
+    try:
+        _ready = _FakeLead(project_description='full ensuite redo',
+                           customer_area='Budiriro', photos_at='2026-09-05')
+        _wants = _uc(next_move='book_visit', move_confidence=0.9,
+                     state_update={'want_level': 'wants_it'})
+        results.log("routing: a confident book_visit on a keen lead drives",
+                    _ctl.decide_move(_wants, _ready) == 'book_visit')
+        results.log("routing: below the confidence floor it defers",
+                    _ctl.decide_move(
+                        _uc(next_move='book_visit', move_confidence=0.4,
+                            state_update={'want_level': 'wants_it'}),
+                        _ready) is None)
+        results.log("routing: the fee gate still holds it back below wants_it",
+                    _ctl.decide_move(
+                        _uc(next_move='book_visit', move_confidence=0.9,
+                            state_update={'want_level': 'interested'}),
+                        _ready) is None)
+        results.log("routing: a plan on file still blocks the visit close",
+                    _ctl.decide_move(_wants, _FakeLead(
+                        project_description='x', customer_area='Budiriro',
+                        photos_at='2026-09-05',
+                        plan_status='plan_uploaded')) is None)
+        results.log("routing: moves outside the drivable set stay with the router",
+                    _ctl.decide_move(
+                        _uc(next_move='show_work', move_confidence=0.95),
+                        _ready) is None)
+    finally:
+        _ctl.CONTROLLER_DRIVES_ROUTING = _was_on
+
+    # -- The plumber is contacted by email, always (owner rule, 2026-09-05) --
+    # One channel means one inbox to check and one place a lead can go missing.
+    # Source scans, because these sends are spread across five files and the
+    # only way this stays true is if a new WhatsApp send to a plumber fails
+    # here rather than in production.
+    import inspect as _isp
+    from bot import whatsapp_webhook as _ww
+    from bot.views.plumbot import notification_mixin as _nm
+
+    _alert_src = _isp.getsource(_ww._schedule_plumber_alert)
+    results.log("plumber: the media alert emails, it does not WhatsApp",
+                'send_plumber_notification_email' in _alert_src
+                and 'send_text_message' not in _alert_src)
+
+    _plan_src = _isp.getsource(_nm.NotificationMixin.notify_plumber_about_plan)
+    results.log("plumber: the plan alert emails, it does not WhatsApp",
+                'send_plumber_notification_email' in _plan_src
+                and 'send_text_message' not in _plan_src)
+
+    # A hardcoded number sent EVERY tenant's jobs to Homebase's plumber. That
+    # is the leak CLAUDE.md warns about, and it goes with the WhatsApp send.
+    from bot.views import jobs as _jobs
+    _jobs_src = _isp.getsource(_jobs)
+    results.log("plumber: no hardcoded team number in the job alert",
+                '0774819901' not in _jobs_src)
+
+    from bot.management.commands import send_reminders as _sr
+    results.log("plumber: the WhatsApp briefings are off",
+                _sr.PLUMBER_WHATSAPP_BRIEFINGS is False)
+
+    # This module still sends WhatsApp, but only ever to the LEAD. What must be
+    # gone is reading the plumber's number in order to message them: that env
+    # var is Homebase's line, so every tenant's plumber reminders went to one
+    # phone.
+    from bot.management.commands import send_scheduled_reminders as _ssr
+    _ssr_src = _isp.getsource(_ssr)
+    results.log("plumber: a whatsapp-channel reminder is delivered by email",
+                "environ.get('PLUMBER_PHONE_NUMBER'" not in _ssr_src
+                and 'environ.get("PLUMBER_PHONE_NUMBER"' not in _ssr_src)
+
+    # -- Shadow mode never breaks a live turn --------------------------------
+    # Phase 0 ships nothing; the one way it could still hurt is by raising.
+    _lead = _FakeLead(history=_two_turns)
+    _ctl.record_plan(_lead, _uc(), 'hello')
+    _ctl.note_branch(_lead, 'show_work')
+    results.log("shadow: record_plan stashes the plan for the branch compare",
+                getattr(_lead, '_controller_plan', {}).get('model_move')
+                == 'ask_qualifying_question')
+    _ctl.record_plan(None, None, '')          # must not raise
+    _ctl.note_branch(None, 'anything')        # must not raise
+    results.log("shadow: logging survives a missing lead or classification", True)
+except Exception as e:
+    import traceback as _tb
+    results.log("reasoning controller (Phase 0)", False, got=_tb.format_exc()[-400:])
 
 # In gate mode we stop here: TEST 0 above is the API-free deterministic
 # regression block (every production bug we've fixed is pinned there). The
@@ -9236,11 +10234,18 @@ results.log(
     got="present" if "**HUMAN_VOICE" in _inspect.getsource(
         _rm_mod.ResponseMixin._generate_retry_response) else "missing",
 )
+# Anchored on the MODULE, not on one function: the call moved into _call_once
+# when the planning retry was added, and a name-anchored scan would have gone
+# quietly true-for-the-wrong-reason if it had been written the other way round.
+# Asserting that no non-zero temperature appears anywhere in the module holds
+# however the call is refactored, and is what the rule actually means.
+import re as _re_temp
+_uc_src = _inspect.getsource(_uc_mod)
+_uc_temps = set(_re_temp.findall(r'temperature\s*=\s*([0-9.]+)', _uc_src))
 results.log(
     "voice preset: the unified classifier stays deterministic",
-    "temperature=0.0" in _inspect.getsource(_uc_mod.unified_classify)
-    and "HUMAN_VOICE" not in _inspect.getsource(_uc_mod),
-    got="deterministic",
+    _uc_temps == {'0.0'} and "HUMAN_VOICE" not in _uc_src,
+    got=f"temperatures={sorted(_uc_temps) or 'none'}",
 )
 
 # ── A rejected WhatsApp reminder falls back to email ─────────────────────────

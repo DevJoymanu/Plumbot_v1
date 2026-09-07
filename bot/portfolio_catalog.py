@@ -298,8 +298,31 @@ def item_is_available(item: dict) -> bool:
     return os.path.exists(image_path_for(item))
 
 
+def is_described(item: dict) -> bool:
+    """True when someone has actually looked at this photo and written down
+    what is in it.
+
+    THE rule for whether a photo may be shown to a lead at all. The title is
+    not evidence: a tenant types it by hand on upload, so it records what they
+    meant to add, not what they added. In production the gap between the two
+    was wide enough to be dangerous. Titled as plumbing work, sitting in real
+    galleries, were a chocolate biscuit advert, a screenshot of this CRM
+    showing a customer's name and phone number, a courier company's admin
+    panel with a staff username, and a historical illustration of the slave
+    trade. Any of them would have gone out to a stranger as an example of the
+    tenant's work.
+
+    So a photo nobody has described is not shown. It waits for a description
+    instead, which is the cheap and honest outcome: we do not show a customer
+    a picture we have not looked at.
+    """
+    return bool((item.get('vision') or '').strip())
+
+
 def available_items(tenant=None) -> list[dict]:
-    return [it for it in items_for(tenant) if item_is_available(it)]
+    """Everything we may show this tenant's leads: described, and present."""
+    return [it for it in items_for(tenant)
+            if is_described(it) and item_is_available(it)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -487,3 +510,108 @@ def is_catalogue_menu_request(message: str) -> bool:
     if not message:
         return False
     return bool(_MENU_REQUEST.search(message))
+
+
+# Words too common to carry meaning. Kept small on purpose: an over-eager stop
+# list starts throwing away the words that matter ("bath", "sink").
+#
+# Three-letter words are IN, because "tub" and "tap" are two of the most
+# important words in this trade. A four-letter floor silently dropped both, and
+# a lead who typed just "tub" matched nothing at all. That means the common
+# three-letter fillers have to be named here instead.
+_JOB_STOPWORDS = frozenset("""
+and the with for from that this they them there here what when your our you we
+need want please can could would have has had get got does done make made just
+also into out off some any all not but are was were being been able like about
+was who its did yet per via too own now new one two how why may
+""".split())
+
+
+def _job_words(text: str) -> set:
+    """Meaningful words in a job description or a photo description."""
+    return {w for w in re.findall(r'[a-z]+', _normalise(text or ''))
+            if len(w) >= 3 and w not in _JOB_STOPWORDS}
+
+
+# The proof step (spec §2 rule 2): 2 to 3 finished jobs that look like the one
+# they just described, sent before the fee is ever mentioned.
+PROOF_IMAGE_COUNT = 3
+
+
+def _job_haystack(item: dict) -> str:
+    """Everything about a piece that a lead's own words might match.
+
+    The curated `keywords` are deliberately NARROW — "gold tap", "hexagon",
+    "navy" — because their job is telling two similar photos apart. That makes
+    them almost useless for "what does this job look like?": against 328 real
+    lead descriptions they matched 4%, and the single most common description
+    we get, "bathroom & toilet mantainance", matched nothing at all.
+
+    `vision` is the photo described in ordinary words, which is what a customer
+    types. Title and description come along for the ride.
+    """
+    return ' '.join(str(item.get(k) or '') for k in
+                    ('vision', 'title', 'description')).strip()
+
+
+def items_for_job(text: str, tenant=None, limit: int = PROOF_IMAGE_COUNT) -> list:
+    """The pieces closest to what this lead described.
+
+    Different question from `match_portfolio_item`, which answers "which ONE
+    piece are they pointing at?" and returns None on a tie or a generic phrase.
+    Here a tie is fine and a generic phrase is normal: we are picking a handful
+    to show, not resolving a reference.
+
+    Scored on shared words against the photo's own description, with the
+    curated keywords kept as a BONUS rather than the only signal — a lead who
+    does name a specific fixture should still get that piece first.
+
+    Returns [] when nothing matches, and the caller shows nothing rather than a
+    kitchen to someone asking about a geyser.
+    """
+    lead_words = _job_words(text)
+    if not lead_words:
+        return []
+
+    # items_for, NOT available_items. The availability check calls
+    # default_storage.exists() per photo, which on R2 is a network round-trip:
+    # scoring the whole gallery that way would mean fifteen of them before we
+    # know whether we even want to send anything. Score on the rows, then check
+    # existence only for the two or three we are actually about to send.
+    scored = []
+    for item in items_for(tenant):
+        # Same rule as the gallery send: undescribed is not shown. Checked
+        # here rather than by calling available_items, which would spend a
+        # storage round-trip per photo (see below).
+        if not is_described(item):
+            continue
+        overlap = lead_words & _job_words(_job_haystack(item))
+        score = len(overlap)
+        # A curated keyword is a deliberate, specific signal, so it outweighs
+        # an incidental shared word.
+        norm = _normalise(text or '')
+        for kw in item.get('keywords') or []:
+            if re.search(rf'(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])', norm):
+                score += 3 if ' ' in kw else 2
+        if score:
+            scored.append((score, item))
+
+    if not scored:
+        return []
+    scored.sort(key=lambda s: s[0], reverse=True)
+
+    # Now pay for the existence checks, on the best few only. Walk the ranked
+    # list so a missing file is replaced by the next best match rather than
+    # leaving us short.
+    picked = []
+    for _score, item in scored:
+        if len(picked) >= max(1, limit):
+            break
+        if item_is_available(item):
+            picked.append(item)
+    return picked
+
+
+def proof_images_for_job(text: str, tenant=None, limit: int = PROOF_IMAGE_COUNT) -> list:
+    """Image paths for `items_for_job`. [] when nothing matches."""
+    return [image_path_for(item) for item in items_for_job(text, tenant, limit)]

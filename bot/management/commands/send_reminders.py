@@ -52,6 +52,14 @@ logger = logging.getLogger(__name__)
 WINDOW_MINUTES  = 10          # ±10 min tolerance for scheduled send times
 TIMEZONE_NAME   = "Africa/Harare"
 PLUMBER_PHONE   = os.environ.get("PLUMBER_PHONE_NUMBER", "").replace("+", "").strip()
+
+# The plumber is contacted by EMAIL, always (owner rule, 2026-09-05). The three
+# WhatsApp briefings below are switched off rather than deleted, because the
+# PLUMBER EMAIL REMINDERS section further down already sends the same three
+# things: "Tomorrow's schedule", "Today's schedule" and "On the way". Turning
+# them into emails would have double-notified; turning them off leaves one
+# channel and one inbox. Flip this back to True to restore the old behaviour.
+PLUMBER_WHATSAPP_BRIEFINGS = False
 PLUMBER_NAME    = os.environ.get("PLUMBER_NAME", "there")
 
 SEP = "────────────────"
@@ -943,7 +951,7 @@ class Command(BaseCommand):
             return grouped
 
         # Evening briefing: tomorrow's appointments @ 20:00 — one per tenant
-        if _in_window(now_local, 20):
+        if PLUMBER_WHATSAPP_BRIEFINGS and _in_window(now_local, 20):
             tomorrow_apts = [a for a in all_apts if a.scheduled_datetime.date() == tomorrow]
             if not tomorrow_apts:
                 self.stdout.write("    INFO  No appointments tomorrow — evening briefing skipped.")
@@ -968,7 +976,7 @@ class Command(BaseCommand):
                         self.stdout.write(self.style.ERROR(f"    FAIL  Tomorrow's Jobs → {label}"))
 
         # Morning briefing @ 07:00 — one per tenant
-        if _in_window(now_local, 7):
+        if PLUMBER_WHATSAPP_BRIEFINGS and _in_window(now_local, 7):
             today_apts = [a for a in all_apts if a.scheduled_datetime.date() == today]
             if not today_apts:
                 self.stdout.write("    INFO  No appointments today — morning briefing skipped.")
@@ -993,7 +1001,7 @@ class Command(BaseCommand):
                         self.stdout.write(self.style.ERROR(f"    FAIL  Morning Briefing → {label}"))
 
         # 2-hour alerts — to the plumber who owns that job
-        for apt in all_apts:
+        for apt in (all_apts if PLUMBER_WHATSAPP_BRIEFINGS else []):
             apt_u = _appt_utc(apt)
             if not apt_u:
                 continue

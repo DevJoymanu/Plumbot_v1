@@ -108,7 +108,7 @@ class NotificationMixin:
                                  getattr(apt, 'pk', None))
 
         def notify_plumber_about_plan(self):
-            """Send plan details to plumber via WhatsApp"""
+            """Email the plan details to the plumber."""
             from ...test_console import is_test_sender
             if is_test_sender(self.phone_number):
                 print("🧪 Test lead — plan-received plumber alert muted")
@@ -149,17 +149,15 @@ class NotificationMixin:
         Status: Plan uploaded — awaiting your review
         """
 
-                # Phase 2.2: the tenant's own plumber line — no number on
-                # file → skip the WhatsApp alert (email path still fires).
-                _contact = self.appointment.plumber_contact().replace(
-                    'whatsapp:', '').replace('+', '').strip()
-                plumber_numbers = [_contact] if _contact else []
-                if not plumber_numbers:
-                    print("⚠️ No plumber contact on tenant profile — skipping plan WhatsApp alert")
-
-                for number in plumber_numbers:
-                    get_client_for_tenant(self.appointment.tenant).send_text_message(number, plumber_message)
-                    print(f"✅ Plan notification sent to plumber {number}")
+                # The plumber is contacted by EMAIL, always (owner rule,
+                # 2026-09-05). A plan is the one thing they cannot act on from
+                # a WhatsApp alert anyway: the file has to reach an inbox.
+                send_plumber_notification_email(
+                    subject=f"Plan received from {customer_name}",
+                    message=plumber_message,
+                    tenant=getattr(self.appointment, 'tenant', None),
+                )
+                print("✅ Plan notification emailed to the plumber")
 
             except Exception as e:
                 print(f"❌ Error notifying plumber: {str(e)}")
@@ -359,37 +357,13 @@ class NotificationMixin:
                         f"🔗 View: {settings.SITE_URL}/appointments/{self.appointment.id}/"
                     )
 
-                    # Build recipient list from env var → appointment field → hardcoded fallback
-                    team_numbers = []
-
-                    env_numbers = os.environ.get('TEAM_NUMBERS', '')
-                    for n in env_numbers.replace('\n', ',').split(','):
-                        n = n.strip().replace('whatsapp:', '').replace('+', '')
-                        if n:
-                            team_numbers.append(n)
-
-                    plumber_contact = self.appointment.plumber_contact()
-                    if plumber_contact:
-                        n = plumber_contact.replace('whatsapp:', '').replace('+', '').strip()
-                        if n and n not in team_numbers:
-                            team_numbers.append(n)
-
-                    if not team_numbers:
-                        print("⚠️ No TEAM_NUMBERS env and no tenant plumber contact — skipping booking WhatsApp alerts")
-
-                    print(f"📤 Sending booking notifications to {len(team_numbers)} team member(s)...")
-
-                    sent_count = 0
-                    for number in team_numbers:
-                        try:
-                            get_client_for_tenant(self.appointment.tenant).send_text_message(number, team_message)
-                            print(f"✅ Booking notification sent to {number}")
-                            sent_count += 1
-                        except Exception as msg_error:
-                            print(f"❌ Failed to send to {number}: {msg_error}")
-
-                    if sent_count == 0:
-                        print("❌ No booking notifications sent — check TEAM_NUMBERS env var and WhatsApp API config")
+                    # The plumber and the team are contacted by EMAIL, always
+                    # (owner rule, 2026-09-05), so the email send below is the
+                    # only channel. The TEAM_NUMBERS env var and the plumber's
+                    # number used to be gathered here to build a WhatsApp
+                    # recipient list; nothing reads them now, so they are gone
+                    # rather than left looking like they still do something.
+                    print("📧 Booking notification goes out by email only")
 
                     # HTML version with Call/WhatsApp-customer CTA buttons so
                     # the plumber can reach the customer in one tap. Falls back

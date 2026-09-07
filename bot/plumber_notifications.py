@@ -157,6 +157,19 @@ def split_notification_recipients(tenant=None):
     return visible, hidden
 
 
+def _attachment_type(filename: str) -> str:
+    """The MIME type for an attached file, from its name.
+
+    Two transports hardcoded "application/pdf" here. Every attachment in the
+    codebase was a PDF, so it never showed — until the plan-quote email, where
+    the plan is as often a photo of a drawing as it is a PDF. A JPEG labelled
+    as a PDF is a file the plumber's mail client will not open.
+    """
+    import mimetypes
+    guessed, _ = mimetypes.guess_type(filename or '')
+    return guessed or 'application/pdf'
+
+
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
@@ -263,7 +276,8 @@ def send_email_to_recipients(
         if html_message:
             msg.attach_alternative(html_message, "text/html")
         if attachment:
-            msg.attach(attachment_name, attachment, "application/pdf")
+            msg.attach(attachment_name, attachment,
+                       _attachment_type(attachment_name))
         msg.send(fail_silently=False)
         return True
     except Exception:
@@ -537,7 +551,7 @@ def _send_via_sendgrid(
     if attachment:
         payload["attachments"] = [{
             "content":  base64.b64encode(attachment).decode(),
-            "type":     "application/pdf",
+            "type":     _attachment_type(attachment_name),
             "filename": attachment_name,
         }]
 
@@ -673,3 +687,319 @@ def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run,
         tenant=getattr(appointment, 'tenant', None))
+
+
+# ── Plan path: the plumber quotes off the drawing (spec §10.3, §10.4) ────────
+
+def _plan_attachment(appointment):
+    """The lead's plan as (bytes, filename), or (None, None).
+
+    Read from storage at send time rather than kept in memory: the row may have
+    been created an hour ago, and on R2 a URL captured then has expired. Never
+    raises — a plumber who gets the details without the file can still ring the
+    lead, which is better than no email at all.
+    """
+    path = str(getattr(appointment, 'plan_file', '') or '').strip()
+    if not path:
+        return None, None
+    try:
+        from django.core.files.storage import default_storage
+        with default_storage.open(path, 'rb') as handle:
+            return handle.read(), path.split('/')[-1]
+    except Exception:
+        logger.warning("Could not read the plan for apt %s",
+                       getattr(appointment, 'pk', None), exc_info=True)
+        return None, None
+
+
+def _and_list(items) -> str:
+    """['a', 'b', 'c'] -> 'a, b and c'. Reads like a sentence, not a dump."""
+    items = [str(i) for i in items if i]
+    if not items:
+        return ''
+    if len(items) == 1:
+        return items[0]
+    return ', '.join(items[:-1]) + ' and ' + items[-1]
+
+
+def send_plan_quote_email(row, *, dry_run=False):
+    """The first email: the job, the lead, and the plan attached.
+
+    Sent an hour after the plan arrives, and never sooner. The hour is what
+    the bot gets to collect the job and try for a booking before the plumber is
+    disturbed; a lead who books inside it generates no email at all. Whatever
+    the bot failed to get is named in the email for the plumber to ask.
+    """
+    from bot.customer_emails import _clean_phone, _service
+    from bot.plan_quote import form_url
+
+    apt = row.appointment
+    name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    phone = _clean_phone(getattr(apt, 'phone_number', ''))
+    area = getattr(apt, 'customer_area', '') or 'not given'
+    timeline = getattr(apt, 'timeline', '') or 'not given'
+    description = getattr(apt, 'project_description', '') or 'not given'
+    link = form_url(row)
+    data, filename = _plan_attachment(apt)
+
+    from bot.plan_quote import missing_info, timeline_is_slow
+
+    gaps = missing_info(apt)
+    slow = timeline_is_slow(apt)
+
+    # The subject carries the urgency, because it is what the plumber reads on
+    # a phone. A lead who wants the job in three months must not be worked as
+    # an emergency callout, and one who wants it this week must not be buried.
+    subject = ("[Plan, not urgent] Quote for {}".format(name) if slow
+               else "[Plan] Quote needed for {}".format(name))
+
+    attached = ("The plan is attached." if data else
+                "The plan could not be attached. Open the lead to view it.")
+
+    # An hour of asking did not get everything. Name exactly what is missing
+    # and ask the plumber to get it, rather than sending a half-filled sheet
+    # and hoping they notice the blanks.
+    todo = ('We could not get {} out of them in the hour before this went. '
+            'Worth asking when you call.'.format(_and_list(gaps)) if gaps else '')
+
+    pace = ('They are not in a rush, so this is a quote to win rather than a '
+            'job to squeeze in.' if slow else
+            'They want it soon, so worth getting to them today.')
+
+    message = (
+        f"{name} sent a plan, so there is no site visit to book. "
+        f"{attached}"
+        + "\n\n" + pace
+        + (("\n\n" + todo) if todo else "")
+        + "\n\n"
+        + f"Customer: {name}\n"
+        + f"WhatsApp: {phone}  " + (f"https://wa.me/{phone}" if phone else "") + "\n"
+        + f"Service: {_service(apt)}\n"
+        + f"Job: {description}\n"
+        + f"Area: {area}\n"
+        + f"Timeline: {timeline}\n\n"
+        + "Send them the quote, and push for a booking while you have them. "
+        + "Then tell us here so we stop chasing you and start following them "
+        + f"up:\n\n{link}\n"
+    )
+
+    html = (
+        f'<p><strong>{name}</strong> sent a plan, so there is no site visit to '
+        f'book. {attached}</p>'
+        + f'<p style="font-size:14px;color:#444;">{pace}</p>'
+        + (f'<p style="background:#fff4e5;border-radius:8px;padding:12px 14px;'
+           f'font-size:14px;color:#7a4b00;">{todo}</p>' if todo else '')
+        + f'<p style="font-size:14px;color:#444;">'
+        f'Customer: {name}<br>'
+        f'WhatsApp: {phone}<br>'
+        f'Service: {_service(apt)}<br>'
+        f'Job: {description}<br>'
+        f'Area: {area}<br>'
+        f'Timeline: {timeline}</p>'
+        f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
+        f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;">I have sent the quote</a></p>'
+        f'<p style="font-size:13px;color:#888;">Telling us stops the reminders '
+        f'and starts the customer follow-up.</p>'
+    )
+    # One path, attachment or not. send_plumber_notification_email cannot carry
+    # a file, so this goes through the choke point directly and resolves the
+    # same recipients: the tenant's own inbox in To, the operator in Bcc.
+    recipients, hidden = split_notification_recipients(getattr(apt, 'tenant', None))
+    if not recipients:
+        logger.warning("No plumber notification email recipients configured.")
+        return False
+    return send_email_to_recipients(
+        recipients, subject, message,
+        bcc=hidden,
+        dry_run=dry_run,
+        html_message=html,
+        attachment=data,
+        attachment_name=filename or 'plan.pdf',
+        tenant=getattr(apt, 'tenant', None),
+        from_email=tenant_platform_from_email(getattr(apt, 'tenant', None)),
+    )
+
+
+def send_plan_quote_reminder(row, *, number=1, dry_run=False):
+    """Chase the plumber: have you sent the quote?
+
+    Same link every time. It is single use, so a plumber who taps the second
+    reminder after answering the first is told it is already done rather than
+    overwriting what they said.
+    """
+    from bot.customer_emails import _clean_phone
+    from bot.plan_quote import form_url
+
+    apt = row.appointment
+    name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    phone = _clean_phone(getattr(apt, 'phone_number', ''))
+    link = form_url(row)
+
+    subject = f"[Plan] Did the quote for {name} go out?"
+    message = (
+        f"Checking in on {name}'s quote. One tap either way:\n\n{link}\n\n"
+        f"Customer: {name}\n"
+        f"WhatsApp: {phone}  " + (f"https://wa.me/{phone}" if phone else "") + "\n"
+        f"Area: {getattr(apt, 'customer_area', '') or 'not given'}\n\n"
+        f"We stop asking as soon as you answer.\n"
+    )
+    html = (
+        f'<p>Checking in on <strong>{name}</strong>&rsquo;s quote.</p>'
+        f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
+        f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;">Answer in one tap</a></p>'
+        f'<p style="font-size:14px;color:#444;">'
+        f'Customer: {name}<br>WhatsApp: {phone}<br>'
+        f'Area: {getattr(apt, "customer_area", "") or "not given"}</p>'
+        f'<p style="font-size:13px;color:#888;">We stop asking as soon as you '
+        f'answer.</p>'
+    )
+    return send_plumber_notification_email(
+        subject, message, dry_run=dry_run, html_message=html,
+        tenant=getattr(apt, 'tenant', None))
+
+
+# ── Future-dated visits: the two check-ins (spec §11.3) ──────────────────────
+
+def _proposal_date_line(row):
+    """The proposed day in words. Never renders an empty gap.
+
+    A check-in whose whole point is a date must not go out with a blank where
+    the date should be — the same no-null-date rule the post-visit emails hold.
+    """
+    if not row.proposed_date:
+        raise ValueError('a visit proposal with no date cannot be confirmed')
+    return row.proposed_date.strftime('%A %d %B')
+
+
+def send_visit_confirm_email(row, *, number=1, dry_run=False):
+    """Ask the LEAD to confirm the visit we penciled in.
+
+    This is the only thing that turns a future-dated visit into a booking, so
+    the two answers are two links: one tap, no form, no login. Customer facing,
+    so it goes from the tenant's own address, not the platform subdomain.
+    """
+    from bot.customer_emails import _service
+    from bot.utils import business_name_for
+    from bot.visit_proposal import answer_url
+
+    apt = row.appointment
+    to = (getattr(apt, 'customer_email', '') or '').strip()
+    if not to:
+        return False
+
+    day = _proposal_date_line(row)
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    greeting = f'Hi {name},' if name else 'Hi,'
+    business = business_name_for(apt)
+    yes, no = answer_url(row, 'yes'), answer_url(row, 'no')
+
+    subject = f'Still good for {day}?'
+    message = (
+        f'{greeting}\n\n'
+        f'{business} here. We penciled you in for a quick site visit on {day} '
+        f'for the {_service(apt)}, so we can measure up and give you an exact '
+        f'price.\n\n'
+        f'Does that still work?\n\n'
+        f'Yes, that works: {yes}\n'
+        f'No, not that day: {no}\n\n'
+        f'Either is fine. We just do not want to turn up unannounced.\n'
+    )
+    html = (
+        f'<p>{greeting}</p>'
+        f'<p>{business} here. We penciled you in for a quick site visit on '
+        f'<strong>{day}</strong> for the {_service(apt)}, so we can measure up '
+        f'and give you an exact price.</p>'
+        f'<p>Does that still work?</p>'
+        f'<p><a href="{yes}" style="display:inline-block;background:#0f766e;'
+        f'color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;margin-right:10px;">Yes, that works</a>'
+        f'<a href="{no}" style="display:inline-block;background:#ffffff;'
+        f'color:#0f766e;text-decoration:none;padding:12px 26px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;border:2px solid #0f766e;">'
+        f'No, not that day</a></p>'
+        f'<p style="color:#555;font-size:14px;">Either is fine. We just do not '
+        f'want to turn up unannounced.</p>'
+    )
+
+    recipients = [to]
+    if dry_run:
+        logger.info('[dry-run] visit confirm %s -> %s', number, to)
+        return True
+    return send_email_to_recipients(
+        recipients, subject, message,
+        html_message=html,
+        tenant=getattr(apt, 'tenant', None),
+    )
+
+
+def send_visit_handoff_email(row, *, number=1, dry_run=False):
+    """No email for the lead, so hand the outreach to the PLUMBER.
+
+    We have no free channel to this lead: WhatsApp shut weeks ago and there is
+    no address. The plumber does have one, from their own phone, and messaging
+    the lead opens a fresh 24-hour window we can then use ourselves.
+
+    The wa.me link carries a prefilled message so it is one tap and a send,
+    not a blank chat and a job of remembering who this person was.
+    """
+    from urllib.parse import quote
+
+    from bot.customer_emails import _clean_phone, _service
+    from bot.utils import business_name_for
+
+    apt = row.appointment
+    phone = _clean_phone(getattr(apt, 'phone_number', ''))
+    if not phone:
+        return False
+
+    day = _proposal_date_line(row)
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    business = business_name_for(apt)
+    area = getattr(apt, 'customer_area', '') or 'not given'
+    description = getattr(apt, 'project_description', '') or _service(apt)
+    timeline = getattr(apt, 'timeline', '') or 'not given'
+
+    # Written to be sent AS IS. A plumber who has to edit it will not send it.
+    prefilled = (
+        f"Hi{' ' + name if name else ''}, it is {business}. You were keen on "
+        f"{description} in {area} around {timeline}. We can come on {day} for a "
+        f"quick look and give you an exact price. Does {day} still work?"
+    )
+    wa_link = f'https://wa.me/{phone}?text={quote(prefilled)}'
+
+    subject = f'[Visit] Check {name or phone} is still on for {day}'
+    message = (
+        f'{name or "This lead"} has no email on file, so we cannot reach them '
+        f'ourselves. One tap sends them a message from your phone:\n\n'
+        f'{wa_link}\n\n'
+        f'Customer: {name or "Unknown"}\n'
+        f'WhatsApp: {phone}\n'
+        f'Job: {description}\n'
+        f'Area: {area}\n'
+        f'Timeline: {timeline}\n'
+        f'Penciled in: {day}\n\n'
+        f'The message is written ready to send. Once they reply to you we can '
+        f'pick the conversation back up.\n'
+    )
+    html = (
+        f'<p><strong>{name or "This lead"}</strong> has no email on file, so we '
+        f'cannot reach them ourselves. One tap sends them a message from your '
+        f'phone.</p>'
+        f'<p><a href="{wa_link}" style="display:inline-block;background:#25d366;'
+        f'color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:6px;'
+        f'font-size:16px;font-weight:bold;">Send on WhatsApp</a></p>'
+        f'<p style="font-size:14px;color:#444;">'
+        f'Customer: {name or "Unknown"}<br>'
+        f'WhatsApp: {phone}<br>'
+        f'Job: {description}<br>'
+        f'Area: {area}<br>'
+        f'Timeline: {timeline}<br>'
+        f'Penciled in: {day}</p>'
+        f'<p style="font-size:13px;color:#888;">The message is written ready to '
+        f'send. Once they reply to you we can pick the conversation back up.</p>'
+    )
+    return send_plumber_notification_email(
+        subject, message, dry_run=dry_run, html_message=html,
+        tenant=getattr(apt, 'tenant', None))

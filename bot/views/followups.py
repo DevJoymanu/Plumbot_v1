@@ -1216,6 +1216,10 @@ def send_followup(request, pk):
 @require_POST  
 def send_portfolio_to_lead(request, pk):
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
+    # Imported here, not at module level: whatsapp_webhook imports from the
+    # views package, so a top-level import is circular. Without this the button
+    # raised NameError every time a staff member pressed it.
+    from bot.whatsapp_webhook import send_previous_work_photos
     clean_phone = clean_phone_number(appointment.phone_number)
     sent = send_previous_work_photos(clean_phone, appointment)
     if sent:

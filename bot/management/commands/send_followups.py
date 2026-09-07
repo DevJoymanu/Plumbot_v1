@@ -68,11 +68,17 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 # ─── Contact windows (local time, half-open) ─────────────────────────────────
 # Each entry is (open_hour, open_minute, close_hour, close_minute) in CAT.
 # Two windows a day, around the hours the owner wants leads contacted in:
-# 12:33-13:57 and 16:03-18:30. Half-open, so the last possible send in each is
-# 13:56 and 18:29; the off-minute edges keep sends off obvious bot times.
+# 12:33-14:33 and 16:02-19:33 (owner rule, 2026-09-06, widening the previous
+# 12:33-13:57 / 16:03-18:30). Half-open, so the last possible send in each is
+# 14:32 and 19:32; the off-minute edges keep sends off obvious bot times.
+#
+# This is the ONE definition. Anything else that needs to know when we may
+# message a lead reads it from here — _next_window_open, _window_moment_before
+# and the plan-path follow-up all do — because two copies of a sending window
+# drift within a month and the second one is always the one nobody updates.
 CONTACT_WINDOWS = [
-    (12, 33, 13, 57),
-    (16, 3, 18, 30),
+    (12, 33, 14, 33),
+    (16, 2, 19, 33),
 ]
 
 # ─── How many follow-ups ──────────────────────────────────────────────────────
@@ -96,18 +102,25 @@ def followup_window_start(lead):
 
 def is_ctwa_lead(lead) -> bool:
     """True for a lead that arrived by tapping a Facebook/Instagram
-    click-to-WhatsApp ad — those open the extended 72h free-form window."""
+    click-to-WhatsApp ad.
+
+    Those get a 72h FREE ENTRY POINT, which makes sends free. It does NOT give
+    us longer to send: permission is 24h from their last message like everyone
+    else. This is kept because cost and prioritisation still care who came from
+    an ad; the schedule no longer does.
+    """
     return bool(getattr(lead, 'ctwa_entry_at', None))
 
 
 def messaging_window_hours(lead) -> float:
     """Hours we actually have to work with: from the window opening to the
-    moment free-form sending shuts off (24h standard, up to 72h for an ad
-    lead). Falls back to a plain 24h when the lead has no usable timestamp."""
-    default = (
-        float(getattr(lead, 'CTWA_WINDOW_HOURS', CTWA_WINDOW_HOURS))
-        if is_ctwa_lead(lead) else DEFAULT_WINDOW_HOURS
-    )
+    moment free-form sending shuts off.
+
+    24h for every lead. The ad window is a price and never bought us extra
+    hours to send in — see Appointment.messaging_window_closes_at for the
+    traffic that settled it.
+    """
+    default = DEFAULT_WINDOW_HOURS
     start = followup_window_start(lead)
     closes = getattr(lead, 'messaging_window_closes_at', None)
     if start is None or closes is None:
@@ -370,11 +383,14 @@ class Command(BaseCommand):
         cron can resume correctly across multiple runs.
         """
         now = timezone.now()
-        # Widest window any lead can have (72h for a click-to-WhatsApp ad lead) —
-        # a hardcoded 23h dropped ad leads out of the nudge flow on day two, half
-        # their window unused. The per-lead messaging_window_open check below is
-        # what actually decides; this is only a cheap prefilter.
-        window_open_cutoff = now - timedelta(hours=Appointment.CTWA_WINDOW_HOURS - 1)
+        # The widest window any lead can have, less an hour of slack. This was
+        # the ad window's 72h, on the belief that an ad tap bought three days of
+        # sending; it did not, and every lead selected between 24h and 72h was
+        # rejected later by messaging_window_open anyway. Tied to the constant
+        # now so it tracks the real rule. The per-lead check still decides; this
+        # is only a cheap prefilter.
+        window_open_cutoff = now - timedelta(
+            hours=Appointment.CUSTOMER_SERVICE_WINDOW_HOURS - 1)
         min_wait_cutoff    = now - timedelta(hours=1)
 
         candidates = (
@@ -1367,6 +1383,42 @@ class Command(BaseCommand):
             floor = last_sent + timedelta(hours=self._min_gap_hours(lead))
             if due < floor:
                 due = self._next_window_open(floor)
+
+            # ...but the spacing must not push the touch out of the window
+            # entirely. Rolling the floor forward can land AFTER the messaging
+            # window shuts, which silently undoes the pull-back above: the
+            # touch is scheduled into a contact window the lead will not
+            # survive to, so it simply never goes.
+            #
+            # A lead who wrote in the morning lost their fourth touch this way
+            # every time. They have one evening window left before their 24h is
+            # up, the full gap does not fit inside it, and the floor pushed the
+            # touch to the next midday, hours after they became unreachable.
+            #
+            # In that stretch the SPACING is what gives, not the touch. That is
+            # the trade _min_gap_hours already makes, via LAST_CALL_MIN_GAP_HOURS
+            # — it just could not see it from here, because _is_last_call asks
+            # whether we are in the final stretch NOW and this is scheduling
+            # ahead. So the relaxed gap is applied explicitly.
+            if deadline is not None and due > deadline:
+                target = deadline - timedelta(minutes=LAST_CALL_GRACE_MINUTES)
+                relaxed = last_sent + timedelta(hours=LAST_CALL_MIN_GAP_HOURS)
+                # `target` is the only moment we may move it to. The deadline
+                # is by definition the last sendable minute, so it sits inside
+                # a contact window and the grace period keeps it there.
+                #
+                # Deliberately NOT max(target, relaxed): a `relaxed` later than
+                # `target` is a moment outside the contact hours, and taking it
+                # put touches at 19:47 and 20:32 with the evening window shut
+                # at 19:33. Three messages in ninety minutes, two of them out
+                # of hours, is worse than one touch missed.
+                #
+                # So the touch moves only if it still clears the relaxed gap.
+                # Otherwise `due` is left where it is, past the deadline, and
+                # the readiness check declines it: a missed touch, never a
+                # bounced one and never an out-of-hours one.
+                if target >= relaxed:
+                    due = target
         return due
 
     def _is_last_call(self, lead, now=None):

@@ -362,6 +362,66 @@ class ExtractionMixin:
                 return {}
 
 
+        # ── Plan path helpers ────────────────────────────────────────────
+        # How near is near. A week, per the owner's rule: inside it we go for
+        # the appointment, outside it the lead is nurtured instead of pushed.
+        PLAN_NEAR_TIMELINE_DAYS = 7
+
+        def _on_plan_path(self) -> bool:
+            """True when this lead has sent a real plan.
+
+            Reads plan_status, never has_plan: has_plan goes true the moment a
+            lead SAYS a plan is coming, and a promised plan is nothing we can
+            quote from or reorder the flow around.
+            """
+            from bot.controller import on_plan_path
+            return on_plan_path(self.appointment)
+
+        def _plan_timeline_is_near(self) -> bool:
+            """Is the stated timeline inside a week?
+
+            Deterministic date work, never the planning LLM (CLAUDE.md). An
+            unparseable timeline counts as NEAR: pushing for a day is
+            recoverable, and silently parking a lead who wanted the job this
+            week is not.
+            """
+            from datetime import timedelta
+
+            from django.utils import timezone
+
+            raw = (self.appointment.timeline or '').strip()
+            if not raw:
+                return True
+
+            # The number was resolved once, when they answered. Reading it here
+            # keeps this branch free of an API call, which matters because
+            # get_next_question_to_ask runs on every turn.
+            row = getattr(self.appointment, 'plan_quote_request', None)
+            stored = getattr(row, 'timeline_days', None) if row else None
+            if stored is not None:
+                return stored <= self.PLAN_NEAR_TIMELINE_DAYS
+
+            try:
+                # No stored number (an older row, or the resolve failed). The
+                # offline parser is the fallback; it misses some phrasings, and
+                # everything it misses counts as NEAR.
+                from bot.out_of_scope_handler import _compute_followup_date_keywords
+                iso, _friendly = _compute_followup_date_keywords(raw)
+            except Exception:
+                logger.warning("Could not read the plan timeline %r", raw[:40],
+                               exc_info=True)
+                return True
+            if not iso:
+                return True
+            try:
+                from datetime import date as _date
+                target = _date.fromisoformat(str(iso)[:10])
+            except ValueError:
+                return True
+            horizon = (timezone.localdate()
+                       + timedelta(days=self.PLAN_NEAR_TIMELINE_DAYS))
+            return target <= horizon
+
         def get_next_question_to_ask(self):
             """
             5-question booking flow:
@@ -375,6 +435,31 @@ class ExtractionMixin:
             The only follow-up question is the customer's name, asked once
             after the booking confirmation is sent.
             """
+            # ── The PLAN path takes a different order ────────────────────
+            # A lead who sent a drawing is not asked "bathroom or kitchen?".
+            # They have handed us the job; the service type is derivable from
+            # the description they are about to give, and asking it first reads
+            # as though nobody looked at the plan.
+            #
+            #   project_description -> area -> timeline -> then the timeline
+            #   decides: within a week we go for the appointment, further out
+            #   the lead is nurtured instead of pushed.
+            #
+            # Timeline is asked HERE and nowhere else, because it is the branch
+            # point for this path — see _plan_timeline_is_near.
+            if self._on_plan_path():
+                if not self.appointment.project_description:
+                    return "project_description"
+                if not self.appointment.customer_area:
+                    return "area"
+                if not self.appointment.timeline:
+                    return "timeline"
+                # Far-out leads are not pushed for a day. The delayed-lead
+                # sequence owns them until they come back.
+                if not self._plan_timeline_is_near():
+                    return "complete"
+                # ...otherwise fall through to the ordinary booking questions.
+
             # A captured project description answers the service question too — a
             # lead who said "2x shower cubicles and accessories" must never be
             # bounced back to "How may we assist you on plumbing services" just
@@ -405,6 +490,31 @@ class ExtractionMixin:
                 return "name"
 
             return "complete"
+
+        def next_question_for_turn(self):
+            """The question to ask, after the controller has had its say.
+
+            The deterministic order decides first and remains the answer
+            whenever the controller is off, unsure, or picks a field we already
+            hold. What the controller buys is REORDERING: asking the thing that
+            moves this particular conversation on, rather than the next item in
+            a fixed list.
+
+            Separate from get_next_question_to_ask on purpose. That function is
+            called from a dozen places, several of them just checking state, and
+            it must stay a pure read of the record.
+            """
+            default = self.get_next_question_to_ask()
+            # Never let the controller reorder a state, only a question.
+            if default in ('complete', 'service_type'):
+                return default
+            try:
+                from bot.controller import question_for
+                return question_for(self.appointment, default)
+            except Exception:
+                logger.warning("Controller question choice failed, keeping %s",
+                               default, exc_info=True)
+                return default
 
 
         def update_appointment_with_extracted_data(self, extracted_data, incoming_message=None):
@@ -768,6 +878,17 @@ class ExtractionMixin:
                 
                 elif question_type == "timeline" and not self.appointment.timeline:
                     self.appointment.timeline = extracted_value
+                    # Resolve it to a number ONCE, here, off the hot path. The
+                    # plan path branches on it every turn and must not pay for
+                    # a parse each time. Best effort: a failure leaves it null,
+                    # which reads as NEAR.
+                    try:
+                        from bot.plan_quote import record_timeline
+                        self.appointment.save(update_fields=['timeline'])
+                        record_timeline(self.appointment, extracted_value)
+                    except Exception:
+                        logger.warning('Could not resolve the timeline for apt %s',
+                                       self.appointment.pk, exc_info=True)
                 
                 # FIXED: Add property_type handling that was missing
                 elif question_type == "property_type" and not self.appointment.property_type:

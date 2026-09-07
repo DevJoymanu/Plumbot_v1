@@ -141,6 +141,13 @@ class CreateQuotationView(CreateView):
         if report is not None and (report.job_notes or '').strip():
             context['quote_prefill_notes'] = report.job_notes.strip()
 
+        # The plan path lands on this same screen, so its notes carry across
+        # too. A lead has one or the other, never both, so there is no contest:
+        # whichever form the plumber just filled in is the one with the notes.
+        plan_row = getattr(appointment, 'plan_quote_request', None) if appointment else None
+        if plan_row is not None and (plan_row.job_notes or '').strip():
+            context['quote_prefill_notes'] = plan_row.job_notes.strip()
+
         if is_sectioned(tenant_of(self.request, appointment=appointment)):
             context.update(_sectioned_form_context(self.request, appointment=appointment))
             return context

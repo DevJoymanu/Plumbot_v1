@@ -50,6 +50,14 @@ def _seed_test_tenant(sender, **kwargs):
                 filename=item['filename'], title=item['title'],
                 price_line=item.get('price', ''),
                 description=item.get('description', ''),
+                # The seed's own description IS the vision description here.
+                # Production rows carry one (a person or the describer wrote
+                # it), and a photo without one is no longer shown to anyone —
+                # so a fixture that left this blank would model a gallery that
+                # cannot exist in production, and every proof case would fail
+                # for the wrong reason. defaults= only applies on create, so
+                # existing rows are untouched.
+                vision_description=item.get('description', ''),
                 story=item.get('story', ''),
                 keywords=[item.get('category', 'general')],
                 match_terms=list(item.get('keywords', [])),

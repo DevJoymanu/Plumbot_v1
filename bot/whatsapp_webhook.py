@@ -350,6 +350,20 @@ def notify_admin_of_priority_lead(appointment: Appointment, sender: str):
 # Question scripts for the media acknowledgement, keyed by
 # get_next_question_to_ask(). Wording is reused from ResponseMixin._FORWARD_BANK
 # so a lead never hears two different phrasings of the same question.
+# A PLAN needs a fuller answer than a photo does. "A few words is fine" is
+# right for someone who sent a picture of a leaking pipe; it is wrong for
+# someone who sent a drawing, where the changes they want are the whole point
+# and are not on the paper.
+#
+# The owner's own wording, and it deliberately does NOT mention the quote: the
+# quote is only ever raised when the customer has asked for one. Sending a plan
+# is not asking.
+_PLAN_DESCRIPTION_ASK = (
+    "Could you please give me a brief description of the project, including "
+    "what work you need done and any specific requirements or changes you "
+    "have in mind?"
+)
+
 _MEDIA_ACK_QUESTIONS = {
     'service_type':      "Could you describe what you'd like done? Just a few words is fine.",
     'project_description': "Could you describe what you'd like done? Just a few words is fine.",
@@ -444,7 +458,7 @@ def _compose_media_ack(next_question, status: str, media_type: str,
     TEST 0 gate. See _media_ack_reply for why the state matters.
     """
     if is_plan_document:
-        ack = "Got the plan, thanks."
+        ack = "Thanks for sending the plan."
     elif media_type == 'video':
         ack = "Got the video, thanks."
     else:
@@ -458,14 +472,20 @@ def _compose_media_ack(next_question, status: str, media_type: str,
     question = _MEDIA_ACK_QUESTIONS.get(next_question)
     if seen_question and next_question in ('service_type', 'project_description'):
         question = seen_question
+    # A plan being priced needs the fuller ask, whatever vision thought it saw.
+    if is_plan_document and next_question in ('service_type', 'project_description'):
+        question = _PLAN_DESCRIPTION_ASK
     if status == 'confirmed' or next_question in (None, 'complete', 'name')             or not question:
         # A plan is sent to BE QUOTED — say what happens to it, don't just file
         # it for the visit. Prod: a customer's floor plan got "I'll have it ready
         # for when we come round" and their next message was "Quote those".
         if is_plan_document:
-            return (f"{ack} I'll go through it and put a written quotation "
-                    f"together for you.{MESSAGE_SPLIT_MARKER}"
-                    "Anything you want included that isn't on the plan?")
+            # No question left to ask, so this only acknowledges. It does NOT
+            # mention the quote: that is raised when the customer asks for one,
+            # and sending a plan is not asking. It also never says "I'll put a
+            # quotation together" — the bot prices nothing, and we speak as the
+            # business, not about a third party.
+            return f"{ack} We'll take a look and come back to you."
         return f"{ack} I'll have it ready for when we come round."
 
     # Two messages, not one block: acknowledgement, a beat, then the question.
@@ -557,39 +577,40 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         except Appointment.DoesNotExist:
             fresh = appointment
 
-        plumber_number = _plumber_wa_number(fresh)
-
         customer_name = fresh.customer_name or "A customer"
 
         if urls:
-            file_lines = "\n".join(f"  ?? {u}" for u in urls)
+            file_lines = "\n".join(f"  {u}" for u in urls)
             file_section = f"Files ({len(urls)}):\n{file_lines}"
         else:
-            file_section = "?? Files could not be saved automatically."
+            file_section = "Files could not be saved automatically."
 
         alert_message = (
-            f"?? MEDIA RECEIVED FROM CUSTOMER\n\n"
+            f"MEDIA RECEIVED FROM CUSTOMER\n\n"
             f"Customer: {customer_name}\n"
             f"Phone: +{sender}\n"
             f"WhatsApp: wa.me/{sender}\n"
             f"Media type: {media_type.upper()} ({len(urls)} file(s))\n"
             f"{file_section}\n\n"
-            f"?? APPOINTMENT DETAILS:\n"
+            f"APPOINTMENT DETAILS:\n"
             f"  Service: {fresh.project_type or 'Not specified'}\n"
             f"  Area: {fresh.customer_area or 'Not specified'}\n\n"
-            f"?? View appointment:\n"
+            f"View appointment:\n"
             f"{settings.SITE_URL}/appointments/{fresh.id}/"
         )
 
         try:
-            if not plumber_number:
-                print(
-                    f"No plumber WhatsApp number for tenant "
-                    f"{getattr(fresh.tenant, 'slug', None)!r} — media alert skipped"
-                )
-                return
-            from .whatsapp_cloud_api import get_client_for_tenant
-            get_client_for_tenant(appointment.tenant).send_text_message(plumber_number, alert_message)
+            # The plumber is contacted by EMAIL, always (owner rule,
+            # 2026-09-05). One channel means one inbox to check and one place
+            # a lead can go missing, and email carries the plan attachment
+            # that WhatsApp alert never could. The tenant's own number stays
+            # on file for the customer-facing handoffs; it is no longer where
+            # we send them work.
+            send_plumber_notification_email(
+                subject=f"Files received from {customer_name}",
+                message=alert_message,
+                tenant=getattr(fresh, 'tenant', None),
+            )
             print(f"? Consolidated plumber alert sent ({len(urls)} file(s)) for {sender}")
         except Exception as e:
             print(f"? Failed to send plumber alert: {e}")
@@ -892,12 +913,31 @@ def _explicitly_requests_price(message: str) -> bool:
     return search_any(message, re.compile(r'\bh(?:o)?w\s*m(?:u)?ch\b'))
 
 
+# A media turn re-enters the router carrying what VISION saw, not what the
+# customer typed. Those descriptions say "This is a photo of a bathroom..." and
+# "A picture of a leaking pipe...", and the explicit-request detectors below
+# read the words photo/picture/image as a request for our gallery. So a lead
+# who sent us a snap of their burst pipe got fifteen marketing photos back
+# instead of an answer (4 of 5 realistic descriptions trigger it).
+#
+# Prefixed here exactly as the transcript already records the turn, so the one
+# marker means the same thing in both places, and the two detectors that dump
+# the gallery treat it as what it is: our words, never a request.
+MEDIA_TURN_PREFIX = '[Sent '
+
+
+def _is_media_turn(message: str) -> bool:
+    return (message or '').lstrip().startswith(MEDIA_TURN_PREFIX)
+
+
 def _explicitly_requests_photos(message: str) -> bool:
     """
     True when the customer explicitly asks to see pictures/photos/catalogue —
     even if they also name products. Used so an explicit photo request always
     sends photos instead of being swallowed by the product-inquiry path.
     """
+    if _is_media_turn(message):
+        return False
     import re
     msg = (message or '').lower()
     if not msg:
@@ -973,6 +1013,8 @@ def _explicitly_requests_catalogue(message: str) -> bool:
     the product catalogue images AND the price list alongside, not a single
     product's price line. Distinct from a previous-work photo request (past jobs).
     """
+    if _is_media_turn(message):
+        return False
     import re
     msg = (message or '').lower()
     if not msg:
@@ -1957,80 +1999,32 @@ def _strip_emojis(text: str) -> str:
     return strip_emojis(text)
 
 
-def _fallback_photo_followup(appointment=None) -> str:
-    """Project-type-aware follow-up used when DeepSeek is unavailable."""
-    project = (getattr(appointment, 'project_type', None) or '')
-    if 'kitchen' in project:
-        focus = "your kitchen"
-    elif 'bathroom' in project:
-        focus = "your bathroom"
-    else:
-        focus = "your project"
-    return (
-        f"Did anything there catch your eye for {focus}? "
-        "We can do a free on-site visit and show you exactly what's possible "
-        "in your space."
-    )
-
-
 def generate_photo_followup(appointment=None) -> str:
+    """The line that follows the work-photo gallery.
+
+    Deterministic since Phase 3. This was a DeepSeek call per photo send, and
+    what it wrote was a nudge toward the "free on-site visit" — the exact
+    sentence strip_repeat_free_visit then took back out, because by the time a
+    gallery goes out the visit has usually been pitched already. We were paying
+    for a call to produce a line another part of the system existed to delete.
+
+    What follows photos now is the next thing we actually need to know. See
+    controller_templates.photo_followup.
     """
-    Build a CONTEXTUAL one-liner to send after the work-photo gallery — tailored
-    to what this lead has actually been discussing — instead of a fixed
-    'anything for your bathroom?' line. Falls back to a project-type template if
-    DeepSeek is unavailable.
-    """
-    default = _fallback_photo_followup(appointment)
-    if appointment is None:
-        return default
+    from bot.repeated_question_detector import detect_language_simple
+    from bot.controller_templates import photo_followup
+
+    is_shona = False
     try:
-        from bot.services.clients import deepseek_call
-
-        history = appointment.conversation_history or []
-        lines = []
-        for m in history[-10:]:
-            if not isinstance(m, dict):
-                continue
-            content = (m.get('content') or '').strip()
-            if not content or content.startswith('[MEDIA]') or content.startswith('[IMAGE]'):
-                continue
-            who = 'Customer' if m.get('role') == 'user' else 'Plumbot'
-            lines.append(f"{who}: {content}")
-        transcript = "\n".join(lines[-6:])
-        project = (appointment.project_type or '').replace('_', ' ') or 'not stated yet'
-
-        reply = deepseek_call(
-            messages=[
-                {"role": "system", "content": (
-                    f"You are Plumbot, a warm WhatsApp assistant for "
-                    f"{business_name_for(appointment)} in Harare, Zimbabwe. You have JUST "
-                    "sent the customer a gallery of our "
-                    "previous-work photos. Write ONE short follow-up message (max 2 "
-                    "sentences) that:\n"
-                    "- refers to what THIS customer has actually been discussing\n"
-                    "- invites them to point out anything in the photos they liked\n"
-                    "- gently nudges toward the free on-site visit / next booking step\n"
-                    "Reply in the SAME language the customer used (English or Shona). "
-                    "No emojis. Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
-                    "Do not quote a price. Sound like a knowledgeable colleague "
-                    "texting, not a script. Output only the message text."
-                )},
-                {"role": "user", "content": (
-                    f"Customer's project: {project}\n\n"
-                    f"Recent conversation:\n{transcript or '(no prior detail)'}\n\n"
-                    "Write the follow-up message now."
-                )},
-            ],
-            temperature=0.7,
-            max_tokens=90,
-            retries=1,
-            timeout=10,
-        )
-        reply = _strip_emojis((reply or '').strip().strip('"').strip())
-        return reply or default
+        history = (getattr(appointment, 'conversation_history', None) or [])
+        last = next((m.get('content', '') for m in reversed(history)
+                     if isinstance(m, dict) and m.get('role') == 'user'), '')
+        is_shona = detect_language_simple(last or '') == 'shona'
     except Exception as exc:
-        print(f"Photo follow-up generation failed ({exc}) — using template")
-        return default
+        # This module logs with print, not logging. Language detection failing
+        # is not worth losing the follow-up over: English is the safe default.
+        print(f"Could not read the lead's language for the photo follow-up: {exc}")
+    return photo_followup(appointment, is_shona=is_shona)
 
 
 # -----------------------------------------------------------------------------
@@ -2039,25 +2033,44 @@ def generate_photo_followup(appointment=None) -> str:
 # queued; the caller must NOT send any fallback text when True is returned.
 # -----------------------------------------------------------------------------
 
-def send_previous_work_photos(sender, appointment=None, intro=None):
+def send_previous_work_photos(sender, appointment=None, intro=None,
+                              images=None, followup=None, asked_for=True):
     """
     Send previous work photos with a small delay between each image.
     Returns True if photos were queued (caller must NOT send additional text).
     Returns False if no images are configured (caller may send a text fallback).
-    Photos are only sent once per 24-hour window per appointment to prevent duplicates.
 
     `intro` replaces the standard lead-in line — the photo path returns outright,
     so anything the customer asked alongside the pictures has to travel with
     them or it is never answered. Optional, so existing callers are untouched.
+
+    `images` sends a specific set instead of the whole gallery: the proof step
+    shows two or three jobs that look like the one they just described, not
+    everything on file.
+
+    `followup` replaces the line that goes out behind the images.
+
+    `asked_for` is the important one. The 24-hour lock exists to stop a lead
+    who says "photos?" twice getting two galleries. But it returns True when it
+    blocks, meaning "handled" — so an UNASKED proactive send would consume the
+    lock and a genuine request an hour later would be silently swallowed: the
+    caller believes photos went and nothing did. A proactive send therefore
+    declines rather than claiming the slot, and a real request is never blocked
+    by one.
     """
     if appointment is not None:
         from django.utils import timezone
         from datetime import timedelta
         last_sent = getattr(appointment, 'previous_work_photos_sent_at', None)
         if last_sent and (timezone.now() - last_sent) < timedelta(hours=24):
-            print(f"Skipping previous work photos for {sender} - already sent within 24h")
-            return True
-    images = get_previous_work_images(appointment.tenant if appointment else None)
+            if asked_for:
+                print(f"Skipping previous work photos for {sender} - already sent within 24h")
+                return True
+            # Proactive: they have seen work recently, so there is nothing to
+            # show. Say so honestly instead of claiming to have sent something.
+            print(f"Proof step skipped for {sender} - work already shown within 24h")
+            return False
+    images = images or get_previous_work_images(appointment.tenant if appointment else None)
     if not images:
         print("No previous work images found - caller should handle fallback")
         return False
@@ -2101,7 +2114,7 @@ def send_previous_work_photos(sender, appointment=None, intro=None):
                         image_path, tenant=appointment.tenant if appointment else None)
                 sent_count += 1
                 time.sleep(0.5)
-            follow_up = generate_photo_followup(appointment)
+            follow_up = followup or generate_photo_followup(appointment)
             time.sleep(1)
             client.send_text_message(sender, follow_up)
             if appointment:
@@ -2595,7 +2608,7 @@ def handle_location_message(sender, location_data, tenant=None):
         except Appointment.DoesNotExist:
             response_msg = "Thanks for the location! To get started, please tell me about your plumbing needs."
             delay = get_random_delay(sender=sender)
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
         if appointment.chatbot_paused:
@@ -2621,11 +2634,11 @@ def handle_location_message(sender, location_data, tenant=None):
                     "This helps us serve you better."
                 )
                 delay = get_random_delay(sender=sender)
-                threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
+                threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
         else:
             response_msg = "Thanks for sharing your location! ??\n\nI've noted it. Let me continue with your appointment details..."
             delay = get_random_delay(sender=sender)
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
         print(f"? Error handling location: {str(e)}")
@@ -2664,7 +2677,7 @@ def handle_unsupported_media(sender, media_type, tenant=None):
         delay = get_random_delay(sender=sender)
         threading.Thread(
             target=delayed_response,
-            args=(sender, response_msg, delay),
+            args=(sender, finalise_outbound(response_msg, appointment, None), delay),
             kwargs={'tenant': tenant},
             daemon=True
         ).start()
@@ -2690,7 +2703,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
                 "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
             )
             delay = get_random_delay(sender=sender)
-            threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
+            threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
             return
 
         if appointment.plan_status == 'pending_upload':
@@ -2704,7 +2717,7 @@ def handle_audio_message(sender, audio_data, tenant=None):
             )
 
         delay = get_random_delay(sender=sender)
-        threading.Thread(target=delayed_response, args=(sender, response_msg, delay), kwargs={'tenant': tenant}, daemon=True).start()
+        threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
 
     except Exception as e:
         print(f"? Error handling audio: {str(e)}")
@@ -2996,7 +3009,7 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     from bot.views.plumbot.response_mixin import (
         strip_known_questions, strip_free_visit_claims,
         strip_repeat_free_visit, ensure_visit_price_note)
-    from bot.utils import strip_dashes
+    from bot.utils import enforce_single_question, strip_dashes
 
     reply, _re_asked = strip_known_questions(reply, appointment)
     if _re_asked:
@@ -3023,12 +3036,29 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     _undashed = strip_dashes(reply)
     if _undashed != reply:
         print("➖ Dash punctuation removed from the reply")
-    return _undashed
+
+    # One question per message. Applied PER SPLIT PART, never across the whole
+    # string: a reply carrying MESSAGE_SPLIT_MARKER becomes two messages that
+    # each ask one thing, and judging the joined text would read that as a
+    # violation and delete the question the split exists to deliver.
+    _asked = MESSAGE_SPLIT_MARKER.join(
+        enforce_single_question(part)
+        for part in _undashed.split(MESSAGE_SPLIT_MARKER)
+    )
+    if _asked != _undashed:
+        print("❓ Trailing tie-down dropped — the reply already asked a question")
+    return _asked
 
 
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None, tenant=None):
     """Generate a bot reply for message_body and schedule it with a 1-5 min send delay."""
     try:
+        # Calls per turn is the metric Phase 3 and Phase 4 are judged on, and
+        # it starts here. Every DeepSeek call goes through deepseek_call, so
+        # the count covers the fallback classifiers too, which is where the
+        # cost actually is.
+        from bot.services.clients import start_turn_count
+        start_turn_count()
         phone_number = f"whatsapp:+{sender}"
         leads = Appointment.objects.filter(phone_number=phone_number)
         if tenant is not None:
@@ -3064,6 +3094,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # located" died on it in production (2026-09-01).
             _stop_reply = build_hard_stop_reply(
                 is_shona=detect_language_simple(message_body) == 'shona')
+            _stop_reply = finalise_outbound(_stop_reply, appointment, message_body)
             appointment.add_conversation_message("assistant", _stop_reply)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
@@ -3098,7 +3129,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # answer that happens to trip an FAQ keyword) is never swallowed by the
         # keyword layer. Returns None on failure — callers fall back to keywords.
         from bot.unified_classifier import (
-            unified_classify,
+            unified_turn,
             uc_intent, uc_confidence, uc_product_intent,
             uc_is_photo_request, uc_is_plan_later, uc_is_repeat,
             uc_as_service_inquiry, uc_as_oos_classification,
@@ -3108,7 +3139,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         from django.utils import timezone as _tz
         _today_str = _tz.now().strftime('%Y-%m-%d')
         _next_question = plumbot.get_next_question_to_ask()
-        _uclass = unified_classify(
+        _uclass = unified_turn(
             message_body,
             appointment=appointment,
             conversation_history=appointment.conversation_history,
@@ -3131,6 +3162,97 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     _ext['availability'] = _kw_date
                     _uclass['extracted'] = _ext
                     print(f"📅 Availability keyword backfill: {_kw_date}")
+
+        # ── CONTROLLER SHADOW MODE (Phase 0 — drives NOTHING) ────────────────
+        # Log the move the controller would make, beside the deterministic
+        # projection of the same signals, so the agreement rate is measurable on
+        # real traffic before a single branch is promoted. The branches below
+        # call controller.note_branch() to report what actually ran; grep the
+        # logs for [SHADOW-PLAN] / [SHADOW-BRANCH].
+        from bot import controller as _controller
+        _controller.record_plan(appointment, _uclass, message_body)
+
+        # ── CONTROLLER ROUTING (Phase 2 — OFF until the shadow data says on) ─
+        # decide_move returns None unless PLUMBOT_CONTROLLER_ROUTING=1, so this
+        # is dark in production today. When it is switched on it takes only the
+        # two moves that are a pure template render; show_work and the
+        # qualifying questions stay with the router below, which already does
+        # them well.
+        _move = _controller.decide_move(_uclass, appointment)
+
+        # ── THE PROOF STEP ───────────────────────────────────────────────────
+        # They have described the job; show two or three finished ones like it
+        # BEFORE the area question and long before the fee. This is the step
+        # that builds the want, and without it the fee lands on someone who has
+        # seen nothing of what they are buying.
+        #
+        # Photos matched to their own words, not the whole gallery: a lead who
+        # described a geyser should not be shown a kitchen. No match means we
+        # have nothing relevant, so we say nothing and carry on rather than
+        # padding with something that does not look like their job.
+        if _move == 'show_work':
+            from bot import portfolio_catalog as _pc
+            from bot.controller_templates import (
+                show_examples, question_without_ack)
+            _job_text = ' '.join(filter(None, [
+                getattr(appointment, 'project_description', '') or '',
+                getattr(appointment, 'project_type', '') or '',
+            ]))
+            _proof = _pc.proof_images_for_job(_job_text, appointment.tenant)
+            if _proof:
+                _is_shona = detect_language_simple(message_body) == 'shona'
+                # The question rides out BEHIND the images: this path returns
+                # outright, so anything not carried with them is never asked.
+                _next_q = plumbot.next_question_for_turn()
+                # The question follows OUR statement and the photos, so it is
+                # not acknowledging anything the customer said. "All good, what
+                # area are you in?" after "Here are a couple we just finished"
+                # is a second canned opener with nothing to acknowledge.
+                _scripted = question_without_ack(
+                    plumbot._get_first_pass_question(_next_q) or '')
+                _controller.note_branch(appointment, 'show_work')
+                if send_previous_work_photos(
+                        sender, appointment,
+                        intro=show_examples(appointment, is_shona=_is_shona,
+                                            next_question=''),
+                        images=_proof,
+                        followup=_scripted or None,
+                        asked_for=False):
+                    if _scripted:
+                        plumbot._set_question_retry_count(_next_q, 1)
+                    print(f"🖼️ Proof sent: {len(_proof)} matched image(s)")
+                    return
+            # Nothing relevant to show. Fall through to the ordinary flow
+            # rather than sending a gallery that answers a different job.
+            print("Proof step skipped: no images match this job")
+            _move = None
+
+        if _move:
+            from bot.controller_templates import paid_visit_close, fee_objection
+            _is_shona = detect_language_simple(message_body) == 'shona'
+            _cfg = plumbot.tenant_cfg
+            _reply = (paid_visit_close(_cfg, is_shona=_is_shona)
+                      if _move == 'book_visit'
+                      else fee_objection(_cfg, is_shona=_is_shona))
+            _controller.note_branch(appointment, _move)
+            # Through the same choke point as every other reply, so the memory
+            # check, the strippers and the dash rule all apply. A new send path
+            # that skips this is how STEP 0 once promised a free visit for a
+            # tenant that charges.
+            _reply = finalise_outbound(_reply, appointment, message_body)
+            appointment.add_conversation_message("assistant", _reply)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at',
+                                            'last_contacted_at'])
+            print(f"🧭 Controller drove this turn: {_move}")
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _reply, get_random_delay(sender=sender),
+                      message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
 
         # ── Inbound language normalisation ───────────────────────────────────
         # Every deterministic resolver downstream matches ENGLISH phrases, and
@@ -3223,6 +3345,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 # Scope answer captured — advance to booking, never price the items.
                 _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
                 if _adv:
+                    _adv = finalise_outbound(_adv, appointment, message_body)
                     appointment.add_conversation_message("assistant", _adv)
                     delay = get_random_delay(sender=sender)
                     threading.Thread(
@@ -3272,6 +3395,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 and plumbot._is_nothing_else_reply(message_body)):
             _adv = plumbot._advance_after_scope(detect_language_simple(message_body))
             if _adv:
+                _adv = finalise_outbound(_adv, appointment, message_body)
                 appointment.add_conversation_message("assistant", _adv)
                 delay = get_random_delay(sender=sender)
                 threading.Thread(
@@ -3286,6 +3410,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # question with a second one bolted on (prod probe 2026-09-01).
         _detail_no = plumbot._handle_no_to_detail_request(message_body)
         if _detail_no:
+            _detail_no = finalise_outbound(_detail_no, appointment, message_body)
             appointment.add_conversation_message("assistant", _detail_no)
             delay = get_random_delay(sender=sender)
             threading.Thread(
@@ -3302,6 +3427,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # with two options instead of guessing, and never re-send the close.
         _lock_no = plumbot._handle_no_to_lock_in(message_body)
         if _lock_no:
+            _lock_no = finalise_outbound(_lock_no, appointment, message_body)
             appointment.add_conversation_message("assistant", _lock_no)
             delay = get_random_delay(sender=sender)
             threading.Thread(
@@ -3318,6 +3444,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # the normal date parser.
         _slot_no = plumbot._handle_no_to_slot_offer(message_body)
         if _slot_no:
+            _slot_no = finalise_outbound(_slot_no, appointment, message_body)
             appointment.add_conversation_message("assistant", _slot_no)
             delay = get_random_delay(sender=sender)
             threading.Thread(
@@ -3338,6 +3465,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if plumbot._last_assistant_was_new_build_confirm():
             _nb_no = plumbot._handle_new_build_rejection(message_body)
             if _nb_no:
+                _nb_no = finalise_outbound(_nb_no, appointment, message_body)
                 appointment.add_conversation_message("assistant", _nb_no)
                 delay = get_random_delay(sender=sender)
                 threading.Thread(
@@ -3361,6 +3489,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 detect_language_simple(message_body),
             )
             if _pivot_reply is not None:
+                _pivot_reply = finalise_outbound(_pivot_reply, appointment, message_body)
                 appointment.add_conversation_message("assistant", _pivot_reply)
                 delay = get_random_delay(sender=sender)
                 threading.Thread(
@@ -3502,6 +3631,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             else:
                 _faq_reply = plumbot._append_tiedown(_faq_fact, _faq_lang)
             appointment._add_notes_tag(_faq_done_tag)
+            _faq_reply = finalise_outbound(_faq_reply, appointment, message_body)
             appointment.add_conversation_message("assistant", _faq_reply)
             delay = get_random_delay(sender=sender)
             threading.Thread(
@@ -3657,6 +3787,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 and not _explicitly_requests_catalogue(message_body)
                 and not _delay_email_wants_wa):
             print("Catalogue/pictures request → sending full previous-work gallery")
+            _controller.note_branch(appointment, 'show_work')
             if send_previous_work_photos(sender, appointment):
                 return
             # No images on disk → fall through to the existing handlers below.
@@ -3690,6 +3821,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _menu_text = None
         if _menu_text:
             print("Portfolio menu request — sending catalogue overview")
+            _menu_text = finalise_outbound(_menu_text, appointment, message_body)
             appointment.add_conversation_message("assistant", _menu_text)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
@@ -3713,6 +3845,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 plumbot._get_pricing_followup_prompt('english'),
                 tenant=getattr(appointment, 'tenant', None),
             )
+            price_text = finalise_outbound(price_text, appointment, message_body)
             appointment.add_conversation_message("assistant", price_text)
             appointment.pricing_overview_sent = True
             appointment.last_outbound_at = timezone.now()
@@ -3739,6 +3872,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             uc_is_photo_request(_uclass) and not _is_clear_product_inquiry and not _has_pricing_signal
         )):
             print(f"Photo request detected (explicit={_explicit_photo})")
+            _controller.note_branch(appointment, 'show_work')
             # "What's a mixer can I have a pic" is two things. This step returns
             # outright, so a question asked alongside the request rides in on the
             # intro line or it is never answered at all (prod: fifteen photos and
@@ -3756,6 +3890,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 "I can share previous-work photos, but they are not configured yet. "
                 "Please ask our team and we will send them shortly."
             )
+            fallback_reply = finalise_outbound(fallback_reply, appointment, message_body)
             appointment.add_conversation_message("assistant", fallback_reply)
             delay = get_random_delay(sender=sender)
             threading.Thread(target=delayed_response, args=(sender, fallback_reply, delay), kwargs={'tenant': tenant}, daemon=True).start()
@@ -3773,6 +3908,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             )
             print(f"💸 Budget objection (webhook): '{message_body[:60]}'")
         if _budget_reply is not None:
+            _budget_reply = finalise_outbound(_budget_reply, appointment, message_body)
             appointment.add_conversation_message("assistant", _budget_reply)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
@@ -3791,6 +3927,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             classification=_uclass,
         )
         if oos_reply is not None:
+            # One router branch, three controller moves — the OOS handler covers
+            # out-of-scope, delay and complaint. Label it by what the classifier
+            # actually said, or the agreement rate would blame the controller for
+            # a distinction this branch never made.
+            _controller.note_branch(appointment, {
+                'delay_signal': 'slow_lead_nudge',
+                'complaint': 'escalate_to_human',
+                'out_of_scope': 'out_of_scope_redirect',
+            }.get(uc_intent(_uclass), 'out_of_scope_redirect'))
+            oos_reply = finalise_outbound(oos_reply, appointment, message_body)
             appointment.add_conversation_message("assistant", oos_reply)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at
@@ -3816,6 +3962,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _quoted_reply = _quoted_portfolio_price_reply(
                 plumbot, appointment, quoted_text, message_body)
             if _quoted_reply is not None:
+                _quoted_reply = finalise_outbound(_quoted_reply, appointment, message_body)
                 appointment.add_conversation_message("assistant", _quoted_reply)
                 appointment.last_outbound_at = timezone.now()
                 appointment.last_contacted_at = appointment.last_outbound_at
@@ -4129,6 +4276,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # -- STEP 4: Normal Plumbot processing ---------------------------------
         if reply is None:
             print("Running normal Plumbot processing")
+            # The main qualification flow. STEP 2/3 (pricing) do not report a
+            # branch yet — they set `reply` at several points and Phase 0 does
+            # not need them to measure the happy path. Add them when Phase 2
+            # promotes present_value.
+            _controller.note_branch(appointment, 'ask_qualifying_question')
             reply = plumbot.generate_response(
                 message_body,
                 precomputed_service_inquiry=inquiry,
@@ -4357,6 +4509,20 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
                 pk=appointment.pk, has_plan__isnull=True).update(has_plan=True)
             appointment.refresh_from_db()
 
+        # A plan on file puts the lead on the PLAN path: the drawing carries
+        # the measurements, so there is no measure-up to sell and the plumber
+        # quotes off it. Creating the row here is what anchors the plumber
+        # notification and everything after it. Idempotent, so a lead who
+        # sends three shots of the same drawing gets one row, and best effort,
+        # because failing to start the quote chase must not cost them the
+        # acknowledgement of their file.
+        if is_plan_document:
+            try:
+                from bot.plan_quote import ensure_request
+                ensure_request(appointment)
+            except Exception as plan_err:
+                print(f"Could not open the plan-quote request: {plan_err}")
+
         # Stamp the inbound WAMID on the photo turn. Without it a customer who
         # highlights their OWN photo to ask "this one, how much?" resolves to
         # None and the reply loses the picture they were pointing at — the
@@ -4426,7 +4592,8 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
                 print(f"Photo joined the running exchange for {sender} — "
                       f"replacing the reply generated before we saw it")
                 _enqueue_for_response(
-                    sender, image_description, None, tenant=tenant,
+                    sender, f"{MEDIA_TURN_PREFIX}{media_type}] {image_description}",
+                    None, tenant=tenant,
                 )
             else:
                 _schedule_media_ack(sender, appointment, media_type, is_plan_document)

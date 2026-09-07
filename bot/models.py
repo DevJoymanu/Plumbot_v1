@@ -2013,27 +2013,55 @@ class Appointment(models.Model):
         return bool(expires and expires > timezone.now())
 
     # ----- WhatsApp free-form messaging window (24h standard / 72h for ads) ----
+    # Permission is 24h from the customer's last message, for EVERY lead. The
+    # ad window is a price, not a licence — see messaging_window_closes_at.
+    CUSTOMER_SERVICE_WINDOW_HOURS = 24
+
     @property
     def messaging_window_kind(self):
-        """'72h' for CTWA ad leads (extended free-form window), else the
-        standard '24h' WhatsApp customer-service window."""
-        return '72h' if self.ctwa_entry_at else '24h'
+        """Always '24h'. Permission does not depend on how the lead arrived.
+
+        This used to answer '72h' for an ad lead, which read as "we may message
+        them for three days" and was wrong. The ad window governs what a send
+        COSTS; see messaging_cost_reason for that.
+        """
+        return '24h'
 
     @property
     def messaging_window_closes_at(self):
         """When the free-form (no-template) messaging window closes.
 
-        Standard rule: 24h from the customer's last message. For CTWA ad leads it
-        is extended to the 72h window from the ad entry point — whichever is
-        later. Anchored to the lead's last message so it reflects re-engagement.
+        24h from the customer's last message, for every lead. Anchored there so
+        it reflects re-engagement: a lead who writes again reopens it.
+
+        **This used to take max() with the ad lead's 72h free-entry-point
+        window, and that was the single most expensive wrong assumption in the
+        follow-up system.** Meta runs two independent windows: the free entry
+        point (72h from an ad tap) governs PRICE, and the customer service
+        window (24h from the customer's last message) governs PERMISSION. The
+        max() treated a price rule as a licence, so ad leads were scheduled four
+        touches across three days.
+
+        The `whatsapp_window_report` command was written to settle it from real
+        traffic, and it did: over 30 days, sends to ad leads between 24h and 48h
+        after their last message bounced 131047 thirty-three times and got
+        through ten. Past 48h, one bounced and four landed. Those leads were
+        receiving roughly two of their four touches; the rest were rejected by
+        Meta and silently lost.
+
+        With permission back at 24h, `followup_offsets_for` gives an ad lead
+        SHORT_WINDOW_FRACTIONS instead of the three-day band placement: the same
+        four touches, inside the day they can actually be delivered.
         """
-        candidates = []
-        last_msg = self.last_inbound_at or self.last_customer_response
-        if last_msg:
-            candidates.append(last_msg + timedelta(hours=24))
-        if self.ctwa_entry_at:
-            candidates.append(self.ctwa_entry_at + timedelta(hours=self.CTWA_WINDOW_HOURS))
-        return max(candidates) if candidates else None
+        # The ad tap is a last-resort anchor, not an extension. Tapping a CTWA
+        # ad sends a message, so a real lead has last_inbound_at; when it is
+        # missing the tap is the best record we have of when they wrote, and
+        # 24h from it beats treating the lead as unreachable.
+        last_msg = (self.last_inbound_at or self.last_customer_response
+                    or self.ctwa_entry_at)
+        if not last_msg:
+            return None
+        return last_msg + timedelta(hours=self.CUSTOMER_SERVICE_WINDOW_HOURS)
 
     # Set when a send is rejected with Meta error 131047 ("Re-engagement
     # message"): the free-form window is closed on Meta's side regardless of our
@@ -2068,16 +2096,17 @@ class Appointment(models.Model):
         return bool(closes and closes > timezone.now())
 
     # ----- Cost: which sends are FREE, as opposed to merely allowed ----------
-    # Two different Meta windows are being conflated by messaging_window_open,
-    # which takes the max() of both:
+    # Two different Meta windows, and they are independent:
     #   free entry point (FEP) — 72h from the click-to-WhatsApp ad tap. Governs
     #       PRICE. Everything inside it is free, both directions.
     #   customer service window (CSW) — 24h from the customer's last message.
     #       Governs PERMISSION to send free-form. Service messages inside it are
     #       free today, and become chargeable on the date below.
-    # Taking the max is right for "may we send" and wrong for "what will this
-    # cost": a lead who taps the ad on Monday and writes back on Friday has a
-    # CSW open and no FEP, so replying is permitted but paid.
+    # The FEP never extends permission, which messaging_window_closes_at used to
+    # assume and the traffic disproved. So the two are read separately: the CSW
+    # decides whether we may send at all, and the FEP only decides whether that
+    # send is free. A lead who taps the ad on Monday and writes back on Friday
+    # has a CSW open and no FEP, so replying is permitted but paid.
     #
     # The date is settings-overridable (WHATSAPP_SERVICE_MESSAGE_CHARGE_DATE) so
     # it can move when Meta moves it, without a code change.
@@ -2438,6 +2467,13 @@ class Appointment(models.Model):
     
 
     def get_all_uploaded_files(self) -> list:
+        # default_storage was used twice below but never imported here, so both
+        # calls raised NameError into the `except Exception` right beside them
+        # and the file fell back to its raw PATH instead of a URL. On R2 that
+        # path is not a link, so every uploaded plan and photo on the documents
+        # screen was a dead one. The sibling method further down imports it the
+        # same way; this one was missed.
+        from django.core.files.storage import default_storage
         files = []
         seen_paths = set()
 
@@ -2830,6 +2866,250 @@ class SiteVisitReport(models.Model):
         if self.expectation == 'timeframe' and self.expected_timeframe:
             return dict(self.TIMEFRAME_CHOICES).get(self.expected_timeframe, '')
         return ''
+
+
+class PlanQuoteRequest(models.Model):
+    """A lead sent a real plan, so the plumber quotes off it (spec §10).
+
+    The plan already carries the measurements, so there is nothing to measure
+    up and the paid site visit is redundant. What replaces it is this: get the
+    plan and the job context to the plumber, chase them until they say the
+    quote went out, then chase the lead.
+
+    Same shape as SiteVisitReport, and for the same reasons. One row per
+    appointment, one tokenized single-use URL, and every send gated by the
+    timestamp written as it goes out, so a five-minute cron re-running the tick
+    is safe. Sequencing state lives here rather than in internal_notes because
+    it is structured and the cron has to query it.
+
+    The row is created when the plan ARRIVES, which is the anchor everything
+    downstream is measured from. A lead who merely promised a plan has no row:
+    there is nothing to quote from yet.
+    """
+
+    QUOTE_STATUS_CHOICES = [
+        ('', 'Not known yet'),
+        # The plumber told us, on the form.
+        ('sent_confirmed', 'Plumber confirmed the quote was sent'),
+        # The plumber never answered, and we followed up anyway rather than
+        # let the lead go cold waiting on us.
+        ('assumed', 'Assumed sent'),
+    ]
+
+    # The gate on the form, mirroring SiteVisitReport.OUTCOME_CHOICES. Only
+    # `quoting` reveals the rest and the Create quote button; the other three
+    # submit straight through and write the lead state the dashboard reads.
+    #
+    # The visit outcomes do not carry across: nobody visited, so there is no
+    # no-show and nothing to reschedule. What replaces them is the question
+    # that actually decides this path — can you quote from this drawing?
+    OUTCOME_CHOICES = [
+        ('quoting', 'Quoting from the plan'),
+        # Spec §10.9 item 6: a plan too thin to price falls back to the visit.
+        ('needs_visit', 'Plan is not enough, book a visit'),
+        ('not_proceeding', 'Lead not proceeding'),
+    ]
+    # Same vocabulary as SiteVisitReport so the two paths answer the "when do
+    # they want it done?" question identically and downstream code can read
+    # either without a special case.
+    EXPECTATION_CHOICES = [
+        ('specific_date', 'Specific date'),
+        ('timeframe', 'Rough timeframe'),
+        ('unknown', "Didn't say"),
+    ]
+    TIMEFRAME_CHOICES = [
+        ('asap', 'ASAP'),
+        ('two_weeks', 'Within 2 weeks'),
+        ('this_month', 'This month'),
+        ('one_to_three_months', '1 to 3 months'),
+        ('exploring', 'Just exploring'),
+    ]
+
+    tenant = _tenant_fk(related_name='plan_quote_requests')
+    appointment = models.OneToOneField(
+        Appointment, on_delete=models.CASCADE, related_name='plan_quote_request'
+    )
+    # Not guessable: the form sets the lead's email and can start
+    # customer-facing sends, so the link is the credential and cannot be a
+    # bare /appointments/<pk>/.
+    token = models.CharField(max_length=64, unique=True, default=uuid.uuid4,
+                             db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    # The anchor. Everything downstream is an offset from this.
+    plan_received_at = models.DateTimeField(null=True, blank=True)
+
+    # The first email: lead details plus the plan attached. Also the anchor for
+    # the reminder cadence.
+    plumber_email_sent_at = models.DateTimeField(null=True, blank=True)
+    # How many of the +2h / +4h / +8h reminders have gone. A count rather than
+    # three columns: the offsets are a list, and the list is the contract.
+    reminders_sent = models.PositiveSmallIntegerField(default=0)
+
+    # The single-use gate, exactly like SiteVisitReport.submitted_at.
+    plumber_form_completed_at = models.DateTimeField(null=True, blank=True)
+
+    # ── What the plumber told us on the form ─────────────────────────────────
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES,
+                               blank=True, default='')
+    # When the customer wants the job done. This is the answer the whole
+    # follow-up cadence hangs off, which is why the form asks it in three
+    # shapes rather than a free-text box nobody fills in consistently.
+    expectation = models.CharField(max_length=20, choices=EXPECTATION_CHOICES,
+                                   blank=True, default='')
+    expected_date = models.DateField(null=True, blank=True)
+    expected_timeframe = models.CharField(max_length=32,
+                                          choices=TIMEFRAME_CHOICES,
+                                          blank=True, default='')
+    # Carried into the quote screen, the same way the debrief's notes are:
+    # the plumber wrote them a minute ago and must not retype them.
+    job_notes = models.TextField(blank=True, default='')
+
+    # How far out the lead's stated timeline is, in days, resolved ONCE when
+    # they answer and stored here.
+    #
+    # It has to be stored. The branch that reads it sits inside
+    # get_next_question_to_ask, which runs on every turn, so parsing there
+    # would put a DeepSeek round-trip in the hottest path in the bot. And it
+    # cannot be the offline keyword parser alone, which returns nothing for
+    # "in two weeks" or "in about three months" and would push a three-month
+    # lead to book tomorrow. Resolve once, with the good parser, and read the
+    # number thereafter.
+    timeline_days = models.IntegerField(null=True, blank=True)
+    quote_status = models.CharField(
+        max_length=20, choices=QUOTE_STATUS_CHOICES, blank=True, default='')
+    quote_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Optional. What the plumber quoted.')
+
+    # The follow-up to the LEAD, once the quote is out (or assumed out).
+    lead_followup_sent_at = models.DateTimeField(null=True, blank=True)
+    # Set when we give up on this lead, so nothing chases them again.
+    stopped_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['plumber_email_sent_at']),
+            models.Index(fields=['plumber_form_completed_at']),
+        ]
+
+    def __str__(self):
+        return f"Plan quote request for apt {self.appointment_id}"
+
+    @property
+    def is_open(self):
+        """The plumber has not answered the form yet."""
+        return self.plumber_form_completed_at is None
+
+    @property
+    def is_stopped(self):
+        return self.stopped_at is not None
+
+
+class VisitProposal(models.Model):
+    """A site visit a future-dated lead has only SOFTLY agreed to (spec §11).
+
+    A lead who wants the job at the end of October is not going to book a visit
+    for tomorrow, and pushing one loses them. So we name a real day near their
+    target and ask if it works. Their "yes that works" in chat is agreement to a
+    plan, not a booking, and treating it as one puts a job on the diary that
+    nobody has actually committed to.
+
+    That tentative state lives HERE rather than as a new `Appointment.status`
+    value on purpose. Every dashboard filter, the diary query and the follow-up
+    eligibility all read that field, and a fifth value would change what each of
+    them counts. The appointment only becomes `confirmed` when the lead answers
+    yes to the email nearer the date, which is the one moment a future-dated
+    visit becomes real.
+
+    Everything after that is email, because it has to be: WhatsApp is free only
+    for 24 hours after the lead's last message, and this flow is measured in
+    weeks. That is what the portfolio is FOR — it is the reason we can ask for
+    an email at all. A lead who refuses one is not dropped; the check-ins go to
+    the plumber instead, with a prefilled message they can send from their own
+    phone.
+    """
+
+    STATE_CHOICES = [
+        ('proposed', 'Proposed, awaiting the lead'),
+        ('confirmed', 'Confirmed by the lead'),
+        ('declined', 'Declined by the lead'),
+        ('lapsed', 'No answer, given up'),
+    ]
+    EMAIL_OPT_IN_CHOICES = [
+        ('unknown', 'Not asked yet'),
+        ('yes', 'Gave an address'),
+        ('declined', 'Refused'),
+    ]
+    PORTFOLIO_CHANNEL_CHOICES = [
+        ('none', 'Not sent'),
+        ('email', 'Emailed'),
+        ('whatsapp', 'Sent on WhatsApp'),
+    ]
+
+    tenant = _tenant_fk(related_name='visit_proposals')
+    appointment = models.OneToOneField(
+        Appointment, on_delete=models.CASCADE, related_name='visit_proposal'
+    )
+    # The yes/no links go in an email, so the token is the credential.
+    token = models.CharField(max_length=64, unique=True, default=uuid.uuid4,
+                             db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    # When the LEAD wants the job done, from the deterministic timeline parse.
+    target_date = models.DateField(null=True, blank=True)
+    # The day we offered for the visit: a few working days before their target.
+    proposed_date = models.DateField(null=True, blank=True)
+
+    state = models.CharField(max_length=12, choices=STATE_CHOICES,
+                             default='proposed', db_index=True)
+    email_opt_in = models.CharField(max_length=10, choices=EMAIL_OPT_IN_CHOICES,
+                                    default='unknown')
+    portfolio_sent_channel = models.CharField(
+        max_length=10, choices=PORTFOLIO_CHANNEL_CHOICES, default='none')
+
+    # The two check-ins, at target minus 7 and minus 4 days. Timestamps rather
+    # than a count, because which one went matters when reading a lead back.
+    checkin_1_sent_at = models.DateTimeField(null=True, blank=True)
+    checkin_2_sent_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['state', 'target_date']),
+        ]
+
+    def __str__(self):
+        return f"Visit proposal for apt {self.appointment_id} ({self.state})"
+
+    @property
+    def is_open(self):
+        """Still waiting on the lead. A decided proposal is never chased."""
+        return self.state == 'proposed'
+
+    def expectation_label(self):
+        """Human wording for the expected-date answer, never a bare None.
+
+        Same contract as SiteVisitReport.expectation_label: callers render this
+        straight into an email, so it must not be able to produce 'None' or an
+        empty gap.
+        """
+        if self.expectation == 'specific_date' and self.expected_date:
+            return self.expected_date.strftime('%A %d %B %Y')
+        if self.expectation == 'timeframe' and self.expected_timeframe:
+            return dict(self.TIMEFRAME_CHOICES).get(self.expected_timeframe, '')
+        return ''
+
+    @property
+    def goes_to_the_plumber(self):
+        """True when we have no free way to reach this lead ourselves.
+
+        No email means no channel: WhatsApp has been shut for weeks by the time
+        these fire. The plumber does the outreach from their own phone instead,
+        which starts a fresh window.
+        """
+        return self.email_opt_in == 'declined' or not (
+            getattr(self.appointment, 'customer_email', '') or '').strip()
 
 
 class AppointmentNote(models.Model):

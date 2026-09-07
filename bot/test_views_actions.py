@@ -351,6 +351,14 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         # The uploaded plan is index 0 — the View plan links depend on this.
         files = self.lead.get_all_uploaded_files()
         self.assertTrue(files and str(self.lead.plan_file) in str(files[0]))
+        # And the entry must carry a real URL, not the bare storage path.
+        # default_storage was used in this method but never imported, so both
+        # calls raised NameError into the `except Exception` beside them and
+        # every file fell back to its path. On R2 a path is not a link, so the
+        # documents screen was full of dead ones. The assertion above could not
+        # see it: a URL contains the path, so it passed either way.
+        self.assertNotEqual(files[0]['url'], files[0]['path'])
+        self.assertTrue(files[0]['url'].startswith('/'), files[0]['url'])
 
     def test_serve_and_download_plan_document(self):
         self.client.post(self.detail_url(), {
@@ -693,6 +701,20 @@ class FollowupActionTests(StaffClientTestCase):
         self.lead.refresh_from_db()
         self.assertIn('[IMAGE SENT]',
                       self.lead.conversation_history[-1]['content'])
+
+    @patch('bot.whatsapp_webhook.send_previous_work_photos', return_value=True)
+    def test_send_portfolio_to_lead(self, mock_send):
+        """The Send portfolio button.
+
+        send_previous_work_photos was never imported into this module, so the
+        button raised NameError every time a staff member pressed it and the
+        lead got nothing. Nothing covered it, because the view is a plain
+        redirect either way and the 302 looked like success.
+        """
+        response = self.client.post(
+            reverse('send_portfolio_to_lead', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 302)
+        mock_send.assert_called_once()
 
 
 # ======================================================================
@@ -2637,15 +2659,20 @@ class ReminderChannelWindowTests(TestCase):
         job = self._job(last_customer_response=timezone.now() - timedelta(hours=30))
         self.assertFalse(is_window_open(job))
 
-    def test_ctwa_lead_still_open_at_30h(self):
-        """A CTWA ad lead gets 72h. The old bare-24h check called this closed
-        and needlessly dropped to email."""
+    def test_ctwa_lead_is_closed_at_30h_like_anyone_else(self):
+        """The ad window is a price, not permission.
+
+        This used to assert the opposite, on the belief that an ad tap bought
+        72h of sending. Meta gives 24h from the customer's last message to
+        every lead, and the traffic proved it: sends to ad leads between 24h
+        and 48h bounced 131047 thirty-three times against ten delivered.
+        """
         from .whatsapp_window import is_window_open
         job = self._job(
             last_customer_response=timezone.now() - timedelta(hours=30),
             ctwa_entry_at=timezone.now() - timedelta(hours=30),
         )
-        self.assertTrue(is_window_open(job))
+        self.assertFalse(is_window_open(job))
 
     def test_131047_flag_closes_window_even_inside_24h(self):
         """Meta is authoritative: a bounced send closes the window regardless
@@ -2701,15 +2728,21 @@ class ReminderChannelWindowTests(TestCase):
         self.assertFalse(wa.called)
         self.assertFalse(mail.called)
 
-    def test_ctwa_lead_at_30h_still_uses_whatsapp_not_email(self):
+    def test_ctwa_lead_at_30h_drops_to_email_rather_than_bouncing(self):
+        """An ad lead past 24h is closed like any other, so the reminder goes
+        by email.
+
+        This is the practical win from correcting the window: what used to be
+        a WhatsApp send that bounced 131047 is now an email that arrives.
+        """
         job = self._job(
             last_customer_response=timezone.now() - timedelta(hours=30),
             ctwa_entry_at=timezone.now() - timedelta(hours=30),
             customer_email='customer@example.com',
         )
         ok, wa, mail = self._send(job)
-        self.assertTrue(wa.called)
-        self.assertFalse(mail.called)
+        self.assertFalse(wa.called)
+        self.assertTrue(mail.called)
 
 
 class TenantCredentialTests(TestCase):
@@ -3530,16 +3563,37 @@ class TenantConfigTests(TestCase):
 
         path = default_storage.save('intake_photos/acme/testgeyser.png',
                                     ContentFile(b'\x89PNG fake'))
-        TenantPortfolioItem.objects.create(
+        row = TenantPortfolioItem.objects.create(
             tenant=self.acme, item_id='geyser-1', filename=path,
             title='Geyser swap in Kwekwe', price_line='geyser install from US$150',
             keywords=['geyser'])
         item = portfolio_catalog.items_for(self.acme)[0]
         self.assertTrue(portfolio_catalog.item_is_available(item))
+
+        # Present on disk is not enough to be shown. Until someone has written
+        # down what is in the photo it stays out of the gallery: the title is
+        # typed by hand on upload, and in production that let a chocolate
+        # biscuit advert titled "Toilet install" and a screenshot of this CRM
+        # showing a customer's phone number sit in real galleries as examples
+        # of the tenant's work.
+        self.assertFalse(portfolio_catalog.is_described(item))
+        self.assertEqual(get_previous_work_images(self.acme), [])
+
+        row.vision_description = ('Electric geyser mounted on a bracket above '
+                                  'a ceiling hatch, copper pipework and an '
+                                  'isolator. Geyser install, hot water.')
+        row.save(update_fields=['vision_description'])
+        item = portfolio_catalog.items_for(self.acme)[0]
+        self.assertTrue(portfolio_catalog.is_described(item))
         self.assertEqual(get_previous_work_images(self.acme), [path])
         # Description (what record_sent_media stores → what quotes resolve to).
-        self.assertEqual(_describe_work_image(path, tenant=self.acme),
-                         'Geyser swap in Kwekwe')
+        # A described photo indexes as "title - vision prose"; the title leads,
+        # which is what _quoted_title reads back off it when a customer
+        # highlights the image.
+        described = _describe_work_image(path, tenant=self.acme)
+        self.assertTrue(described.startswith('Geyser swap in Kwekwe'), described)
+        from .whatsapp_webhook import _quoted_title
+        self.assertEqual(_quoted_title(described), 'Geyser swap in Kwekwe')
         # Homebase describing the same path finds nothing of its own.
         self.assertNotEqual(_describe_work_image(path, tenant=self.homebase),
                             'Geyser swap in Kwekwe')

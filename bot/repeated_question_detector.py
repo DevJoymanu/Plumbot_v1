@@ -411,6 +411,12 @@ def generate_repeat_clarification(
         else 'Respond in English.'
     )
 
+    plumber_clause = (
+        f"If it is, their number is {plumber_number}."
+        if plumber_number else
+        "If it is, offer to have them get in touch, and never invent a number."
+    )
+
     prompt = f"""You are a friendly WhatsApp assistant for {business_name or "the plumbing team"} in Zimbabwe.
 
 The customer asked essentially the same question twice (different wording).
@@ -425,16 +431,32 @@ THEIR NEW (REPEATED) MESSAGE:
 "{new_message}"
 
 TASK:
-Write a warm, natural WhatsApp reply that does ALL FOUR of the following — in this order:
+They are asking again because the first answer did not land. So do NOT repeat
+it. Say the same fact a different way, in plainer words, and be more concrete
+than you were the first time.
 
-1. REASSURE & ACKNOWLEDGE — Make them feel heard. Acknowledge that their question is totally valid. 1-2 sentences.
-2. EXPLAIN THE PREVIOUS ANSWER — In simple, friendly language, briefly explain WHY the you gave that answer (not just repeat it verbatim). 2-3 sentences max.
-3. ASK IF THEY NEED MORE CLARITY — One short, open question inviting them to say what's still unclear.
-4. REDIRECT TO THE PLUMBER — Gently explain you're just an assistant handling bookings, and for anything technical or project-specific they should speak directly to the plumber. {("Include their number: " + plumber_number) if plumber_number else "Offer to have the plumber get in touch (do NOT invent a phone number)."}
+Write a short WhatsApp reply that does two things, in this order:
+
+1. ANSWER IT AGAIN, DIFFERENTLY. Same fact, new words. If the first answer was
+   abstract, give a number, an example or a comparison. If it was long, be
+   blunt. Do not open by apologising for repeating yourself; just answer.
+
+2. ASK ONE ASSUMPTIVE CLARIFYING QUESTION. Not "what is still unclear?", which
+   makes them diagnose your answer for you. Offer the TWO most likely things
+   they actually meant, and let them pick one:
+     "Do you mean the cost of the tub itself, or fitted and finished?"
+     "Are you asking how soon we can come, or how long the job takes?"
+   Name their own words back. If you genuinely cannot see two readings, ask the
+   single most likely one as a yes or no.
+
+Only mention the plumber if the question is technical enough that no booking
+assistant could answer it. {plumber_clause} A repeated question is usually a
+sign the answer was unclear, not a sign the customer needs a different person.
 
 RULES:
 - Sound like a real, warm human — not a corporate helpdesk
-- Keep the whole message under 180 words
+- Keep the whole message under 70 words. Two or three sentences.
+- Exactly ONE question mark in the whole message
 - Use simple everyday language — no jargon
 - No markdown headers, no bullet points
 - No emojis

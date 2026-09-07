@@ -6,6 +6,8 @@ from .views import gallery as gallery_views
 from .views import offer as offer_views
 from .views import legal as legal_views
 from .views import post_visit as post_visit_views
+from .views import plan_quote as plan_quote_views
+from .views import visit_proposal as visit_proposal_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -107,6 +109,14 @@ urlpatterns = [
     # one submitted_at is what makes the form single-use across both paths.
     path('appointments/<int:pk>/site-visit/', post_visit_views.site_visit_start, name='site_visit_start'),
     path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
+    # Public and token-gated, like the site-visit form: the plumber taps it
+    # from an email on their phone with no session. Added to
+    # TenantMiddleware._EXEMPT_PREFIXES for the same reason.
+    path('plan-quote/<token>/', plan_quote_views.plan_quote_form, name='plan_quote_form'),
+    # The lead's yes/no on a penciled-in visit. Two URLs rather than a form
+    # because it is a link in an email and has to work in one tap. Also exempt.
+    path('visit/<token>/<str:answer>/', visit_proposal_views.visit_proposal_answer,
+         name='visit_proposal_answer'),
 
     # Job scheduling URLs
     path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),

@@ -284,8 +284,83 @@ Match the pattern, do not copy values blindly.
 (Appointment: ... | next_question=area)  "Dzivarasekwa extension"
 {"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"booking_answer","new_build":null,"extracted":{"area":"Dzivarasekwa Extension","availability":null,"customer_name":null,"project_description":null}}
 
+─── PLANNING (what we should DO next) ────────────────────────────────────────
+You are also the sales planner. After classifying, decide the next move.
+
+reasoning     Plan before you commit to next_move. Internal only, never shown
+              to the customer. HARD LIMIT 40 words — this shares the token
+              budget with the JSON body, and an overrun truncates the whole
+              object into unparseable text.
+want_level    How badly they want the job: "cold" (asking around),
+              "interested" (engaging, asked about the work), "wants_it" (they
+              have described the job and are leaning in). This is the FEE GATE:
+              the visit fee is never raised below "wants_it".
+next_move     Exactly one of:
+  greet                    first contact, nothing on file yet
+  ask_qualifying_question  we still need the project description, the area or
+                           the timeline. ONE question at a time.
+  show_work                send 2-3 example photos. ONLY once the project
+                           description is known: proof lands harder when it
+                           matches what they just described.
+  present_value            they asked us to price a WHOLE JOB before anyone
+                           has seen it. There is no honest figure for that yet,
+                           so answer with value and the visit. This is NOT for
+                           a plain price question: a lead who asks what a
+                           fixture costs gets the price, and the move for that
+                           is ask_qualifying_question while the system answers.
+  book_visit               description known, work shown, area known, they are
+                           leaning in. The system states the fee and offers the
+                           days. You never name either.
+  handle_objection         they hesitated on the fee or the visit
+  slow_lead_nudge          they are deferring, or answered with a timeframe
+                           instead of the field we asked for
+  escalate_to_human        anger, a dispute about a quote they were given, or
+                           they asked for a person
+  out_of_scope_redirect    work we do not do
+  close_pleasantry         a pure acknowledgement that needs nothing back
+next_question  WHICH field to ask about, when next_move is
+              ask_qualifying_question. One of: project_description, area,
+              timeline, availability_date, availability_time, name. null for
+              any other move.
+              Pick the one that moves THIS conversation forward, not the next
+              one in a list. A lead who has just described a leak in detail
+              does not need "what needs doing"; a lead who named their suburb
+              two messages ago does not need "where are you". Never choose a
+              field the appointment state above already shows as filled.
+move_confidence  0.0-1.0, how sure you are of next_move. Below 0.6 the system
+              ignores your move and uses its own rules, so a low number is a
+              useful answer, not a failure. NOTE this is a different field from
+              "confidence" above, which stays HIGH/LOW and describes the
+              CLASSIFICATION. Return both.
+
+WHEN SOMETHING IS UNCLEAR, ASSUME. Never ask an open "what do you mean?" or
+"could you clarify?" — that hands the customer the job of working out what you
+missed, and most people answer it by repeating themselves. Offer the two most
+likely readings and let them pick:
+  "Do you mean the tub on its own, or fitted?"
+  "Is it the whole bathroom, or just the shower?"
+Use their own words back. One reading if you can only see one, as a yes or no.
+Set next_move to ask_qualifying_question for these.
+
+IF THEY ASK SOMETHING YOU ALREADY ANSWERED, the first answer did not land. Do
+not repeat it. Say the same fact in plainer words, more concretely, then one
+assumptive clarifier as above.
+
+ORDER THAT MATTERS: description first, then show the work, then the area, then
+the close. Never the fee before "wants_it".
+
+PRICE: the visit fee is the only price we ever bring up on our own. Never lead
+with a job price and never guess one. But when the customer ASKS what something
+costs, they get an answer: the system holds the real figures and states them.
+Do not put any figure in your own text.
+
 ─── OUTPUT FORMAT (return exactly this structure) ────────────────────────────
 {
+  "reasoning": "",
+  "next_move": "ask_qualifying_question",
+  "next_question": "area",
+  "move_confidence": 0.8,
+  "state_update": {"want_level": "interested"},
   "intent": "in_scope",
   "confidence": "HIGH",
   "service_type": null,
@@ -357,7 +432,7 @@ def _tenant_product_intents(appointment) -> str:
     return "\n".join(lines)
 
 
-def unified_classify(
+def unified_turn(
     message: str,
     appointment=None,
     conversation_history=None,
@@ -365,9 +440,16 @@ def unified_classify(
     next_question: str = "",
 ) -> dict | None:
     """
-    Make one DeepSeek call and return a classification + extraction dict.
+    Make one DeepSeek call and return comprehension + extraction + a PLAN.
 
-    Returns None on any failure — callers fall back to individual classifiers.
+    The classification half is unchanged and load-bearing; the planning half
+    (`reasoning`, `next_move`, `confidence`, `state_update.want_level`) is
+    additive and, in Phase 0, drives nothing — see bot/controller.py.
+
+    Returns None only when the body could not be parsed at all, in which case
+    callers fall back to their individual classifiers exactly as before. A
+    malformed PLAN never produces None: the classification is returned with the
+    planning keys stripped instead.
     """
     client = _get_client()
     if not client:
@@ -405,51 +487,119 @@ def unified_classify(
         f"Customer message: \"{message}\""
     )
 
+    messages = [
+        {
+            "role": "system",
+            # The lead's OWN business name. This prompt used to name
+            # HomeBase for every tenant, priming the model with the
+            # wrong company on every classification.
+            "content": (
+                _SYSTEM
+                .replace("{today}", today_date)
+                .replace("{business}", business_name_for(appointment))
+                # The out-of-scope list is Homebase's. Naming a service
+                # THIS tenant advertises would have the model decline
+                # their own work (prod: barmak sells boreholes).
+                .replace("{out_of_scope_services}",
+                         _out_of_scope_services(appointment))
+                # The tenant's OWN extra services, so the model has a
+                # key to return for work Homebase's product list never
+                # names (barmak: tiling, gutters, pumps, filters).
+                .replace("{tenant_services}",
+                         _tenant_product_intents(appointment))
+            ),
+        },
+        {"role": "user",   "content": user_content},
+    ]
+
+    first = _call_once(messages)
+    if first is None:
+        # Unparseable on the first go. One retry, which is the entire failure
+        # tail (spec §4) — beyond that the caller's own classifiers are cheaper
+        # than a third round-trip.
+        logger.info("unified_turn: unparseable body, retrying once")
+        second = _call_once(messages)
+        if second is None:
+            return None
+        first = second
+
+    from bot.controller import validate_turn, planning_attempted
+    errors = validate_turn(first)
+    if not errors:
+        logger.debug("unified_turn result: %s", first)
+        return first
+
+    # No plan at all: the planning block is not landing (stale deploy, a model
+    # ignoring it, a truncated body). A retry would not fix that and WOULD
+    # double the call count on the bot's busiest path, so take the
+    # classification and move on. Loud at info level because a permanently
+    # planless controller is a thing to notice, not to absorb.
+    if not planning_attempted(first):
+        logger.info("unified_turn: no plan in the payload (%s) — "
+                    "classification kept, no retry", '; '.join(errors[:2]))
+        return _without_planning(first)
+
+    # The body parsed and the model DID try to plan, but got it wrong. That is
+    # a one-off slip worth one retry — never at the cost of the classification,
+    # which is what every downstream handler actually depends on today. If the
+    # retry is no better we return the ORIGINAL classification with the
+    # planning keys stripped, so a planning regression degrades the planner and
+    # nothing else.
+    logger.info("unified_turn: planning invalid (%s), retrying once",
+                '; '.join(errors[:3]))
+    retry = _call_once(messages)
+    if retry is not None and not validate_turn(retry):
+        return retry
+    return _without_planning(first)
+
+
+def _call_once(messages) -> dict | None:
+    """One DeepSeek round-trip. Returns the parsed object, or None."""
     raw = None
     try:
         from bot.services.clients import deepseek_call
         raw = deepseek_call(
-            messages=[
-                {
-                    "role": "system",
-                    # The lead's OWN business name. This prompt used to name
-                    # HomeBase for every tenant, priming the model with the
-                    # wrong company on every classification.
-                    "content": (
-                        _SYSTEM
-                        .replace("{today}", today_date)
-                        .replace("{business}", business_name_for(appointment))
-                        # The out-of-scope list is Homebase's. Naming a service
-                        # THIS tenant advertises would have the model decline
-                        # their own work (prod: barmak sells boreholes).
-                        .replace("{out_of_scope_services}",
-                                 _out_of_scope_services(appointment))
-                        # The tenant's OWN extra services, so the model has a
-                        # key to return for work Homebase's product list never
-                        # names (barmak: tiling, gutters, pumps, filters).
-                        .replace("{tenant_services}",
-                                 _tenant_product_intents(appointment))
-                    ),
-                },
-                {"role": "user",   "content": user_content},
-            ],
+            messages=messages,
             temperature=0.0,
-            # +100 over the classification-only budget: the english rendering
-            # is a whole sentence, and a truncated body is unparseable JSON.
-            max_tokens=500,
+            # Classification (500) plus the planning half. `reasoning` is
+            # capped at 40 words in the prompt, but the cap is advisory and a
+            # body truncated mid-JSON is unparseable — the exact failure that
+            # broke every classifier when thinking mode was left on (see
+            # bot/services/clients.py). Headroom is cheaper than a retry.
+            max_tokens=800,
             json_response=True,
         )
-        result = json.loads(raw)
-        logger.debug("unified_classify result: %s", result)
-        return result
+        return json.loads(raw)
     except Exception as exc:
         # Log the raw body on failure so a malformed/truncated JSON is visible
         # (distinguishes "DeepSeek returned junk" from "DeepSeek returned nothing").
         logger.warning(
-            "unified_classify failed: %s | raw=%r",
+            "unified_turn call failed: %s | raw=%r",
             exc, (raw[:400] if raw else raw),
         )
         return None
+
+
+def _without_planning(result: dict) -> dict:
+    """The classification half alone, with the planning keys removed.
+
+    Returning a half-valid plan would be worse than returning none: the
+    accessors would read it as a real decision, and shadow mode would score a
+    malformed move as a disagreement rather than as a planning failure.
+    """
+    stripped = {k: v for k, v in (result or {}).items()
+                if k not in ('reasoning', 'next_move', 'move_confidence',
+                             'comprehension', 'response')}
+    state = stripped.get('state_update')
+    if isinstance(state, dict):
+        stripped.pop('state_update', None)
+    return stripped
+
+
+# The controller IS this call (spec §1) — same round-trip, now carrying the
+# plan. The old name stays as an alias because ~15 call sites import it and a
+# rename is not what Phase 0 is for.
+unified_classify = unified_turn
 
 
 # ── Accessor helpers (safe — return sensible defaults when result is None) ────
@@ -572,3 +722,37 @@ def uc_as_oos_classification(r: dict | None) -> dict:
         "confidence": uc_confidence(r),
         "detail":     "",
     }
+
+
+# ── Planning accessors (spec §1) ─────────────────────────────────────────────
+# The planning half lives in bot/controller.py, which is pure and offline. These
+# are thin re-exports so a caller that already imports from this module has one
+# import surface for the whole turn, classification and plan alike.
+
+def uc_next_move(r: dict | None) -> str | None:
+    """The move the model chose, or None when it gave none we recognise."""
+    from bot.controller import plan_next_move
+    return plan_next_move(r)
+
+
+def uc_plan_confidence(r: dict | None) -> float:
+    """0.0-1.0 confidence in next_move; 0.0 when absent (= do not act on it)."""
+    from bot.controller import plan_confidence
+    return plan_confidence(r)
+
+
+def uc_want_level(r: dict | None) -> str | None:
+    """'cold' | 'interested' | 'wants_it' — the fee gate. None when unstated."""
+    from bot.controller import plan_want_level
+    return plan_want_level(r)
+
+
+def uc_reasoning(r: dict | None) -> str:
+    """The model's internal plan. Logs and diagnostics ONLY — never customer copy."""
+    from bot.controller import plan_reasoning
+    return plan_reasoning(r)
+
+
+def uc_sentiment(r: dict | None) -> str | None:
+    from bot.controller import plan_sentiment
+    return plan_sentiment(r)

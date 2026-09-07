@@ -249,3 +249,51 @@ def format_phone_number_for_storage(phone):
     if not phone.startswith('whatsapp:'):
         return f"whatsapp:+{phone}"
     return phone
+
+
+# The house rule is ONE question per message: people answer the last one and
+# the earlier one is wasted. Two questions usually arrive the same way — a
+# reply that already asks something, with a short tie-down bolted on the end
+# ("Sharp?", "That sit alright?"), because the tie-down is appended by a
+# different code path than the question and neither can see the other.
+#
+# So the rule is narrow on purpose: drop a TRAILING SHORT question, and only
+# when a real question already stands in front of it. Length is what separates
+# a bolted-on tie-down from a genuine ask — an either/or clarifier ("you're not
+# in a specific area? Or did you mean you're not sure yet?") is two questions
+# by punctuation but one question by intent, and it survives because its second
+# half is too long to look like a tie-down.
+_TIEDOWN_MAX_WORDS = 4
+
+# A sentence ends at . ! or ? — kept as a capture so the text can be rebuilt
+# exactly, since anything else would quietly reflow the copy.
+_SENTENCE_SPLIT = re.compile(r'([.!?]+)(\s+|$)')
+
+
+def _sentences(text: str):
+    """[(body, terminator, trailing space), ...] covering the whole string."""
+    out, pos = [], 0
+    for m in _SENTENCE_SPLIT.finditer(text):
+        out.append((text[pos:m.start()], m.group(1), m.group(2)))
+        pos = m.end()
+    if pos < len(text):
+        out.append((text[pos:], '', ''))
+    return out
+
+
+def enforce_single_question(text: str) -> str:
+    """Drop a trailing tie-down question when the message already asks one."""
+    if not text or text.count('?') < 2:
+        return text
+    parts = _sentences(text)
+    if len(parts) < 2:
+        return text
+    body, term, _space = parts[-1]
+    if '?' not in term:
+        return text                      # does not end on a question
+    if len(body.split()) > _TIEDOWN_MAX_WORDS:
+        return text                      # a real ask, not a tie-down
+    if not any('?' in t for _b, t, _s in parts[:-1]):
+        return text                      # nothing in front of it
+    kept = ''.join(b + t + s for b, t, s in parts[:-1])
+    return kept.rstrip() or text

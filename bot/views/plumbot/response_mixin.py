@@ -3143,6 +3143,51 @@ class ResponseMixin:
             return getattr(appt, 'plan_status', '') == 'plan_uploaded'
 
 
+        def _plan_parked_reply(self) -> str:
+            """A plan lead who wants the job further out than a week.
+
+            Parks them on the existing delayed-lead machinery so the nurture
+            follow-ups own them, and asks for an email if we have none — that
+            is the only channel that outlives the 24h WhatsApp window, and by
+            the time their date comes round the window is long shut.
+
+            Says nothing about a quote. They have not asked for one, and the
+            plumber is being emailed the plan either way.
+            """
+            from bot.repeated_question_detector import detect_language_simple
+
+            is_shona = detect_language_simple(
+                self._last_customer_message() or '') == 'shona'
+
+            # Hand them to the delayed-lead flow with a real check-back date,
+            # rather than leaving them in the booking flow with nothing to ask.
+            try:
+                from bot.out_of_scope_handler import (
+                    _compute_followup_date, _store_delay_followup_date,
+                    mark_delay_signal,
+                )
+                raw = (self.appointment.timeline or '').strip()
+                mark_delay_signal(self.appointment, raw)
+                iso, _friendly = _compute_followup_date(raw)
+                if iso:
+                    _store_delay_followup_date(self.appointment, iso,
+                                               source_message=raw)
+            except Exception:
+                logger.warning("Could not park the plan lead %s",
+                               getattr(self.appointment, 'pk', None),
+                               exc_info=True)
+
+            if (self.appointment.customer_email or '').strip():
+                return ("Zvakanaka, tatenda. Tichadzoka kwamuri nguva yasvika."
+                        if is_shona else
+                        "Got it, thanks. We'll check back with you nearer the time.")
+            return ("Zvakanaka, tatenda. Ndeipi email yenyu? "
+                    "Tichadzoka kwamuri nguva yasvika."
+                    if is_shona else
+                    "Got it, thanks. What is the best email for you? "
+                    "We'll check back nearer the time.")
+
+
         def _quote_route_followup(self) -> str:
             """The question that follows routing a quote request to the visit.
 
@@ -3218,10 +3263,14 @@ class ResponseMixin:
             # is no longer the thing we ask them for.
             if self._has_plan_on_file():
                 lead = (
-                    "Ndinotarisa plan yenyu ndogadzira quotation yakanyorwa."
+                    # Reached only when the customer ASKED for a quote, which
+                    # is the one place the quote may be raised. "I'll come back
+                    # with a written quotation" was wrong for a different
+                    # reason: the bot prices nothing. We speak as the business.
+                    "Tichatarisa plan yenyu tokugadzirirai quotation."
                     if is_shona else
-                    "I'll work through the plan you sent and come back with a "
-                    "written quotation."
+                    "We'll price it off the plan you sent and get the quote "
+                    "to you."
                 )
             else:
                 lead = (
@@ -3253,12 +3302,8 @@ class ResponseMixin:
             # Two separate messages: the acknowledgement is now the warm lead-in, so
             # drop a scripted opener ("Great,", "All good,") from the follow-up —
             # otherwise the second message reads as a second canned opener.
-            followup = re.sub(
-                r'^(great|nice one|nice|perfect|awesome|all good|got it)[,!.]?\s+',
-                '', followup, flags=re.IGNORECASE,
-            )
-            if followup:
-                followup = followup[0].upper() + followup[1:]
+            from bot.controller_templates import question_without_ack
+            followup = question_without_ack(followup)
             return f"{lead}{MESSAGE_SPLIT_MARKER}{followup}"
 
 
@@ -3654,6 +3699,24 @@ class ResponseMixin:
                     # None means description was just captured — fall through to
                     # the normal booking flow so it asks the next question
 
+                # ── PLAN LEAD WHOSE TIMELINE IS BEYOND THE WEEK ──────────────────
+                # Nothing left to ask and nothing to book: they told us the job
+                # is months out, so the plan path stops at 'complete' rather
+                # than pushing for a day.
+                #
+                # This branch has to exist. Without it the lead falls through to
+                # the retry machinery with next_question='complete', which has
+                # no scripted question, so _generate_retry_response is asked to
+                # re-ask a question that does not exist — vague prose, a retry
+                # count climbing on every reply, and a human handoff at four.
+                if (self.appointment.status != 'confirmed'
+                        and self._on_plan_path()
+                        and self.get_next_question_to_ask() == 'complete'):
+                    reply = self._plan_parked_reply()
+                    self.appointment.add_conversation_message("user", incoming_message)
+                    self.appointment.add_conversation_message("assistant", reply)
+                    return reply
+
                 # ── CONFIRMED + COMPLETE — respond contextually, never go silent ─────
                 if (self.appointment.status == 'confirmed' and
                         self.get_next_question_to_ask() == 'complete'):
@@ -4037,6 +4100,21 @@ class ResponseMixin:
                                 If the customer provided info this turn, open with a
                                 thank-you + one contextual line before the question.
             """
+            # The controller gets to reorder the question here, and only here:
+            # this is the one place a question becomes copy. It is applied ONLY
+            # when the caller passed the deterministic default — a caller that
+            # named a specific question (the plan flow, the timeline pivot) meant
+            # that question and is not up for reinterpretation.
+            #
+            # The copy itself is unchanged: the scripted bank still writes the
+            # first ask and _generate_retry_response still writes the retries in
+            # the human voice. The model chooses WHAT to ask, not how it sounds.
+            try:
+                if next_question == self.get_next_question_to_ask():
+                    next_question = self.next_question_for_turn()
+            except Exception:
+                logger.warning("Controller question choice failed, keeping the "
+                               "deterministic order", exc_info=True)
             try:
                 import pytz as _pytz
 
@@ -4774,6 +4852,16 @@ class ResponseMixin:
             if next_question == "area":
                 return "All good, what area are you in?"
 
+            if next_question == "timeline":
+                # Only the plan path asks this, and it is the branch point:
+                # inside a week we go for the appointment, outside it the lead
+                # is nurtured. Names their OWN job back so it reads as though
+                # someone looked at the drawing.
+                job = _visit_job_noun(self.appointment)
+                if job in ('work', 'repair'):
+                    return "When were you hoping to get started?"
+                return f"When were you hoping to get started with the {job}?"
+
             return None
 
 
@@ -4831,7 +4919,14 @@ class ResponseMixin:
                 )
 
             if retry_count == 1:
-                escalation = "Simplify the question slightly. Same intent, fresher phrasing."
+                # They did not answer the open version, so do not send another
+                # one. Two named options is what turns a question people skip
+                # into one they can answer with a word.
+                escalation = (
+                    "Rephrase it as two explicit choices rather than an open "
+                    "question: name the two most likely answers and let them "
+                    "pick. Use their own words. Same intent, fresher phrasing."
+                )
             elif retry_count == 2:
                 escalation = (
                     "Offer two explicit choices instead of an open question. "

@@ -69,6 +69,32 @@ HUMAN_VOICE = {
 }
 
 
+# ── Calls per turn ───────────────────────────────────────────────────────────
+# Phase 3 and Phase 4 of the reasoning controller are both measured in calls
+# per turn, and there was no way to read that number. Every DeepSeek call in
+# the bot goes through deepseek_call, so counting here counts everything.
+#
+# Thread-local, because the webhook answers each sender on its own thread and a
+# shared counter would blend two conversations into one meaningless figure.
+import threading as _threading
+
+_turn = _threading.local()
+
+
+def start_turn_count():
+    """Begin counting for one inbound message. Safe to call twice."""
+    _turn.calls = 0
+
+
+def _count_call():
+    _turn.calls = getattr(_turn, 'calls', 0) + 1
+
+
+def turn_call_count() -> int:
+    """How many DeepSeek calls this turn has made so far."""
+    return getattr(_turn, 'calls', 0)
+
+
 def deepseek_call(
     messages,
     *,
@@ -97,6 +123,8 @@ def deepseek_call(
     """
     from django.conf import settings
     _model = model or getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-v4-flash')
+
+    _count_call()
 
     last_exc = None
     for attempt in range(retries):

@@ -2119,9 +2119,12 @@ def _build_delay_reply(message: str, appointment) -> str:
             # price tie-down handler; a timeframe is captured here; anything vague
             # re-asks. Either way we still add value (portfolio) and keep a date.
             return (
-                "Totally fair — before you do, can I ask: is it the price, the "
-                "timing, or something else that's making you want to sit on it? "
-                "I'd rather sort it now than leave you guessing.\n\n"
+                # A statement, not a question. The concrete ask at the end of
+                # this reply is the one we need answered, and people answer
+                # the LAST question they are given, so a probe in front of it
+                # just costs us the answer we actually wanted.
+                "Totally fair. If it is the price or the timing holding you "
+                "back, say so and I will help you weigh it up.\n\n"
                 "No pressure either way — I've just emailed our portfolio of past "
                 "projects plus a more detailed pricing guide, so you've got "
                 "everything to weigh up.\n\n"
@@ -2137,9 +2140,12 @@ def _build_delay_reply(message: str, appointment) -> str:
         # ask is the email. A "price"/product reply (no '@') still breaks out to
         # the right handler via _delay_breakout_inquiry.
         return (
-            "Totally fair — before you do, can I ask: is it the price, the timing, "
-            "or something else that's making you want to sit on it? I'd rather help "
-            "you weigh it up properly than leave you to it.\n\n"
+            # A statement, not a question. The concrete ask at the end of
+            # this reply is the one we need answered, and people answer the
+            # LAST question they are given, so a probe in front of it just
+            # costs us the answer we actually wanted.
+            "Totally fair. If it is the price or the timing holding you "
+            "back, say so and I will help you weigh it up.\n\n"
             "Either way, I can send you something worth a look while you "
             f"decide. {_EMAIL_VALUE_CLAUSE}\n\n"
             "What's the best email for it?"
@@ -2180,6 +2186,29 @@ def _build_delay_reply(message: str, appointment) -> str:
         return _build_access_checkin_reply(message, appointment)
 
     _write_pending(appointment, 'delay_timeframe', message)
+    # Phase 1 of the reasoning controller: this is the slow lead branch, and it
+    # is the first thing to render from bot/controller_templates.py instead of
+    # a fixed string. Two things change. The copy is the owner's voice rather
+    # than the bot's, and a lead who is only blocked on logistics now gets two
+    # real days instead of an open "when would suit you", which they answer
+    # with a shrug more often than a date.
+    #
+    # _DELAY_SUBTYPE_REPLIES is kept below as the fallback, so a failure here
+    # degrades to exactly today's behaviour rather than to silence.
+    try:
+        from bot.controller_templates import slow_lead_nudge
+        from bot.tenant_config import get_config
+        reply = slow_lead_nudge(
+            appointment,
+            subtype=subtype,
+            is_shona=_lead_speaks_shona(message),
+            tenant_cfg=get_config(getattr(appointment, 'tenant', None)),
+        )
+        if reply and reply.strip():
+            return reply
+    except Exception:
+        logger.warning("slow_lead_nudge failed, using the fixed reply",
+                       exc_info=True)
     return _DELAY_SUBTYPE_REPLIES.get(subtype, _DELAY_SUBTYPE_REPLIES['unknown'])
 
 

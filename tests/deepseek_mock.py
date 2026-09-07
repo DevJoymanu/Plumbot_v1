@@ -120,6 +120,35 @@ def _respond(messages, json_response):
        re.search(r'\byes\s+or\s+no\b', system):
         return "NO"
 
+    # ── The unified turn (classification + plan). Returning "{}" here would
+    # exercise only the planning-absent path, so the stub emits a minimally
+    # valid payload instead: enough for bot.controller.validate_turn to pass,
+    # so the offline suite covers the branch prod actually takes.
+    if 'planning (what we should do next)' in system:
+        return json.dumps({
+            "reasoning": "",
+            "next_move": "ask_qualifying_question",
+            # The stub does not try to be clever about WHICH question: null
+            # means "no opinion", which is the path most turns take and the one
+            # that must keep the deterministic order working.
+            "next_question": None,
+            "move_confidence": 0.8,
+            "comprehension": {"intent": "describing_want",
+                              "sentiment": "neutral",
+                              "language": "en"},
+            "state_update": {"want_level": "interested"},
+            "intent": "in_scope",
+            "confidence": "HIGH",
+            "service_type": None,
+            "product_intent": "none",
+            "is_photo_request": False,
+            "is_plan_later": False,
+            "is_repeat_question": False,
+            "english": "",
+            "extracted": {"area": None, "availability": None,
+                          "customer_name": None, "project_description": None},
+        })
+
     # ── Anything expecting JSON we don't model → empty object (callers fall back)
     if json_response or 'json' in system:
         return "{}"

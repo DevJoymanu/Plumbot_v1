@@ -391,37 +391,37 @@ def build_structured_pricing(cfg) -> dict:
         out["geyser"] = {
             "breakdown_lines": [f"Geyser: Supply from US${f['gey_s']}, Install from US${f['gey_l']}"],
             "total_line": f"Geysers start from US${f['gey_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the geyser? Install-only from US${f['gey_l']}.",
+            "cheapest_line": f"If you already have the geyser, install-only from US${f['gey_l']}.",
             "sn_breakdown_lines": [f"Geyser: Supply kubva US${f['gey_s']}, Install kubva US${f['gey_l']}"],
             "sn_total_line": f"Geysers dzinotangira paUS${f['gey_allin']} all-in — supply ne install.",
-            "sn_cheapest_line": f"Muchitova ne geyser? Install chete kubva US${f['gey_l']}.",
+            "sn_cheapest_line": f"Kana muchitova ne geyser, install chete kubva US${f['gey_l']}.",
         }
 
     if have('sh_s', 'sh_l', 'sh_allin'):
         out["shower_cubicle"] = {
             "breakdown_lines": [f"Shower cubicle: Supply from US${f['sh_s']}, Install from US${f['sh_l']}"],
             "total_line": f"Shower cubicles start from US${f['sh_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the cubicle? Install-only from US${f['sh_l']}.",
+            "cheapest_line": f"If you already have the cubicle, install-only from US${f['sh_l']}.",
             "sn_breakdown_lines": [f"Shower cubicle: Supply kubva US${f['sh_s']}, Install kubva US${f['sh_l']}"],
             "sn_total_line": f"Shower cubicles dzinotangira paUS${f['sh_allin']} all-in — supply ne install.",
-            "sn_cheapest_line": f"Muchitova ne cubicle? Install chete kubva US${f['sh_l']}.",
+            "sn_cheapest_line": f"Kana muchitova ne cubicle, install chete kubva US${f['sh_l']}.",
         }
 
     if have('va_s', 'va_l', 'va_allin'):
         out["vanity"] = {
             "breakdown_lines": [f"Vanity unit: Supply from US${f['va_s']}, Install from US${f['va_l']}"],
             "total_line": f"Vanities start from US${f['va_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the unit? Install-only from US${f['va_l']}.",
+            "cheapest_line": f"If you already have the unit, install-only from US${f['va_l']}.",
             "sn_breakdown_lines": [f"Vanity unit: Supply kubva US${f['va_s']}, Install kubva US${f['va_l']}"],
             "sn_total_line": f"Vanities dzinotangira paUS${f['va_allin']} all-in — supply ne install.",
-            "sn_cheapest_line": f"Muchitova ne vanity? Install chete kubva US${f['va_l']}.",
+            "sn_cheapest_line": f"Kana muchitova ne vanity, install chete kubva US${f['va_l']}.",
         }
 
     if have('to_s', 'to_l', 'to_allin'):
         out["toilet"] = {
             "breakdown_lines": [f"Toilet seat: Supply from US${f['to_s']}, Install from US${f['to_l']}"],
             "total_line": f"Toilet replacement starts from US${f['to_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the toilet? Install-only from US${f['to_l']}.",
+            "cheapest_line": f"If you already have the toilet, install-only from US${f['to_l']}.",
             "sn_breakdown_lines": [f"Toilet seat: Supply kubva US${f['to_s']}, Install kubva US${f['to_l']}"],
             "sn_total_line": f"Zvingangoita US${f['to_allin']} yezvinhu zvese pa standard toilet replacement.",
             "sn_cheapest_line": f"Cheapest option installation chete kana muchitova ne toilet — labour inotangira paUS${f['to_l']}.",
@@ -433,17 +433,17 @@ def build_structured_pricing(cfg) -> dict:
         out["wall_hung_toilet"] = {
             "breakdown_lines": [f"Wall-hung toilet (concealed chamber system): Supply from US${f['wh_s']}, Install from US${f['wh_l']}"],
             "total_line": f"Wall-hung toilet installs start from US${f['wh_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the unit? Install-only from US${f['wh_l']}.",
+            "cheapest_line": f"If you already have the unit, install-only from US${f['wh_l']}.",
             "sn_breakdown_lines": [f"Wall-hung toilet (chamber system): Supply kubva US${f['wh_s']}, Install kubva US${f['wh_l']}"],
             "sn_total_line": f"Zvingangoita US${f['wh_allin']} yezvinhu zvese pa wall-hung toilet system.",
-            "sn_cheapest_line": f"Muchitova ne unit? Install chete kubva US${f['wh_l']}.",
+            "sn_cheapest_line": f"Kana muchitova ne unit, install chete kubva US${f['wh_l']}.",
         }
 
     if have('ch_s', 'ch_l', 'ch_allin'):
         out["chamber"] = {
             "breakdown_lines": [f"Side chamber: Supply from US${f['ch_s']}, Install from US${f['ch_l']}"],
             "total_line": f"Side chambers start from US${f['ch_allin']} all-in — supply and install.",
-            "cheapest_line": f"Already have the chamber? Install-only from US${f['ch_l']}.",
+            "cheapest_line": f"If you already have the chamber, install-only from US${f['ch_l']}.",
             "sn_breakdown_lines": [f"Side chamber: Supply kubva US${f['ch_s']}, Install kubva US${f['ch_l']}"],
             "sn_total_line": f"Zvingangoita US${f['ch_allin']} yezvinhu zvese pa standard chamber setup.",
             "sn_cheapest_line": f"Cheapest option installation chete kana muchitova ne chamber — labour inotangira paUS${f['ch_l']}.",

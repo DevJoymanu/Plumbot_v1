@@ -282,13 +282,10 @@ Job Description:
 
 View details: http://127.0.0.1:8000/appointments/{job_appointment.id}/"""
         
-        # Send to team
-        TEAM_NUMBERS = ['0774819901']
-        for number in TEAM_NUMBERS:
-            try:
-                get_client_for_tenant(job_appointment.tenant).send_text_message(number, team_message)
-            except Exception as e:
-                print(f"Failed to send team notification: {str(e)}")
+        # The team is contacted by EMAIL, always (owner rule, 2026-09-05).
+        # This also drops a hardcoded number that sent EVERY tenant's jobs to
+        # Homebase's plumber, which is the leak CLAUDE.md warns about: no
+        # Homebase value may reach another tenant.
 
         send_plumber_notification_email(
             subject=f"New job scheduled for {job_appointment.customer_name or 'customer'}",

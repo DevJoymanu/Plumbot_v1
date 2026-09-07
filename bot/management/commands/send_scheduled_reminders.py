@@ -5,8 +5,9 @@ Dispatches staff-queued reminders (bot.models.ScheduledReminder) whose
 scheduled_for time has arrived. The recipient is per-reminder:
 
   • target='customer' → WhatsApp / email to the lead (like a scheduled follow-up).
-  • target='plumber'  → email to the plumber notification inboxes, or WhatsApp to
-                        PLUMBER_PHONE_NUMBER.
+  • target='plumber'  → email to the plumber notification inboxes, whatever
+                        channel the row was saved with. The plumber is
+                        contacted by email, always (owner rule, 2026-09-05).
 
 Marks each row sent / failed. Run on a frequent cron (e.g. every 5 minutes); it
 is ALSO invoked at the start of ``send_reminders`` so it goes out on that cadence.
@@ -110,15 +111,31 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                         )
                         if not ok:
                             raise RuntimeError('plumber email send returned False')
-                else:  # whatsapp to plumber
-                    plumber_phone = os.environ.get('PLUMBER_PHONE_NUMBER', '').replace('+', '').strip()
-                    if not plumber_phone:
-                        raise ValueError('PLUMBER_PHONE_NUMBER env var not set')
+                else:  # a reminder saved with channel='whatsapp'
+                    # The plumber is contacted by EMAIL, always (owner rule,
+                    # 2026-09-05), so a reminder saved against the WhatsApp
+                    # channel is delivered by email rather than dropped. The
+                    # old branch also read PLUMBER_PHONE_NUMBER, which is
+                    # Homebase's line, so every tenant's reminders went to one
+                    # plumber.
+                    from bot.plumber_notifications import (
+                        get_plumber_notification_emails, send_email_to_recipients,
+                    )
+                    recipients = get_plumber_notification_emails(
+                        getattr(apt, 'tenant', None))
+                    if not recipients:
+                        raise ValueError('no plumber notification emails configured')
+                    subject = r.subject or f'Reminder — {name}'
                     if dry_run:
-                        _emit(f'[dry-run] plumber WhatsApp → +{plumber_phone}: {body[:60]}…')
+                        _emit(f'[dry-run] plumber Email → {recipients}: {subject}')
                     else:
-                        from bot.whatsapp_cloud_api import get_client_for_tenant
-                        get_client_for_tenant(getattr(r.appointment, 'tenant', None)).send_text_message(plumber_phone, body)
+                        ok = send_email_to_recipients(
+                            recipients, subject, body,
+                            html_message=_plumber_html(subject, body),
+                            tenant=getattr(apt, 'tenant', None),
+                        )
+                        if not ok:
+                            raise RuntimeError('plumber email send returned False')
 
             if not dry_run:
                 r.status = 'sent'
