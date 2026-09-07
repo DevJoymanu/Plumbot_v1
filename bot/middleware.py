@@ -31,7 +31,7 @@ TENANT_SESSION_KEY = 'platform_tenant_slug'
 # webhook, the platform console itself, and static assets.
 _EXEMPT_PREFIXES = (
     '/login', '/logout', '/webhook', '/intake/', '/call/', '/call', '/site-visit/',
-    '/plan-quote/', '/visit/',
+    '/plan-quote/', '/phone-quote/', '/visit/',
     '/admin', '/platform', '/static', '/media', '/favicon',
 )
 

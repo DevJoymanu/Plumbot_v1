@@ -1,0 +1,70 @@
+{% comment %}
+Terminal page for the phone-quote form. Two states:
+
+  • already_done — one of the other three emails got there first. The same link
+                   goes out four times, so a plumber working through a backlog
+                   will tap it twice; show what they already said rather than a
+                   form whose submit would be refused.
+  • just answered
+{% endcomment %}<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>{{ appointment.tenant.name|default:"Plumbot" }} · Quote noted</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&amp;family=Geist:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+  :root { --primary: #006591; --on-surface: #0b1c30; --variant: #3e4850; }
+  body {
+    margin: 0; padding: 64px 16px; min-height: 100vh;
+    font-family: Inter, -apple-system, "Segoe UI", Arial, sans-serif;
+    font-weight: 300; font-size: 16px; line-height: 24px;
+    background: #f8f9ff; color: var(--on-surface);
+  }
+  .glow {
+    max-width: 560px; margin: 0 auto; padding: 40px 32px; text-align: center;
+    background: rgba(248, 249, 255, 0.85); backdrop-filter: blur(24px);
+    border: 1px solid rgba(0, 101, 145, 0.1); border-radius: 16px;
+    box-shadow: 0 20px 40px -15px rgba(14, 165, 233, 0.08);
+  }
+  .kicker {
+    font-family: Geist, Inter, sans-serif; font-weight: 500; font-size: 12px;
+    line-height: 16px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--primary); margin: 0 0 8px;
+  }
+  h1 { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 12px; }
+  p { color: var(--variant); margin: 0 0 12px; }
+  .icon {
+    font-family: 'Material Symbols Outlined'; font-size: 48px; color: var(--primary);
+    font-variation-settings: 'FILL' 0, 'wght' 300; display: block; margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+  <div class="glow">
+    {% if already_done %}
+      <span class="icon">check_circle</span>
+      <p class="kicker">Already answered</p>
+      <h1>This one is done</h1>
+      <p>You have already told us about
+         {{ appointment.customer_name|default:"this customer" }}&rsquo;s quote,
+         so nothing more is needed here.</p>
+    {% elif row.quote_status == 'sent_confirmed' %}
+      <span class="icon">done_all</span>
+      <p class="kicker">Noted</p>
+      <h1>Thanks, that&rsquo;s recorded</h1>
+      <p>We will stop reminding you, and we will follow
+         {{ appointment.customer_name|default:"the customer" }} up about the
+         quote shortly.</p>
+    {% else %}
+      <span class="icon">schedule</span>
+      <p class="kicker">Noted</p>
+      <h1>Thanks, that&rsquo;s recorded</h1>
+      <p>We will stop reminding you. Nothing will go to
+         {{ appointment.customer_name|default:"the customer" }} until the quote
+         is out.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

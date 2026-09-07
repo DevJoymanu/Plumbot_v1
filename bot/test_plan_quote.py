@@ -535,7 +535,26 @@ class PlanFarTimelineTests(TestCase):
     The flow stops asking, which is right, but 'nothing left to ask' is not the
     same as 'nothing left to say'. Without an explicit branch they fall into the
     retry machinery with a question that does not exist.
+
+    DeepSeek is stubbed out for the whole class. These cases run the delay and
+    timeframe handlers, which call the classifier, and this suite is the
+    offline commit gate: a live call here made the run depend on the network
+    and on the model agreeing with itself twice, which showed up as three
+    intermittent errors. Returning None is the same thing the code sees when
+    the API is down, so every classifier takes its deterministic fallback,
+    which is the path being asserted anyway.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._ds = patch('bot.services.clients.deepseek_call', return_value=None)
+        cls._ds.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._ds.stop()
+        super().tearDownClass()
 
     def setUp(self):
         self.lead = make_lead(8900, customer_name='Blessing', status='pending')

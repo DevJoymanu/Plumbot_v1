@@ -3006,6 +3006,125 @@ class PlanQuoteRequest(models.Model):
         return self.stopped_at is not None
 
 
+class PhoneQuoteRequest(models.Model):
+    """The plumber quoted over the phone, with no visit and no plan.
+
+    The third way a quote gets raised, beside SiteVisitReport (someone went and
+    looked) and PlanQuoteRequest (a drawing arrived). Here the plumber is on
+    the phone to the customer and has everything they need already, so nothing
+    has to be measured up and nothing has to be chased out of an inbox.
+
+    Same shape as the other two on purpose: one row per appointment, one
+    tokenized single-use URL, and every send gated by the timestamp written as
+    it goes out, so a five-minute cron re-running the tick is safe.
+
+    What differs is where the row starts. The other two are opened by something
+    the LEAD did, so their first job is to get hold of the plumber and wait.
+    This one is opened by the plumber, in the dashboard, mid-call. There is
+    nobody to chase and nothing to wait for, so the row is created and answered
+    in the same sitting and the cadence begins at the part the other two only
+    reach afterwards: chasing the customer about the quote.
+    """
+
+    # Same vocabulary as PlanQuoteRequest so the two remote-quote paths answer
+    # the same questions and downstream code reads either without a special
+    # case. 'needs_visit' is the honest escape: a job that cannot be priced
+    # down the phone goes back to the measure path.
+    OUTCOME_CHOICES = [
+        ('quoting', 'Quoting over the phone'),
+        ('needs_visit', 'Needs a site visit first'),
+        ('not_proceeding', 'Lead not proceeding'),
+    ]
+    EXPECTATION_CHOICES = [
+        ('specific_date', 'Specific date'),
+        ('timeframe', 'Rough timeframe'),
+        ('unknown', "Didn't say"),
+    ]
+    TIMEFRAME_CHOICES = [
+        ('asap', 'ASAP'),
+        ('two_weeks', 'Within 2 weeks'),
+        ('this_month', 'This month'),
+        ('one_to_three_months', '1 to 3 months'),
+        ('exploring', 'Just exploring'),
+    ]
+    QUOTE_STATUS_CHOICES = [
+        ('', 'Not known yet'),
+        ('sent_confirmed', 'Plumber confirmed the quote was sent'),
+        ('assumed', 'Assumed sent'),
+    ]
+
+    tenant = _tenant_fk(related_name='phone_quote_requests')
+    appointment = models.OneToOneField(
+        Appointment, on_delete=models.CASCADE,
+        related_name='phone_quote_request',
+    )
+    # The form sets the lead's email and can start customer-facing sends, so
+    # the link is the credential and cannot be a bare /appointments/<pk>/.
+    # The plumber usually reaches it from the dashboard with a session, but the
+    # same URL has to work from a phone with no login.
+    token = models.CharField(max_length=64, unique=True, default=uuid.uuid4,
+                             db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # The single-use gate, exactly like SiteVisitReport.submitted_at and
+    # PlanQuoteRequest.plumber_form_completed_at. Also the anchor the lead
+    # follow-up is measured from, since it is the moment the quote was agreed.
+    form_completed_at = models.DateTimeField(null=True, blank=True,
+                                             db_index=True)
+    completed_by = models.ForeignKey(User, null=True, blank=True,
+                                     on_delete=models.SET_NULL,
+                                     related_name='phone_quotes_completed')
+
+    # -- What the plumber captured on the call --------------------------------
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES,
+                               blank=True, default='')
+    # When the customer wants the job done. Asked in three shapes rather than
+    # as a free-text box, because this is the answer the whole follow-up
+    # cadence hangs off and a box nobody fills in consistently cannot drive it.
+    expectation = models.CharField(max_length=20, choices=EXPECTATION_CHOICES,
+                                   blank=True, default='')
+    expected_date = models.DateField(null=True, blank=True)
+    expected_timeframe = models.CharField(max_length=25,
+                                          choices=TIMEFRAME_CHOICES,
+                                          blank=True, default='')
+    # Carried into the quote screen as the project description, the same way
+    # the visit report's notes are.
+    job_notes = models.TextField(blank=True, default='')
+    # Asked here specifically because a phone call is the one moment somebody
+    # can simply ask. The extraction prompt's example suburb was written to 221
+    # leads as if it were fact, so an area a human typed is worth more than an
+    # area the flow inferred.
+    customer_area = models.CharField(max_length=120, blank=True, default='')
+
+    # -- The quote, and the lead follow-up ------------------------------------
+    quote_status = models.CharField(max_length=20, choices=QUOTE_STATUS_CHOICES,
+                                    blank=True, default='')
+    quote_amount = models.DecimalField(max_digits=12, decimal_places=2,
+                                       null=True, blank=True)
+    lead_followup_sent_at = models.DateTimeField(null=True, blank=True)
+
+    stopped_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['form_completed_at']),
+            models.Index(fields=['lead_followup_sent_at']),
+        ]
+
+    def __str__(self):
+        return f"Phone quote request for apt {self.appointment_id}"
+
+    @property
+    def is_open(self):
+        """The plumber has not answered the form yet."""
+        return self.form_completed_at is None
+
+    @property
+    def is_stopped(self):
+        return self.stopped_at is not None
+
+
 class VisitProposal(models.Model):
     """A site visit a future-dated lead has only SOFTLY agreed to (spec §11).
 

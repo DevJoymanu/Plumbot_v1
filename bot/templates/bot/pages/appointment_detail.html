@@ -1377,9 +1377,32 @@
   .visit-prompt-btn:hover { opacity: .92; color: var(--color-header); }
   .visit-prompt-btn:active { transform: scale(.95); }
 
+  /* Two actions sit together on the right. Without this wrapper the banner's
+     own space-between would push them to opposite ends of the card. */
+  .visit-prompt-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* Logging the visit is what this banner is for, so the quote shortcut is
+     the quieter of the two: outlined on the gradient rather than filled. */
+  .visit-prompt-btn--ghost {
+    background: transparent;
+    color: #fff;
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+    box-shadow: none;
+  }
+  .visit-prompt-btn--ghost:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
   @media (max-width: 640px) {
     .visit-prompt { padding: 18px; }
     .visit-prompt-btn { width: 100%; justify-content: center; }
+    .visit-prompt-actions { width: 100%; }
   }
 
   .glance-card {
@@ -2198,9 +2221,15 @@
               <p class="visit-prompt-q">Is the site visit complete?</p>
               <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
             </div>
-            <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
-              <i class="fas fa-pen-to-square"></i> Log the visit
-            </a>
+            <div class="visit-prompt-actions">
+              <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
+                <i class="fas fa-pen-to-square"></i> Log the visit
+              </a>
+              <a href="{% url 'phone_quote_start' appointment.pk %}"
+                 class="visit-prompt-btn visit-prompt-btn--ghost">
+                <i class="fas fa-phone"></i> Quote on the phone
+              </a>
+            </div>
           </div>
           {% endif %}
 

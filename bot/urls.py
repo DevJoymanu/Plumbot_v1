@@ -7,6 +7,7 @@ from .views import offer as offer_views
 from .views import legal as legal_views
 from .views import post_visit as post_visit_views
 from .views import plan_quote as plan_quote_views
+from .views import phone_quote as phone_quote_views
 from .views import visit_proposal as visit_proposal_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
@@ -108,6 +109,10 @@ urlpatterns = [
     # (public, token only — the plumber taps it from their phone). One URL and
     # one submitted_at is what makes the form single-use across both paths.
     path('appointments/<int:pk>/site-visit/', post_visit_views.site_visit_start, name='site_visit_start'),
+    # Quoting on the phone: the staff entry point, then the same
+    # token-gated single-use form the other two quote paths use.
+    path('appointments/<int:pk>/phone-quote/', phone_quote_views.phone_quote_start, name='phone_quote_start'),
+    path('phone-quote/<str:token>/', phone_quote_views.phone_quote_form, name='phone_quote_form'),
     path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
     # Public and token-gated, like the site-visit form: the plumber taps it
     # from an email on their phone with no session. Added to
