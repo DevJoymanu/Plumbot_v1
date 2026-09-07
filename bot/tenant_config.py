@@ -405,6 +405,9 @@ class TenantConfig:
             'bank': bank if any(bank.values()) else {},
             'terms': lines('terms'),
             'default_vat_percent': raw.get('default_vat_percent') or 0,
+            # What this business normally asks for up front. A starting point
+            # for a new quote, never a lock: the plumber adjusts it per job.
+            'default_deposit_percent': raw.get('default_deposit_percent') or 0,
             'currency': self.currency,
         }
 

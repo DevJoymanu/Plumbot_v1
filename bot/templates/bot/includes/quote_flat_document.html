@@ -109,6 +109,23 @@ CLAUDE.md, pinned by QuoteMobileLayoutTests).
         <span>Total Amount</span>
         <span {% if quote_live %}id="previewGrandTotal"{% endif %}>US${% if quote_live %}0.00{% else %}{{ quotation.total_amount }}{% endif %}</span>
     </div>
+    {% comment %}
+    The deposit, only when one is asked for. Derived from the percentage on the
+    quote rather than stored beside it, so it always agrees with the total
+    above. On the live preview the row is hidden until the plumber sets a
+    figure; on the saved copy it is simply absent at 0%.
+    {% endcomment %}
+    {% if quote_live %}
+    <div class="pbq-total-row" id="previewDepositRow" style="display:none;">
+        <span id="previewDepositLabel">Deposit due</span>
+        <span id="previewDeposit">US$0.00</span>
+    </div>
+    {% elif quotation.deposit_percent %}
+    <div class="pbq-total-row">
+        <span>Deposit due ({{ quotation.deposit_percent|floatformat:"-2" }}%)</span>
+        <span>US${{ quotation.deposit_amount|floatformat:2 }}</span>
+    </div>
+    {% endif %}
 </div>
 
 {% if quote_live %}

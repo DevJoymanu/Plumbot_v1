@@ -68,6 +68,7 @@ def _letterhead_form_values(profile):
         'sectioned': str(raw.get('layout') or '').lower() == 'sectioned',
         'address': getattr(profile, 'location_line', '') if profile else '',
         'default_vat_percent': raw.get('default_vat_percent') or 0,
+        'default_deposit_percent': raw.get('default_deposit_percent') or 0,
         'bank': {key: str(bank.get(key) or '') for key in _LETTERHEAD_BANK},
     })
     for key in _LETTERHEAD_LISTS:
@@ -100,6 +101,14 @@ def _save_letterhead(request, profile):
         stored['default_vat_percent'] = float(request.POST.get('lh_default_vat_percent') or 0)
     except (TypeError, ValueError):
         stored['default_vat_percent'] = 0
+
+    # The deposit this business normally asks for. Blank or unparseable means
+    # 0, which is "no deposit line" — the same answer as never setting one.
+    try:
+        stored['default_deposit_percent'] = float(
+            request.POST.get('lh_default_deposit_percent') or 0)
+    except (TypeError, ValueError):
+        stored['default_deposit_percent'] = 0
 
     # The layout switch: ticked means this business's quotes use their own
     # sectioned sheet. Unticked drops back to the standard layout.

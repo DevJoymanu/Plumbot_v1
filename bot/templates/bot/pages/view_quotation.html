@@ -94,14 +94,25 @@ buttons, all marked pbq-no-print so none of it reaches the customer's copy.
             <a href="{% url 'quotation_whatsapp_handoff' quotation.pk %}" class="btn btn-success">
                 <i class="fab fa-whatsapp"></i> Send via WhatsApp{% if quotation.sent_via_whatsapp %} (sent){% endif %}
             </a>
+            {% comment %}
+            No email on file is a missing detail, not a closed door: this goes
+            to the editor where the address is added rather than sitting there
+            greyed out with nothing to click. WhatsApp is unaffected, so a
+            quote is always sendable on at least one channel.
+            {% endcomment %}
+            {% if quotation.appointment.customer_email %}
             <form method="post" action="{% url 'send_quotation_email' quotation.pk %}">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-info"
-                        {% if not quotation.appointment.customer_email %}disabled
-                        title="No email address on file for this customer"{% endif %}>
+                <button type="submit" class="btn btn-info">
                     <i class="fas fa-envelope"></i> Send via Email{% if quotation.sent_via_email %} (sent){% endif %}
                 </button>
             </form>
+            {% else %}
+            <a href="{% url 'edit_quotation' quotation.pk %}" class="btn btn-info"
+               title="Add an email address on the quote, then send">
+                <i class="fas fa-envelope"></i> Add email to send
+            </a>
+            {% endif %}
             <form method="post" action="{% url 'duplicate_quotation' quotation.pk %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-warning"

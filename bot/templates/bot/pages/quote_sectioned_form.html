@@ -9,35 +9,86 @@ everyone else.
 One template covers all three because the sheet carries its own client fields:
 with a lead they arrive prefilled, without one they start blank, and on an
 edit they come back from the saved quote.
+
+Layout of the SCREEN (not of the document) follows the order the work is done
+in, which is the order the flat editor already used:
+
+  top     — who the quote is for, and where to start it from (lead, template)
+  middle  — the sheet itself
+  bottom  — what to do with it: save, and send
+
+Save used to sit alone at the top, above a sheet the plumber had not filled in
+yet, and there was no way to send from here at all: they saved, navigated to
+the quote page, and sent from there. Every send here saves FIRST, so what the
+customer receives is the sheet on screen, including the edit made a second ago.
 {% endcomment %}
 
 {% block title %}{% if quotation %}Edit Quote{% else %}Create Quote{% endif %} — {{ lh.business_name }}{% endblock %}
 
 {% block extra_css %}
+{% comment %}
+The shared quote layer first, the sheet's own styles second: where both name a
+box (.bq-page / .pbq-page padding) the document's own answer wins.
+{% endcomment %}
+{% include "bot/includes/quote_responsive_css.html" %}
 {% include "bot/includes/quote_sectioned_css.html" %}
+<style>
+    .bq-toolbar {
+        max-width: 920px;
+        margin: 0 auto 12px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    /* The bottom bar is the one place actions live. Sticky rather than fixed,
+       and offset by the mobile nav, exactly as .pbq-actionbar is. */
+    .bq-actions--bottom {
+        position: sticky;
+        bottom: calc(var(--bottom-nav-h, 0px) + 8px);
+        z-index: 20;
+        margin: 18px auto 0;
+        padding: 10px;
+        border-radius: var(--radius-md);
+        background: var(--color-surface-lowest);
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        box-shadow: var(--shadow-glow-lg);
+    }
+
+    @media print {
+        .bq-actions--bottom, .bq-toolbar { display: none !important; }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="bq-page" id="bqPage"
+<div class="bq-page pbq-page" id="bqPage"
      data-quotation-id="{{ quotation.pk|default:'' }}"
      data-appointment-id="{{ appointment.pk|default:'' }}">
 
     <div id="bqAlert" class="bq-alert bq-no-print"></div>
 
-    <!-- Dashboard chrome — never part of the printed sheet -->
-    <div class="bq-actions bq-no-print">
-        <button type="button" class="btn btn-primary" id="bqSave">
-            <i class="fas fa-save"></i> {% if quotation %}Save Changes{% else %}Save Quote{% endif %}
-        </button>
-        <button type="button" class="btn btn-secondary" onclick="window.print()">
-            <i class="fas fa-print"></i> Print / Save PDF
+    {% comment %}
+    Who the quote is for, and where its lines come from — both at the top,
+    because both are decided before a single item is typed. On an edit the lead
+    is already fixed, so only the template loader is offered.
+    {% endcomment %}
+    {% if not quotation %}
+    {% include "bot/includes/quote_lead_picker.html" with quote_lead=appointment %}
+    {% endif %}
+
+    <div class="bq-toolbar bq-no-print">
+        <button type="button" class="btn btn-outline-primary" id="bqUseTemplate"
+                onclick="openTemplateModal()">
+            <i class="fas fa-file-invoice"></i> Use Template
         </button>
         {% if quotation %}
-        <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-outline-primary">
+        <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-secondary">
             <i class="fas fa-eye"></i> View Quote
         </a>
         {% elif appointment %}
-        <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-outline-primary">
+        <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to Lead
         </a>
         {% endif %}
@@ -150,6 +201,24 @@ edit they come back from the saved quote.
                     <td class="bq-amt" id="t-grand">{{ lh.currency }}0.00</td>
                     <td></td>
                 </tr>
+                {% comment %}
+                The deposit, adjustable on every quote. It starts from the
+                business's own default (Profile page) because that is what they
+                usually ask for, and it is typed over here whenever this job is
+                different — a figure that only lived in the payment-terms text
+                could be printed but never actually changed per job.
+
+                Asked for as a PERCENTAGE with the money derived, so it cannot
+                fall out of step with a grand total that moves on every edit.
+                Set it to 0 and the row is left off the customer's copy.
+                {% endcomment %}
+                <tr class="bq-deposit">
+                    <td class="bq-lbl" colspan="3">DEPOSIT (<input type="number" step="0.5" min="0" max="100"
+                        inputmode="decimal" class="bq-pct" id="t-depositpct"
+                        value="{{ deposit_percent_initial }}" oninput="recalc()">%)</td>
+                    <td class="bq-amt" id="t-deposit">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
                 {% for term in terms_initial %}
                 <tr class="bq-terms">
                     <td colspan="5"><input type="text" class="bq-term" value="{{ term }}"></td>
@@ -160,7 +229,39 @@ edit they come back from the saved quote.
 
         {% include "bot/includes/quote_footer.html" %}
     </div>
+
+    {% comment %}
+    Everything that DOES something, in one bar at the foot of the sheet — the
+    end of the job is where you reach for it.
+
+    Save and the two sends are independent, and neither send is disabled: each
+    one saves first and then goes, so the plumber never has to remember the
+    order. The channels stay separate as they are everywhere else in the app:
+    one, the other, or both.
+    {% endcomment %}
+    <div class="bq-actions bq-actions--bottom bq-no-print">
+        <button type="button" class="btn btn-primary" id="bqSave">
+            <i class="fas fa-save"></i> {% if quotation %}Save Changes{% else %}Save Quote{% endif %}
+        </button>
+        <button type="button" class="btn btn-secondary" id="bqSendEmail"
+                onclick="sendQuote('email')">
+            <i class="fas fa-envelope"></i> Save &amp; Email
+        </button>
+        <button type="button" class="btn btn-success" id="bqSendWhatsapp"
+                onclick="sendQuote('whatsapp')">
+            <i class="fab fa-whatsapp"></i> Save &amp; WhatsApp
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="downloadPDF()">
+            <i class="fas fa-download"></i> Download
+        </button>
+        <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+            <i class="fas fa-print"></i> Print
+        </button>
+    </div>
 </div>
+
+{% include "bot/includes/quote_template_modal.html" %}
+{% include "bot/includes/quote_email_choice_modal.html" %}
 {% endblock %}
 
 {% block extra_js %}
@@ -171,10 +272,22 @@ edit they come back from the saved quote.
     const BQ_CURRENCY = JSON.parse(document.getElementById('bqCurrency').textContent) || 'US$';
     const BQ_PAGE = document.getElementById('bqPage');
     const BQ_QUOTATION_ID = BQ_PAGE.dataset.quotationId || null;
-    const BQ_APPOINTMENT_ID = BQ_PAGE.dataset.appointmentId || null;
+
+    // Not a constant: the lead picker can attach a lead after load, and which
+    // endpoint saves this quote follows it.
+    let bqAppointmentId = BQ_PAGE.dataset.appointmentId || null;
+
+    // The id of the quote on screen: the row we opened, or the one the first
+    // save returns. A save-then-send never raises a second quote, and a second
+    // send updates the same row.
+    let bqCurrentId = BQ_QUOTATION_ID;
+
+    let bqLeadName = "{{ lead_display_name|escapejs }}";
+    let bqLeadDigits = "{{ lead_wa_digits }}";
 
     let sectionSeq = 0;
     let itemSeq = 0;
+    let allTemplates = [];
 
     function esc(value) {
         return String(value === null || value === undefined ? '' : value)
@@ -190,6 +303,11 @@ edit they come back from the saved quote.
         return BQ_CURRENCY + (isNaN(n) ? 0 : n).toLocaleString('en-US', {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         });
+    }
+
+    function fieldValue(id) {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
     }
 
     /* Quantities are written the way the trade writes them — "19 length",
@@ -322,6 +440,13 @@ edit they come back from the saved quote.
         });
     }
 
+    // Clamped where it is READ, so a typo cannot put a 300% deposit on a
+    // customer's document or send a negative one to the server.
+    function depositPercent() {
+        const raw = parseFloat((document.getElementById('t-depositpct') || {}).value) || 0;
+        return Math.min(100, Math.max(0, raw));
+    }
+
     function recalc() {
         let materials = 0;
 
@@ -347,11 +472,14 @@ edit they come back from the saved quote.
 
         const subtotal = materials + labour + transport - discount;
         const vat = subtotal * vatPct / 100;
+        const grand = subtotal + vat;
 
         document.getElementById('t-materials').textContent = currency(materials);
         document.getElementById('t-subtotal').textContent  = currency(subtotal);
         document.getElementById('t-vat').textContent       = currency(vat);
-        document.getElementById('t-grand').textContent     = currency(subtotal + vat);
+        document.getElementById('t-grand').textContent     = currency(grand);
+        document.getElementById('t-deposit').textContent   =
+            currency(grand * depositPercent() / 100);
     }
 
     /* ── Saving ────────────────────────────────────────────────────────────
@@ -379,17 +507,18 @@ edit they come back from the saved quote.
             .map(i => i.value.trim()).filter(Boolean);
 
         return {
-            appointment_id: BQ_APPOINTMENT_ID ? parseInt(BQ_APPOINTMENT_ID, 10) : null,
-            client_name: document.getElementById('m-client').value.trim(),
-            client_phone: document.getElementById('m-contact').value.trim(),
-            client_address: document.getElementById('m-address').value.trim(),
-            client_email: document.getElementById('m-email').value.trim(),
-            quotation_date: document.getElementById('m-date').value,
+            appointment_id: bqAppointmentId ? parseInt(bqAppointmentId, 10) : null,
+            client_name: fieldValue('m-client'),
+            client_phone: fieldValue('m-contact'),
+            client_address: fieldValue('m-address'),
+            client_email: fieldValue('m-email'),
+            quotation_date: fieldValue('m-date'),
             items: items,
             labour_cost: parseFloat(document.getElementById('t-labour').value) || 0,
             transport_cost: parseFloat(document.getElementById('t-transport').value) || 0,
             discount: parseFloat(document.getElementById('t-discount').value) || 0,
             vat_percent: parseFloat(document.getElementById('t-vatpct').value) || 0,
+            deposit_percent: depositPercent(),
             // Materials are carried by the item rows themselves; sending them
             // again would double-count them in the stored total.
             materials_cost: 0,
@@ -403,7 +532,8 @@ edit they come back from the saved quote.
         el.className = 'pbq-alert pbq-alert-' + type;
         el.textContent = message;
         box.appendChild(el);
-        setTimeout(() => el.remove(), 5000);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => el.remove(), 6000);
     }
 
     function getCookie(name) {
@@ -411,58 +541,330 @@ edit they come back from the saved quote.
         return match ? decodeURIComponent(match.pop()) : '';
     }
 
-    async function save() {
-        const payload = collect();
-
+    function validate(payload) {
         if (!payload.client_name) {
             showAlert('Enter the client name before saving.', 'error');
             document.getElementById('m-client').focus();
-            return;
+            return false;
         }
         if (!payload.items.length) {
             showAlert('Add at least one item with a description before saving.', 'error');
-            return;
+            return false;
         }
-        if (!BQ_QUOTATION_ID && !payload.appointment_id) {
-            showAlert('This quote is not attached to a lead yet. Open it from a lead to save.', 'error');
-            return;
-        }
+        return true;
+    }
 
+    /* Returns the quote's id, saving it first.
+
+       THE step that makes Send independent of Save. A quote with no lead
+       attached saves too, through the standalone endpoint — it used to refuse
+       outright ("open it from a lead to save"), which meant a walk-in job
+       could not be quoted on this sheet at all. */
+    async function persist() {
+        const payload = collect();
+        if (!validate(payload)) { return null; }
+
+        const url = bqCurrentId
+            ? `/quotations/${bqCurrentId}/edit/`
+            : (payload.appointment_id ? '/api/quotations/create/'
+                                      : '/api/quotations/create-standalone/');
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json',
+                       'Accept': 'application/json',
+                       'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result.success === false) {
+            throw new Error(result.error || 'could not save the quote');
+        }
+        bqCurrentId = bqCurrentId || result.quotation_id || result.id;
+        if (!bqCurrentId) { throw new Error('the quote was not saved'); }
+        if (!bqAppointmentId && result.appointment_id) {
+            bqAppointmentId = String(result.appointment_id);
+        }
+        return bqCurrentId;
+    }
+
+    async function save() {
         const btn = document.getElementById('bqSave');
         const original = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<span class="pbq-spin"></span> Saving...';
 
-        const url = BQ_QUOTATION_ID
-            ? `/quotations/${BQ_QUOTATION_ID}/edit/`
-            : '/api/quotations/create/';
-
+        const wasNew = !bqCurrentId;
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-                body: JSON.stringify(payload),
-            });
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                showAlert('Quote saved.', 'success');
-                if (!BQ_QUOTATION_ID && result.quotation_id) {
-                    setTimeout(() => {
-                        window.location.href = `/quotations/${result.quotation_id}/`;
-                    }, 900);
-                }
-            } else {
-                showAlert('Could not save: ' + (result.error || 'unknown error'), 'error');
+            const id = await persist();
+            if (!id) { return; }
+            showAlert('Quote saved.', 'success');
+            if (wasNew) {
+                setTimeout(() => { window.location.href = `/quotations/${id}/`; }, 900);
             }
         } catch (error) {
-            console.error('Save failed', error);
-            showAlert('Could not save the quote. Please try again.', 'error');
+            showAlert('Could not save: ' + error.message, 'error');
         } finally {
             btn.disabled = false;
             btn.innerHTML = original;
         }
     }
+
+    /* ── Sending ───────────────────────────────────────────────────────────
+       The same two independent channels the rest of the app offers, and the
+       same handoff: WhatsApp opens the chat on the plumber's OWN number with
+       the PDF downloaded, because a quote often goes out days after the visit,
+       when a send from the bot's line would be outside the 24h window. */
+    function openEmailChoice() {
+        const modal = document.getElementById('emailChoiceModal');
+        if (modal) { modal.classList.add('is-open'); }
+    }
+
+    function closeEmailChoice() {
+        const modal = document.getElementById('emailChoiceModal');
+        if (modal) { modal.classList.remove('is-open'); }
+    }
+
+    // The number this quote can go to. The lead's own where there is one, else
+    // the contact typed on the sheet — which is saved with the quote, so a
+    // walk-in with no email address is still reachable on WhatsApp.
+    function sendableDigits() {
+        return bqLeadDigits || fieldValue('m-contact').replace(/[^0-9]/g, '');
+    }
+
+    // Pull the PDF down so it is sitting in Downloads, ready to attach. A
+    // hidden iframe rather than a navigation: the response is an attachment,
+    // so the page must stay where it is while the file arrives.
+    function fetchPdf(id) {
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.src = '/quotations/' + id + '/download/';
+        document.body.appendChild(frame);
+        setTimeout(function () {
+            if (frame.parentNode) { frame.parentNode.removeChild(frame); }
+        }, 60000);
+    }
+
+    function quoteBlurb() {
+        const name = bqLeadName || fieldValue('m-client');
+        return (name ? 'Hi ' + name + ',' : 'Hi there,') + ' here is your quote.';
+    }
+
+    // Tell the server the quote left on this channel, so the quotes list can
+    // say so. Best effort: a failed marker must never look like a failed send.
+    async function markSent(id, channel) {
+        try {
+            await fetch('/quotations/' + id + '/mark-sent/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json',
+                           'Accept': 'application/json',
+                           'X-CSRFToken': getCookie('csrftoken') },
+                body: JSON.stringify({ channel: channel }),
+            });
+        } catch (error) { /* the send already happened in their own app */ }
+    }
+
+    async function sendQuote(channel, mode) {
+        if (channel === 'email' && !mode) {
+            if (!fieldValue('m-email')) {
+                showAlert('Add the client email on the sheet, then send. '
+                          + 'Or send it on WhatsApp instead.', 'error');
+                document.getElementById('m-email').focus();
+                return;
+            }
+            openEmailChoice();
+            return;
+        }
+        closeEmailChoice();
+
+        if (channel === 'whatsapp' && !sendableDigits()) {
+            showAlert('Add a phone number for this client, then send on WhatsApp.', 'error');
+            document.getElementById('m-contact').focus();
+            return;
+        }
+
+        // A handoff opens the plumber's own app, and a window opened after an
+        // await is what popup blockers stop. So it is opened NOW, inside the
+        // click, and pointed at the real URL once the save comes back.
+        const handoff = (channel === 'whatsapp' || mode === 'manual');
+        const opened = handoff ? window.open('', '_blank') : null;
+
+        const button = document.getElementById(
+            channel === 'email' ? 'bqSendEmail' : 'bqSendWhatsapp');
+        const original = button ? button.innerHTML : '';
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="pbq-spin"></span> Preparing...';
+        }
+
+        try {
+            // Save first, always: what the customer receives is the sheet on
+            // screen, including anything edited since the last save.
+            const id = await persist();
+            if (!id) { if (opened) { opened.close(); } return; }
+
+            if (channel === 'whatsapp') {
+                const url = '/quotations/' + id + '/whatsapp/';
+                if (opened) { opened.location.href = url; } else { window.location.href = url; }
+                return;
+            }
+
+            if (mode === 'manual') {
+                fetchPdf(id);
+                const url = 'mailto:' + encodeURIComponent(fieldValue('m-email'))
+                          + '?subject=' + encodeURIComponent('Your quote')
+                          + '&body=' + encodeURIComponent(quoteBlurb()
+                              + '\n\nThe quote is attached.');
+                if (opened) { opened.location.href = url; } else { window.location.href = url; }
+                markSent(id, 'email');
+                showAlert('Draft opened and the PDF downloaded. Attach it and send.', 'success');
+                return;
+            }
+
+            const response = await fetch('/quotations/' + id + '/send-email/', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json',
+                           'Content-Type': 'application/json',
+                           'X-CSRFToken': getCookie('csrftoken') },
+                body: '{}',
+            });
+            const result = await response.json().catch(() => ({}));
+            if (response.ok && result.success !== false) {
+                showAlert('Quote emailed to ' + (result.sent_to || fieldValue('m-email')) + '.',
+                          'success');
+            } else {
+                showAlert('Could not send: ' + (result.error || 'unknown error'), 'error');
+            }
+        } catch (error) {
+            if (opened) { opened.close(); }
+            showAlert('Could not send: ' + error.message, 'error');
+        } finally {
+            if (button) { button.disabled = false; button.innerHTML = original; }
+        }
+    }
+
+    // A saved quote has a real PDF, byte for byte the one the customer is
+    // sent. An unsaved draft is saved first rather than printing a draft.
+    async function downloadPDF() {
+        try {
+            const id = bqCurrentId || await persist();
+            if (id) { window.location.href = '/quotations/' + id + '/download/'; }
+        } catch (error) {
+            showAlert('Could not build the PDF: ' + error.message, 'error');
+        }
+    }
+
+    /* ── Templates ─────────────────────────────────────────────────────────
+       A template's items arrive as ONE new section named after the template,
+       under whatever is already on the sheet. Appending rather than replacing:
+       a plumber part way through a quote who reaches for a template wants the
+       standard block added, not their own work thrown away. */
+    async function openTemplateModal() {
+        const modal = document.getElementById('templateModal');
+        if (!modal) { return; }
+        modal.classList.add('is-open');
+        document.getElementById('templatesLoading').style.display = 'block';
+        document.getElementById('templatesEmpty').style.display = 'none';
+        try {
+            const response = await fetch('/api/quotation-templates/?active_only=true');
+            const data = await response.json();
+            allTemplates = data.templates || [];
+            displayTemplates(allTemplates);
+        } catch (error) {
+            showTemplatesEmpty();
+        } finally {
+            document.getElementById('templatesLoading').style.display = 'none';
+        }
+    }
+
+    function closeTemplateModal() {
+        const modal = document.getElementById('templateModal');
+        if (modal) { modal.classList.remove('is-open'); }
+    }
+
+    function displayTemplates(templates) {
+        const list = document.getElementById('templatesList');
+        if (!list) { return; }
+        if (!templates.length) { list.innerHTML = ''; showTemplatesEmpty(); return; }
+        document.getElementById('templatesEmpty').style.display = 'none';
+        list.innerHTML = templates.map(function (template) {
+            return '<button type="button" class="pbq-template-row" data-template="' + template.id + '">' +
+                '<span class="pbq-template-row__name">' + esc(template.name) + '</span>' +
+                '<span class="pbq-template-row__meta">' + esc(template.project_type_display || '') + '</span>' +
+            '</button>';
+        }).join('');
+    }
+
+    function showTemplatesEmpty() {
+        document.getElementById('templatesList').innerHTML = '';
+        document.getElementById('templatesEmpty').style.display = 'block';
+    }
+
+    function filterTemplates() {
+        const search = (document.getElementById('templateSearch') || {}).value || '';
+        const type = (document.getElementById('templateProjectFilter') || {}).value || '';
+        const needle = search.toLowerCase();
+        displayTemplates(allTemplates.filter(function (template) {
+            const matchesText = !needle
+                || (template.name || '').toLowerCase().includes(needle)
+                || (template.description || '').toLowerCase().includes(needle);
+            const matchesType = !type || template.project_type === type;
+            return matchesText && matchesType;
+        }));
+    }
+
+    async function useTemplate(templateId) {
+        try {
+            const response = await fetch('/api/quotation-templates/?template_id=' + templateId);
+            const data = await response.json();
+            const template = (data.templates || [])[0] || data.template || {};
+
+            const itemsResponse = await fetch('/api/quotation-templates/' + templateId + '/items/');
+            const itemsData = await itemsResponse.json();
+            const items = (itemsData.items || []).map(function (item) {
+                return {
+                    description: item.description || '',
+                    qty: item.quantity_text || item.quantity || '1',
+                    unit: item.unit_price || 0,
+                };
+            });
+
+            if (!items.length) {
+                showAlert('That template has no items.', 'error');
+                return;
+            }
+            addSection((template.name || 'TEMPLATE').toUpperCase(), items);
+
+            // The template's own labour and transport only fill EMPTY boxes:
+            // a figure already typed for this job is the specific one.
+            const labour = document.getElementById('t-labour');
+            const transport = document.getElementById('t-transport');
+            if (labour && !parseFloat(labour.value)) { labour.value = template.default_labor_cost || 0; }
+            if (transport && !parseFloat(transport.value)) { transport.value = template.default_transport_cost || 0; }
+
+            recalc();
+            closeTemplateModal();
+            showAlert('Template added as a new section.', 'success');
+        } catch (error) {
+            showAlert('Could not load that template.', 'error');
+        }
+    }
+
+    // Attaching a lead from the picker at the top of the sheet.
+    window.quoteLeadPicked = function (lead) {
+        bqAppointmentId = String(lead.id);
+        bqLeadDigits = (lead.phone_number || '').replace(/[^0-9]/g, '');
+        bqLeadName = (lead.customer_name || '').trim();
+        const fill = function (id, value) {
+            const el = document.getElementById(id);
+            if (el && value) { el.value = value; }
+        };
+        fill('m-client', lead.customer_name);
+        fill('m-contact', lead.phone_number);
+        fill('m-address', lead.customer_area);
+        fill('m-email', lead.customer_email);
+        showAlert('Quote attached to ' + (bqLeadName || 'this lead') + '.', 'success');
+    };
 
     document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('bqSave').addEventListener('click', save);
@@ -490,6 +892,20 @@ edit they come back from the saved quote.
             addSection();
         }
         recalc();
+    });
+
+    // Delegated, so the template list never loses its handlers.
+    document.addEventListener('click', function (event) {
+        const row = event.target.closest('[data-template]');
+        if (row) { useTemplate(row.dataset.template); return; }
+        const modal = document.getElementById('templateModal');
+        if (modal && event.target === modal) { closeTemplateModal(); }
+        const chooser = document.getElementById('emailChoiceModal');
+        if (chooser && event.target === chooser) { closeEmailChoice(); }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { closeTemplateModal(); closeEmailChoice(); }
     });
 </script>
 {% endblock %}

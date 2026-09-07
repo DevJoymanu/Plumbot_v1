@@ -3405,7 +3405,21 @@ class Quotation(models.Model):
     # it did before these fields existed.
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    
+    # What the customer pays up front, as a percentage of the grand total. The
+    # business sets its own default on the Profile page and the plumber can
+    # change it on any single quote — a deposit is negotiated per job, so a
+    # figure baked into the terms text was never adjustable where it mattered.
+    # 0 means no deposit line at all, which is what every existing quote has.
+    deposit_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
+    # The number this quote goes to when the lead has no real WhatsApp line.
+    # A standalone quote's lead is a stub carrying a synthetic phone key
+    # (quotation_only_…), which the proactive-messaging crons deliberately
+    # skip; without somewhere to keep the number the plumber typed, the
+    # WhatsApp handoff had no chat to open and the quote could not be sent at
+    # all when there was no email either.
+    client_phone = models.CharField(max_length=50, blank=True)
+
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     
@@ -3441,6 +3455,20 @@ class Quotation(models.Model):
         if not channels:
             return 'Not sent'
         return ' + '.join(channels)
+
+    def deposit_amount(self):
+        """The deposit in money, derived from the grand total.
+
+        Derived rather than stored: the total moves every time an item is
+        edited, and a figure saved beside it would quietly stop matching the
+        percentage printed next to it. 0% means no deposit, and every document
+        omits the row rather than printing a zero.
+        """
+        percent = self._safe_decimal(self.deposit_percent)
+        if percent <= 0:
+            return Decimal('0.00')
+        amount = self._safe_decimal(self.total_amount) * percent / Decimal('100')
+        return amount.quantize(Decimal('0.01'))
 
     def lead_name(self) -> str:
         """The lead this quote is for, for a list row. Never blank: a quote
@@ -3526,6 +3554,8 @@ class Quotation(models.Model):
 
         net = gross - discount
         self.total_amount = net + (net * vat_percent / Decimal('100'))
+
+        self.deposit_percent = self._safe_decimal(self.deposit_percent)
 
         super().save(*args, **kwargs)
 

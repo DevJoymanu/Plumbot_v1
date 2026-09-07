@@ -40,57 +40,6 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
        layer. */
     .qf-preview { display: none; }
 
-    /* The email chooser's two routes. Full-width tap targets on a phone. */
-    .qf-choice {
-        display: flex;
-        gap: 14px;
-        align-items: flex-start;
-        width: 100%;
-        text-align: left;
-        padding: 16px;
-        margin-bottom: 12px;
-        border: 1px solid rgba(0, 101, 145, 0.12);
-        border-radius: var(--radius-md);
-        background: var(--color-surface-lowest);
-        cursor: pointer;
-        transition: border-color .2s ease, transform .2s ease;
-    }
-
-    .qf-choice:hover { border-color: var(--color-primary); }
-    .qf-choice:active { transform: scale(.98); }
-
-    .qf-choice__icon {
-        flex: 0 0 auto;
-        width: 38px;
-        height: 38px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
-        background: var(--color-surface-low);
-        color: var(--color-primary);
-    }
-
-    .qf-choice__body { min-width: 0; }
-    .qf-choice__body strong { display: block; color: var(--color-text); margin-bottom: 3px; }
-    .qf-choice__body small { color: var(--color-muted); font-size: 12.5px; }
-
-    .qf-choice__tag {
-        display: inline-block;
-        margin-left: 8px;
-        padding: 1px 8px;
-        border-radius: 999px;
-        background: var(--color-surface-low);
-        color: var(--color-primary);
-        font-family: var(--font-label);
-        font-size: 10px;
-        font-style: normal;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        vertical-align: middle;
-    }
-
     /* Edit mode only: the record's own identity, above the form. */
     .qf-meta {
         display: flex;
@@ -140,6 +89,14 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     </div>
 
     <div id="alertContainer" class="pbq-no-print"></div>
+
+    {% comment %}
+    Who this quote is for. On an edit it names the lead already attached; on a
+    new quote it is how one gets attached without leaving the screen.
+    {% endcomment %}
+    {% if quote_mode != 'edit' %}
+    {% include "bot/includes/quote_lead_picker.html" with quote_lead=appointment %}
+    {% endif %}
 
     {% if quote_mode == 'edit' %}
     <div class="pbq-card pbq-no-print">
@@ -252,6 +209,22 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
                 <span>Total Amount</span>
                 <span id="grandTotal">US$0.00</span>
             </div>
+            {% comment %}
+            The deposit is asked for as a PERCENTAGE and the money is derived,
+            so it cannot drift out of step with a total that moves every time
+            an item is edited. It starts from the tenant's own default and is
+            adjustable here on every quote. 0 leaves the line off the document.
+            {% endcomment %}
+            <div class="pbq-total-row">
+                <span><label for="depositPercent" style="margin:0;">Deposit %</label></span>
+                <input type="number" class="pbq-total-input" id="depositPercent"
+                       value="{{ quote_deposit_percent }}" min="0" max="100" step="0.5"
+                       inputmode="decimal" oninput="calculateTotals()">
+            </div>
+            <div class="pbq-total-row">
+                <span>Deposit due</span>
+                <span id="depositAmount">US$0.00</span>
+            </div>
         </div>
     </div>
 
@@ -320,90 +293,10 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
 </div>
 
 {% if quote_mode != 'edit' %}
-<!-- Template Selector Modal -->
-<div class="pbq-modal pbq-no-print" id="templateModal">
-    <div class="pbq-modal__panel">
-        <div class="pbq-modal__head">
-            <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
-            <button type="button" class="pbq-modal__close" onclick="closeTemplateModal()"
-                    aria-label="Close template picker">&times;</button>
-        </div>
-        <div class="pbq-modal__body">
-            <div class="pbq-modal__filters">
-                <input type="text" id="templateSearch" placeholder="Search templates..." oninput="searchTemplates()">
-                <select id="templateProjectFilter" onchange="filterTemplates()">
-                    <option value="">All Project Types</option>
-                    {% for value, label in quote_project_types %}
-                    <option value="{{ value }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div id="templatesList"></div>
-
-            <div id="templatesLoading" class="pbq-empty">
-                <i class="fas fa-spinner fa-spin"></i>
-                <p>Loading templates...</p>
-            </div>
-
-            <div id="templatesEmpty" class="pbq-empty" style="display:none;">
-                <i class="fas fa-inbox"></i>
-                <p>No templates found</p>
-            </div>
-        </div>
-    </div>
-</div>
+{% include "bot/includes/quote_template_modal.html" %}
 {% endif %}
 
-{% comment %}
-How the quote reaches the customer by email. Both routes are always offered;
-the tenant's Settings choice only decides which is pre-selected.
-
-  platform - we send it from their configured address with the PDF attached.
-  manual   - we download the PDF and open a draft in the plumber's own mail
-             app, so the mail comes from the inbox they read replies in.
-
-A mailto: draft cannot carry an attachment (a platform limit, not an oversight),
-which is why the manual route downloads the PDF first and says so.
-{% endcomment %}
-<div class="pbq-modal pbq-no-print" id="emailChoiceModal">
-    <div class="pbq-modal__panel">
-        <div class="pbq-modal__head">
-            <h2><i class="fas fa-envelope"></i> Send the quote by email</h2>
-            <button type="button" class="pbq-modal__close" onclick="closeEmailChoice()"
-                    aria-label="Close">&times;</button>
-        </div>
-        <div class="pbq-modal__body">
-            <button type="button" class="qf-choice" onclick="sendQuote('email', 'platform')"
-                    id="emailPlatformChoice">
-                <span class="qf-choice__icon"><i class="fas fa-paper-plane"></i></span>
-                <span class="qf-choice__body">
-                    <strong>Send it for me
-                        {% if quote_email_mode == 'platform' %}<em class="qf-choice__tag">Default</em>{% endif %}
-                    </strong>
-                    <small>
-                        Goes out now with the PDF attached{% if configured_sender %},
-                        from {{ configured_sender }}{% endif %}.
-                    </small>
-                </span>
-            </button>
-
-            <button type="button" class="qf-choice" onclick="sendQuote('email', 'manual')"
-                    id="emailManualChoice">
-                <span class="qf-choice__icon"><i class="fas fa-pen-to-square"></i></span>
-                <span class="qf-choice__body">
-                    <strong>Write it myself
-                        {% if quote_email_mode == 'manual' %}<em class="qf-choice__tag">Default</em>{% endif %}
-                    </strong>
-                    <small>
-                        Downloads the PDF and opens a draft in your email app,
-                        ready to attach.
-                    </small>
-                </span>
-            </button>
-        </div>
-    </div>
-</div>
+{% include "bot/includes/quote_email_choice_modal.html" %}
 
 <script>
 (function () {
@@ -412,7 +305,10 @@ which is why the manual route downloads the PDF first and says so.
     // ── Mode ─────────────────────────────────────────────────────────────
     const MODE = "{{ quote_mode|default:'new' }}";
     const QUOTATION_ID = {% if quote_mode == 'edit' %}{{ quotation.pk }}{% else %}null{% endif %};
-    const APPOINTMENT_ID = {% if appointment %}{{ appointment.pk }}{% else %}null{% endif %};
+    // Not a const: the lead picker can attach a lead after the page has
+    // loaded, and everything downstream (which endpoint saves, what the
+    // WhatsApp handoff opens) has to follow it.
+    let appointmentId = {% if appointment %}{{ appointment.pk }}{% else %}null{% endif %};
 
     // Past this many rows the list gets its own scrollbar. Declared BEFORE
     // anything that reads it: calculateTotals() runs during boot, and a const
@@ -443,6 +339,12 @@ which is why the manual route downloads the PDF first and says so.
     function num(id) {
         const el = document.getElementById(id);
         return el ? (parseFloat(el.value) || 0) : 0;
+    }
+
+    // Clamped where it is READ, so a typo cannot put a 400% deposit on the
+    // document or send a negative one to the server.
+    function depositPercent() {
+        return Math.min(100, Math.max(0, num('depositPercent')));
     }
 
     function val(id) {
@@ -601,8 +503,12 @@ which is why the manual route downloads the PDF first and says so.
 
         const materialsEl = document.getElementById('materialsTotal');
         const grandEl = document.getElementById('grandTotal');
+        const grand = materials + labour + transport;
         if (materialsEl) { materialsEl.textContent = money(materials); }
-        if (grandEl) { grandEl.textContent = money(materials + labour + transport); }
+        if (grandEl) { grandEl.textContent = money(grand); }
+
+        const depositEl = document.getElementById('depositAmount');
+        if (depositEl) { depositEl.textContent = money(grand * depositPercent() / 100); }
         updateItemsBar();
     }
 
@@ -641,7 +547,20 @@ which is why the manual route downloads the PDF first and says so.
         document.getElementById('previewMaterials').textContent = money(materials);
         document.getElementById('previewLabour').textContent = money(labour);
         document.getElementById('previewTransport').textContent = money(transport);
-        document.getElementById('previewGrandTotal').textContent = money(materials + labour + transport);
+        const grand = materials + labour + transport;
+        document.getElementById('previewGrandTotal').textContent = money(grand);
+
+        // The document only carries a deposit line when one is actually asked
+        // for: a "Deposit US$0.00" row on the customer's copy is noise.
+        const depositRow = document.getElementById('previewDepositRow');
+        if (depositRow) {
+            const percent = depositPercent();
+            depositRow.style.display = percent ? '' : 'none';
+            document.getElementById('previewDepositLabel').textContent =
+                'Deposit due (' + (Math.round(percent * 100) / 100) + '%)';
+            document.getElementById('previewDeposit').textContent =
+                money(grand * percent / 100);
+        }
 
         const notes = val('additionalNotes');
         const notesEl = document.getElementById('previewNotes');
@@ -671,7 +590,7 @@ which is why the manual route downloads the PDF first and says so.
             const el = document.getElementById(id);
             if (el) { el.value = ''; }
         });
-        ['labourCost', 'transportCost'].forEach(function (id) {
+        ['labourCost', 'transportCost', 'depositPercent'].forEach(function (id) {
             const el = document.getElementById(id);
             if (el) { el.value = 0; }
         });
@@ -687,7 +606,7 @@ which is why the manual route downloads the PDF first and says so.
         const rows = items.filter(function (item) { return (item.name || '').trim(); });
         const materials = rows.reduce(function (sum, item) { return sum + item.qty * item.unit; }, 0);
         return {
-            appointment_id: APPOINTMENT_ID,
+            appointment_id: appointmentId,
             client_name: val('clientName'),
             client_phone: val('clientPhone'),
             client_email: val('clientEmail'),
@@ -703,6 +622,7 @@ which is why the manual route downloads the PDF first and says so.
             labour_cost: num('labourCost'),
             labor_cost: num('labourCost'),
             transport_cost: num('transportCost'),
+            deposit_percent: depositPercent(),
             // The flat layout posts materials_cost AND the item lines, and
             // Quotation.save() adds both — a known pre-existing double-count
             // (CLAUDE.md). Sending 0 here would change every existing quote's
@@ -739,7 +659,7 @@ which is why the manual route downloads the PDF first and says so.
     async function persist() {
         const url = currentQuotationId
             ? '/quotations/' + currentQuotationId + '/edit/'
-            : (APPOINTMENT_ID ? '/api/quotations/create/' : '/api/quotations/create-standalone/');
+            : (appointmentId ? '/api/quotations/create/' : '/api/quotations/create-standalone/');
 
         const response = await fetch(url, {
             method: 'POST',
@@ -759,9 +679,38 @@ which is why the manual route downloads the PDF first and says so.
         return currentQuotationId;
     }
 
-    const LEAD_WA_DIGITS = "{{ lead_wa_digits }}";
-    const LEAD_NAME = "{{ lead_display_name|escapejs }}";
+    let leadWaDigits = "{{ lead_wa_digits }}";
+    let leadName = "{{ lead_display_name|escapejs }}";
     const EMAIL_MODE_DEFAULT = "{{ quote_email_mode|default:'platform' }}";
+
+    // The number this quote can be sent to. A quote with no lead attached is
+    // still sendable: the phone typed on the sheet is saved with it, and the
+    // handoff opens that chat. Without this a standalone quote for someone
+    // with no email address could not be sent at all.
+    function sendableDigits() {
+        return leadWaDigits || val('clientPhone').replace(/[^0-9]/g, '');
+    }
+
+    // Attaching a lead from the picker. Fills only what is still blank, so a
+    // detail the plumber has already typed is never overwritten by the record.
+    window.quoteLeadPicked = function (lead) {
+        appointmentId = lead.id;
+        leadWaDigits = (lead.phone_number || '').replace(/[^0-9]/g, '');
+        leadName = (lead.customer_name || '').trim();
+        const fill = function (id, value, force) {
+            const el = document.getElementById(id);
+            if (el && value && (force || !el.value.trim())) { el.value = value; }
+        };
+        fill('clientName', lead.customer_name, true);
+        fill('clientPhone', lead.phone_number, true);
+        fill('clientEmail', lead.customer_email, true);
+        fill('clientAddress', lead.customer_area);
+        fill('projectLocation', lead.customer_area);
+        fill('projectNotes', lead.project_description);
+        const type = document.getElementById('projectType');
+        if (type && lead.project_type && !type.value) { type.value = lead.project_type; }
+        showAlert('Quote attached to ' + (leadName || 'this lead') + '.', 'success');
+    };
 
     function openEmailChoice() {
         const modal = document.getElementById('emailChoiceModal');
@@ -793,7 +742,7 @@ which is why the manual route downloads the PDF first and says so.
         const type = document.getElementById('projectType');
         const service = type && type.selectedIndex > 0
             ? type.options[type.selectedIndex].text.toLowerCase() : 'the work';
-        const hi = LEAD_NAME ? 'Hi ' + LEAD_NAME + ',' : 'Hi there,';
+        const hi = leadName ? 'Hi ' + leadName + ',' : 'Hi there,';
         return hi + ' here is your quote for ' + service + '.';
     }
 
@@ -826,8 +775,9 @@ which is why the manual route downloads the PDF first and says so.
         }
         closeEmailChoice();
 
-        if (channel === 'whatsapp' && !LEAD_WA_DIGITS) {
-            showAlert('This quote is not attached to a lead with a WhatsApp number.', 'error');
+        if (channel === 'whatsapp' && !sendableDigits()) {
+            showAlert('Add a phone number for this client, then send on WhatsApp.', 'error');
+            document.getElementById('clientPhone').focus();
             return;
         }
         if (channel === 'email' && !val('clientEmail')) {
@@ -869,7 +819,7 @@ which is why the manual route downloads the PDF first and says so.
 
             if (mode === 'manual') {
                 fetchPdf(id);
-                const subject = 'Your quote' + (LEAD_NAME ? ' for ' + LEAD_NAME : '');
+                const subject = 'Your quote' + (leadName ? ' for ' + leadName : '');
                 const url = 'mailto:' + encodeURIComponent(val('clientEmail'))
                           + '?subject=' + encodeURIComponent(subject)
                           + '&body=' + encodeURIComponent(quoteBlurb()
@@ -1001,6 +951,7 @@ which is why the manual route downloads the PDF first and says so.
             set('projectNotes', apt.project_description);
             set('labourCost', quote.labor_cost || 0);
             set('transportCost', quote.transport_cost || 0);
+            set('depositPercent', quote.deposit_percent || 0);
             if (!val('additionalNotes')) { set('additionalNotes', quote.notes); }
 
             items = (quote.items || []).map(function (item) {
@@ -1140,7 +1091,7 @@ which is why the manual route downloads the PDF first and says so.
         if (MODE === 'edit') {
             loadQuotation(QUOTATION_ID);
         } else {
-            if (APPOINTMENT_ID) { loadAppointmentData(APPOINTMENT_ID); }
+            if (appointmentId) { loadAppointmentData(appointmentId); }
             ensureBlankItem();
             renderItems();
         }

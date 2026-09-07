@@ -7290,6 +7290,61 @@ try:
 except Exception as e:
     results.log("quoted photo pricing", False, got=str(e))
 
+# --- The model is allowed to end a conversation ------------------------------
+# close_pleasantry was the model's most-discarded call: 15 of the ~34
+# disagreements over 100 replayed conversations, every one of them the model
+# saying "this is finished" while the router asked another qualifying
+# question. Production repeated it on a lead who had just said "Noted".
+try:
+    from bot import controller as _cctl
+    from bot.controller_templates import close_pleasantry as _close
+
+    class _AckLead:
+        project_description = 'full ensuite refit'
+        previous_work_photos_sent_at = '2026-09-07'
+        plan_status = None
+        has_plan = None
+        conversation_history = []
+        customer_area = 'Ruwa'
+        project_type = 'bathroom_renovation'
+
+    _uc_close = {'next_move': 'close_pleasantry', 'move_confidence': 0.9,
+                 'intent': 'ack', 'confidence': 'HIGH',
+                 'state_update': {'want_level': 'interested'}}
+    results.log("close: the model may now end the turn",
+                _cctl.decide_move(_uc_close, _AckLead()) == 'close_pleasantry')
+    results.log("close: it is in the drivable set",
+                'close_pleasantry' in _cctl.DRIVABLE_MOVES)
+
+    # ...but never over a question. The customer's own words outrank the model.
+    _uc_asked = dict(_uc_close, intent='price_question')
+    results.log("close: a question is answered, not acknowledged away",
+                _cctl.decide_move(_uc_asked, _AckLead()) is None)
+    _uc_photo = dict(_uc_close, is_photo_request=True)
+    results.log("close: a photo request is not closed away either",
+                _cctl.decide_move(_uc_photo, _AckLead()) is None)
+    # ...and the confidence floor still applies to it.
+    results.log("close: a low-confidence close is left to the old router",
+                _cctl.decide_move(dict(_uc_close, move_confidence=0.3),
+                                  _AckLead()) is None)
+
+    # The copy ENDS. "Anything else?" is a question and a question reopens
+    # what the customer just closed.
+    results.log("close: the reply asks nothing at all",
+                '?' not in _close(None) and '?' not in _close(None, is_shona=True))
+    results.log("close: it is short, and Shona for a Shona lead",
+                len(_close(None)) < 40
+                and _close(None, is_shona=True) != _close(None))
+
+    # The moves with a state machine behind them stay OUT: driving the message
+    # alone would send the words and lose the machinery.
+    for _held in ('slow_lead_nudge', 'out_of_scope_redirect',
+                  'escalate_to_human', 'greet', 'present_value'):
+        results.log("close: %s is deliberately not drivable" % _held,
+                    _held not in _cctl.DRIVABLE_MOVES)
+except Exception as e:
+    results.log("controller close_pleasantry", False, got=str(e))
+
 # --- Lead 1005: four defects that stacked into one bad conversation ---------
 # A lead abroad until 22 December, who sent a plan and gave their email, was
 # offered "tomorrow or this Tuesday" twice and had neither the date nor the
@@ -7336,10 +7391,17 @@ try:
     # 3. A volunteered email is captured wherever it lands, not only while the
     #    delay-email step happens to be pending.
     _srcw = _inspect_r.getsource(_wwh._generate_and_schedule_reply)
+    # NOTE these two are SOURCE checks and that is exactly why they are not
+    # enough on their own: they passed while the block raised NameError on
+    # every message (whatsapp_webhook has no top-level `import re`), and
+    # production logged "name 're' is not defined" twice before anyone saw it.
+    # The behaviour is exercised in bot/test_response_check.py.
     results.log("lead 1005: a volunteered email is captured outside the flow",
                 'EMAIL captured from the message' in _srcw)
     results.log("lead 1005: ...and only ever fills a blank",
                 "if not (appointment.customer_email or '').strip():" in _srcw)
+    results.log("lead 1005: ...and the block imports the re it uses",
+                'import re as _re' in _srcw and '_re.search(' in _srcw)
 
     # 4. plan_status advances for a plan the lead sent unprompted. It is the
     #    field on_plan_path, apply_plan_path_gate and PlanQuoteRequest read;
@@ -7347,7 +7409,7 @@ try:
     _srcm = _inspect_r.getsource(_wwh)
     _media = _srcm[_srcm.find('if is_plan_document or _was_pending_upload:'):]
     _media = _media[:2200]
-    _verified = _srcm[_srcm.find('_verified_plan = bool('):]
+    _verified = _srcm[_srcm.find('_verified_plan = False'):]
     _verified = _verified[:2600]
     results.log("lead 1005: a verified plan advances plan_status",
                 "plan_status='plan_uploaded'" in _verified)
@@ -7358,12 +7420,23 @@ try:
     # who sent "our catalogue"; is_plan_document is only mime == pdf, so on
     # that evidence alone the bot would advance the plan path and chase the
     # plumber four times about a sales pitch.
-    results.log("lead 966: a plan must be asked for, or seen to be a drawing",
-                '_was_pending_upload' in _verified
-                and '_description_is_a_plan(image_description)' in _verified)
-    results.log("lead 966: an unprompted PDF opens no quote request",
-                _verified.find('_verified_plan') < _verified.find('ensure_request')
-                and 'if _verified_plan:' in _verified)
+    # Whose document is it? Decided from the CONVERSATION, not the MIME type.
+    # Too loose sent a supplier fifteen photos of our own work (966); too tight
+    # answered a customer's quotation request with "send us the plan" when they
+    # had already sent it (1012).
+    results.log("lead 966: the sender is classified, not the file type",
+                'is_their_own_plan(' in _verified
+                and 'asked_for_it=_was_pending_upload' in _verified)
+    # The quote request sits INSIDE the verified branch, so an unverified
+    # document cannot open one and cannot start chasing the plumber.
+    _gate_at = _srcm.find('_verified_plan = False')
+    _guard_at = _srcm.find('if _verified_plan:', _gate_at)
+    _ensure_at = _srcm.find('ensure_request(appointment)', _gate_at)
+    results.log("lead 966: an unverified document opens no quote request",
+                -1 < _gate_at < _guard_at < _ensure_at,
+                got='gate=%d guard=%d ensure=%d' % (_gate_at, _guard_at, _ensure_at))
+    results.log("lead 1012: a document we cannot read defaults to the customer",
+                '_verified_plan = True' in _verified)
 except Exception as e:
     results.log("lead 1005 fixes", False, got=str(e))
 

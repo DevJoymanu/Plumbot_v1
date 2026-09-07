@@ -120,5 +120,8 @@ def document_context(quotation, letterhead) -> dict:
         'materials_total': materials,
         'net_subtotal': net,
         'vat_amount': vat,
+        # Derived from the stored percentage, never a second stored figure:
+        # the total moves with every edit and the deposit has to follow it.
+        'deposit_amount': quotation.deposit_amount(),
         'quote_terms': quote_terms(quotation, letterhead),
     }

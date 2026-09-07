@@ -154,14 +154,20 @@ def create_standalone_quotation_api(request):
     the client info, OR by creating a quotation with appointment=None if the
     model allows it.  We store extra client metadata in the quotation notes.
     """
-    from .models import Appointment, Quotation, QuotationItem
-    from .utils import _reset_pk_sequence
+    # One package level up: this module IS bot.views, so `.models` resolved to
+    # bot.views.models, which does not exist. Every standalone save 500'd on
+    # the import — the "New Quote" screen could not save a quote that was not
+    # already attached to a lead.
+    from ..models import Appointment, Quotation, QuotationItem
+    from ..utils import _reset_pk_sequence
  
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
  
+    from .quotations import _deposit_percent, _quote_notes
+
     client_name    = (data.get('client_name') or '').strip()
     client_phone   = (data.get('client_phone') or '').strip()
     client_email   = (data.get('client_email') or '').strip()
@@ -206,13 +212,19 @@ def create_standalone_quotation_api(request):
         )
  
     # ── Build notes string ────────────────────────────────────────────────────
-    meta_lines = []
-    if client_phone:   meta_lines.append(f"Phone: {client_phone}")
-    if client_email:   meta_lines.append(f"Email: {client_email}")
-    if client_address: meta_lines.append(f"Address: {client_address}")
-    if project_loc:    meta_lines.append(f"Site: {project_loc}")
-    if notes_raw:      meta_lines.append(notes_raw)
-    combined_notes = '\n'.join(meta_lines)
+    # A sectioned sheet has no notes box: its `notes` carry the payment terms,
+    # one per line, exactly as they do on a quote raised from a lead. Anything
+    # else keeps the flat layout's client/site summary.
+    if isinstance(data.get('terms'), list):
+        combined_notes = _quote_notes(data)
+    else:
+        meta_lines = []
+        if client_phone:   meta_lines.append(f"Phone: {client_phone}")
+        if client_email:   meta_lines.append(f"Email: {client_email}")
+        if client_address: meta_lines.append(f"Address: {client_address}")
+        if project_loc:    meta_lines.append(f"Site: {project_loc}")
+        if notes_raw:      meta_lines.append(notes_raw)
+        combined_notes = '\n'.join(meta_lines)
  
     # ── Create Quotation ──────────────────────────────────────────────────────
     quotation = None
@@ -225,6 +237,13 @@ def create_standalone_quotation_api(request):
                     labor_cost=labour_cost,
                     transport_cost=transport_cost,
                     materials_cost=materials_cost,
+                    discount=_to_decimal(data.get('discount', 0)),
+                    vat_percent=_to_decimal(data.get('vat_percent', 0)),
+                    deposit_percent=_deposit_percent(data),
+                    # The stub lead's phone_number is a synthetic key on
+                    # purpose (it keeps these rows out of every proactive
+                    # send), so the number to send the QUOTE to is kept here.
+                    client_phone=client_phone[:50],
                     notes=combined_notes,
                     status='draft',
                 )
@@ -249,7 +268,12 @@ def create_standalone_quotation_api(request):
         QuotationItem.objects.create(
             quotation=quotation,
             description=desc,
+            # Sections and trade quantities ("19 length") are what rebuilds a
+            # sectioned sheet on reopen; dropping them here made a standalone
+            # sectioned quote come back as one untitled list.
+            section=(item.get('section') or '')[:120],
             quantity=qty,
+            quantity_text=(item.get('qty_text') or '')[:40],
             unit_price=unit,
         )
  
@@ -277,26 +301,35 @@ def create_standalone_quotation_api(request):
 def appointment_search_api(request):
     """
     GET /api/appointments/search/?q=<query>
-    Returns matching appointments for the typeahead in the standalone form.
+    The lead picker on both quote editors.
+
+    An EMPTY query is a real question, not a non-answer: it means "who have I
+    been talking to?", and the most recent leads are the ones a quote is
+    almost always for. Returning nothing until two characters were typed made
+    attaching a lead a memory test, so the box now opens with the answer.
+
+    Quotation-only and email-only stubs carry synthetic phone keys and are not
+    leads anybody spoke to, so they never appear here.
     """
     from ..models import Appointment
     from django.db.models import Q
 
     query = request.GET.get('q', '').strip()
-    if len(query) < 2:
-        return JsonResponse({'appointments': []})
- 
+
     qs = (
         Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real()
-        .filter(
+        .exclude(phone_number__startswith='quotation_only_')
+        .exclude(phone_number__startswith='email_')
+    )
+    if query:
+        qs = qs.filter(
             Q(customer_name__icontains=query)  |
             Q(phone_number__icontains=query)   |
             Q(customer_area__icontains=query)  |
+            Q(customer_email__icontains=query) |
             Q(project_type__icontains=query)
         )
-        .exclude(phone_number__startswith='quotation_only_')
-        .order_by('-updated_at')[:15]
-    )
+    qs = qs.order_by('-updated_at')[:15 if query else 8]
  
     results = []
     for a in qs:

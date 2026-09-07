@@ -362,6 +362,16 @@
                                                value="{{ letterhead.default_vat_percent }}">
                                     </div>
                                     <div class="col-md-3 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_default_deposit_percent">Default deposit %</label>
+                                        <input type="number" step="0.5" min="0" max="100" class="form-control"
+                                               id="id_lh_default_deposit_percent" name="lh_default_deposit_percent"
+                                               value="{{ letterhead.default_deposit_percent }}">
+                                        <small class="text-muted">
+                                            What a new quote asks for up front. Change it on any
+                                            single quote. 0 leaves the deposit line off.
+                                        </small>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
                                         <label class="form-label fw-bold" for="id_lh_signatory">Signed by</label>
                                         <input type="text" class="form-control" id="id_lh_signatory"
                                                name="lh_signatory" value="{{ letterhead.signatory }}"

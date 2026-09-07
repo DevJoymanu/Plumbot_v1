@@ -1,0 +1,237 @@
+{% comment %}
+Attaching a quote to a lead, in one box.
+
+Before this the only way to raise a quote for a lead was to find them in the
+lead inbox, open them, and start the quote from their page. The quote screens
+themselves had no way to say who the quote is for, even though the search API
+behind this box already existed and was written for exactly this. So a plumber
+who opened "New Quote" had to leave it again to get the customer onto it.
+
+Tapping the box shows the most recent leads straight away, so the common case
+(the person they just spoke to) takes no typing at all. Typing filters by name,
+number, area, email or job type.
+
+The page it sits on defines `window.quoteLeadPicked(lead)`. This include knows
+how to FIND a lead, never what a particular sheet does with one, so the flat
+and sectioned editors share it without sharing their fields.
+
+Optional context: `quote_lead` is the lead already attached, if any.
+{% endcomment %}
+<div class="qlp" id="quoteLeadPicker">
+    <div class="qlp__row">
+        <label class="qlp__label" for="qlpSearch">
+            <i class="fas fa-user-tag"></i> Lead
+        </label>
+        <div class="qlp__field">
+            <span class="qlp__current" id="qlpCurrent"
+                  {% if not quote_lead %}hidden{% endif %}>
+                {% comment %}
+                Guarded: with no lead attached `quote_lead` is empty, and a
+                `default:` argument that reaches into it raises rather than
+                falling back — it took the whole standalone screen down.
+                {% endcomment %}
+                <strong id="qlpCurrentName">{% if quote_lead %}{{ quote_lead.customer_name|default:quote_lead.phone_number }}{% endif %}</strong>
+                <button type="button" class="qlp__change" id="qlpChange">Change</button>
+            </span>
+            <input type="search" id="qlpSearch" autocomplete="off"
+                   placeholder="Search a lead by name, number or area"
+                   {% if quote_lead %}hidden{% endif %}>
+            <div class="qlp__results" id="qlpResults" hidden></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .qlp {
+        max-width: 920px;
+        margin: 0 auto 14px;
+        padding: 10px 14px;
+        border: 1px solid rgba(0, 101, 145, 0.14);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-lowest);
+    }
+
+    .qlp__row { display: flex; align-items: center; gap: 12px; }
+
+    .qlp__label {
+        flex: 0 0 auto;
+        margin: 0;
+        font-family: var(--font-label);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--color-primary);
+    }
+
+    .qlp__field { position: relative; flex: 1 1 auto; min-width: 0; }
+
+    .qlp__field input[type="search"] {
+        width: 100%;
+        min-height: 42px;
+        padding: 8px 12px;
+        border: 1px solid rgba(0, 101, 145, 0.16);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        font: inherit;
+        color: var(--color-text);
+    }
+
+    .qlp__current {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        font-size: 14px;
+        color: var(--color-text);
+    }
+
+    .qlp__change {
+        padding: 4px 10px;
+        border: 1px solid rgba(0, 101, 145, 0.2);
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--color-primary);
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    {% comment %}
+    The results float over the sheet. A list that pushed the document down and
+    back up again as the plumber typed would move the thing they are reading.
+    {% endcomment %}
+    .qlp__results {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        max-height: 320px;
+        overflow-y: auto;
+        border: 1px solid rgba(0, 101, 145, 0.16);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface-lowest);
+        box-shadow: var(--shadow-glow-lg);
+    }
+
+    .qlp__hit {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        border: none;
+        border-bottom: 1px solid rgba(0, 101, 145, 0.07);
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+        color: var(--color-text);
+    }
+
+    .qlp__hit:last-child { border-bottom: none; }
+    .qlp__hit:hover, .qlp__hit:focus { background: var(--color-surface-low); }
+    .qlp__hit strong { display: block; font-size: 13.5px; }
+    .qlp__hit small { color: var(--color-muted); font-size: 12px; }
+    .qlp__note { padding: 12px; color: var(--color-muted); font-size: 12.5px; }
+
+    @media (max-width: 767px) {
+        .qlp__row { flex-direction: column; align-items: stretch; gap: 6px; }
+    }
+</style>
+
+<script>
+(function () {
+    'use strict';
+
+    var box = document.getElementById('qlpSearch');
+    var results = document.getElementById('qlpResults');
+    var current = document.getElementById('qlpCurrent');
+    var currentName = document.getElementById('qlpCurrentName');
+    var change = document.getElementById('qlpChange');
+    if (!box || !results) { return; }
+
+    var timer = null;
+    var lastQuery = null;
+    var hits = [];
+
+    function esc(value) {
+        var div = document.createElement('div');
+        div.textContent = value === null || value === undefined ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    function hide() { results.hidden = true; }
+
+    function render(leads) {
+        hits = leads;
+        if (!leads.length) {
+            results.innerHTML = '<div class="qlp__note">No leads match that.</div>';
+            results.hidden = false;
+            return;
+        }
+        results.innerHTML = leads.map(function (lead, index) {
+            var line = [lead.phone_number, lead.customer_area]
+                .filter(Boolean).join(' · ');
+            return '<button type="button" class="qlp__hit" data-index="' + index + '">' +
+                   '<strong>' + esc(lead.customer_name || lead.phone_number || 'Unnamed lead') + '</strong>' +
+                   (line ? '<small>' + esc(line) + '</small>' : '') +
+                   '</button>';
+        }).join('');
+        results.hidden = false;
+    }
+
+    function search(query) {
+        if (query === lastQuery) { results.hidden = false; return; }
+        lastQuery = query;
+        fetch('/api/appointments/search/?q=' + encodeURIComponent(query), {
+            headers: { 'Accept': 'application/json' }
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (data) { render(data.appointments || []); })
+            .catch(function () { hide(); });
+    }
+
+    // Focus is enough to see who is waiting: an empty query returns the most
+    // recent leads, so the usual pick is one tap.
+    box.addEventListener('focus', function () { search(box.value.trim()); });
+
+    box.addEventListener('input', function () {
+        window.clearTimeout(timer);
+        var query = box.value.trim();
+        timer = window.setTimeout(function () { search(query); }, 200);
+    });
+
+    results.addEventListener('click', function (event) {
+        var hit = event.target.closest('[data-index]');
+        if (!hit) { return; }
+        var lead = hits[parseInt(hit.dataset.index, 10)];
+        if (!lead) { return; }
+        hide();
+        box.hidden = true;
+        if (current) { current.hidden = false; }
+        if (currentName) {
+            currentName.textContent = lead.customer_name || lead.phone_number || 'Lead';
+        }
+        if (typeof window.quoteLeadPicked === 'function') {
+            window.quoteLeadPicked(lead);
+        }
+    });
+
+    if (change) {
+        change.addEventListener('click', function () {
+            if (current) { current.hidden = true; }
+            box.hidden = false;
+            box.value = '';
+            lastQuery = null;
+            box.focus();
+        });
+    }
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('#quoteLeadPicker')) { hide(); }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { hide(); }
+    });
+})();
+</script>

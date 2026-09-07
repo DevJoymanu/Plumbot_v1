@@ -240,7 +240,8 @@ def _flat_sheet(page):
         ('Material cost', items_total),
         ('Labour', quotation.labor_cost),
         ('Transport', quotation.transport_cost),
-    ], grand=('Total Amount', quotation.total_amount))
+    ], grand=('Total Amount', quotation.total_amount),
+       after=_deposit_row(quotation))
 
     if quotation.notes:
         page.space(70)
@@ -453,7 +454,8 @@ def _sectioned_sheet(page, document):
     if _dec(quotation.vat_percent):
         rows.append((f'VAT ({_dec(quotation.vat_percent):g}%)',
                      document.get('vat_amount') or 0, False))
-    _sec_totals(page, widths, rows, quotation.total_amount)
+    _sec_totals(page, widths, rows, quotation.total_amount,
+                deposit=_deposit_row(quotation, 'DEPOSIT'))
 
     terms = document.get('quote_terms') or []
     if terms:
@@ -526,9 +528,13 @@ def _sec_row(page, widths, values, *, height, fill, colour, align):
     page.y = bottom - 4
 
 
-def _sec_totals(page, widths, rows, grand):
-    """Labels teal and right-aligned, amounts right - as .bq-totals draws."""
-    page.space(40 + len(rows) * 16)
+def _sec_totals(page, widths, rows, grand, deposit=None):
+    """Labels teal and right-aligned, amounts right - as .bq-totals draws.
+
+    The deposit sits below GRAND TOTAL, in the same place and on the same
+    condition as the .bq-deposit row on the screen: only when one is asked for.
+    """
+    page.space(40 + (len(rows) + (1 if deposit else 0)) * 16)
     label_right = page.left + sum(widths[:3]) - 6
     for label, value, underline in rows:
         page.c.setFont('Helvetica-Bold', 9.5)
@@ -552,6 +558,15 @@ def _sec_totals(page, widths, rows, grand):
     page.c.drawRightString(label_right, page.y, 'GRAND TOTAL')
     page.c.drawRightString(page.right - 6, page.y, page.money(grand))
     page.y -= 22
+
+    if deposit:
+        page.c.setFont('Helvetica-Bold', 9.5)
+        page.c.setFillColor(_hex('teal'))
+        page.c.drawRightString(label_right, page.y, deposit[0])
+        page.c.setFont('Helvetica', 9.5)
+        page.c.setFillColor(_hex('ink'))
+        page.c.drawRightString(page.right - 6, page.y, page.money(deposit[1]))
+        page.y -= 18
 
 
 def _sec_term_row(page, term):
@@ -679,8 +694,29 @@ def _items_table(page, rows, *, qty_is_text=False):
         page.y -= 18
 
 
-def _totals_block(page, rows, *, grand):
-    """The totals, right-aligned, with the grand total ruled off."""
+def _deposit_row(quotation, label='Deposit due'):
+    """The deposit line, or nothing.
+
+    The same rule both HTML documents follow: a deposit is printed only when
+    one is asked for, and its money is derived from the percentage so it can
+    never disagree with the grand total sitting above it. The label is the
+    caller's because each sheet words it as its own screen does.
+    """
+    percent = _dec(getattr(quotation, 'deposit_percent', 0))
+    if percent <= 0:
+        return None
+    # '50' rather than '50.00', and without Decimal.normalize(), which turns
+    # a round 50 into 5E+1.
+    shown = f'{percent:f}'.rstrip('0').rstrip('.')
+    return (f'{label} ({shown}%)', quotation.deposit_amount())
+
+
+def _totals_block(page, rows, *, grand, after=None):
+    """The totals, right-aligned, with the grand total ruled off.
+
+    `after` is a row that belongs BELOW the rule — the deposit, which is read
+    off the grand total rather than being one of its parts.
+    """
     from reportlab.lib import colors
 
     page.space(30 + len(rows) * 16)
@@ -701,6 +737,14 @@ def _totals_block(page, rows, *, grand):
     page.c.drawRightString(page.right - 110, page.y, grand[0])
     page.c.drawRightString(page.right, page.y, page.money(grand[1]))
     page.y -= 18
+
+    if after:
+        page.c.setFont('Helvetica', 10)
+        page.c.setFillColor(colors.HexColor('#3e4850'))
+        page.c.drawRightString(page.right - 110, page.y, after[0])
+        page.c.setFillColor(colors.black)
+        page.c.drawRightString(page.right, page.y, page.money(after[1]))
+        page.y -= 16
 
 
 # ── Small resolvers ──────────────────────────────────────────────────────────

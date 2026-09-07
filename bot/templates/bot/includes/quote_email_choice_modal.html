@@ -1,0 +1,49 @@
+{% comment %}
+How the quote reaches the customer by email. Both routes are always offered;
+the tenant's Settings choice only decides which is pre-selected.
+
+  platform - we send it from their configured address with the PDF attached.
+  manual   - we download the PDF and open a draft in the plumber's own mail
+             app, so the mail comes from the inbox they read replies in.
+
+A mailto: draft cannot carry an attachment (a platform limit, not an oversight),
+which is why the manual route downloads the PDF first and says so.
+{% endcomment %}
+<div class="pbq-modal pbq-no-print bq-no-print" id="emailChoiceModal">
+    <div class="pbq-modal__panel">
+        <div class="pbq-modal__head">
+            <h2><i class="fas fa-envelope"></i> Send the quote by email</h2>
+            <button type="button" class="pbq-modal__close" onclick="closeEmailChoice()"
+                    aria-label="Close">&times;</button>
+        </div>
+        <div class="pbq-modal__body">
+            <button type="button" class="pbq-choice" onclick="sendQuote('email', 'platform')"
+                    id="emailPlatformChoice">
+                <span class="pbq-choice__icon"><i class="fas fa-paper-plane"></i></span>
+                <span class="pbq-choice__body">
+                    <strong>Send it for me
+                        {% if quote_email_mode == 'platform' %}<em class="pbq-choice__tag">Default</em>{% endif %}
+                    </strong>
+                    <small>
+                        Goes out now with the PDF attached{% if configured_sender %},
+                        from {{ configured_sender }}{% endif %}.
+                    </small>
+                </span>
+            </button>
+
+            <button type="button" class="pbq-choice" onclick="sendQuote('email', 'manual')"
+                    id="emailManualChoice">
+                <span class="pbq-choice__icon"><i class="fas fa-pen-to-square"></i></span>
+                <span class="pbq-choice__body">
+                    <strong>Write it myself
+                        {% if quote_email_mode == 'manual' %}<em class="pbq-choice__tag">Default</em>{% endif %}
+                    </strong>
+                    <small>
+                        Downloads the PDF and opens a draft in your email app,
+                        ready to attach.
+                    </small>
+                </span>
+            </button>
+        </div>
+    </div>
+</div>

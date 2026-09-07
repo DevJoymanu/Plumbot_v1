@@ -1,0 +1,43 @@
+{% comment %}
+The "start from a saved template" picker, shared by both quote layouts.
+
+The flat editor carried this markup inline and the sectioned sheet had no way
+to load a template at all, which meant a business on their own sheet had to
+retype the same section of items on every quote. One copy, one set of ids, so
+the two editors cannot drift into two different pickers.
+
+The page supplies the JS: it opens the modal, fills #templatesList, and decides
+what applying a template does to its own item rows. Expects `quote_project_types`.
+{% endcomment %}
+<div class="pbq-modal pbq-no-print bq-no-print" id="templateModal">
+    <div class="pbq-modal__panel">
+        <div class="pbq-modal__head">
+            <h2><i class="fas fa-file-invoice"></i> Select a Template</h2>
+            <button type="button" class="pbq-modal__close" onclick="closeTemplateModal()"
+                    aria-label="Close template picker">&times;</button>
+        </div>
+        <div class="pbq-modal__body">
+            <div class="pbq-modal__filters">
+                <input type="text" id="templateSearch" placeholder="Search templates..." oninput="searchTemplates()">
+                <select id="templateProjectFilter" onchange="filterTemplates()">
+                    <option value="">All Project Types</option>
+                    {% for value, label in quote_project_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div id="templatesList"></div>
+
+            <div id="templatesLoading" class="pbq-empty">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading templates...</p>
+            </div>
+
+            <div id="templatesEmpty" class="pbq-empty" style="display:none;">
+                <i class="fas fa-inbox"></i>
+                <p>No templates found</p>
+            </div>
+        </div>
+    </div>
+</div>

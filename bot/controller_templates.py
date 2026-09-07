@@ -247,3 +247,25 @@ def question_without_ack(question: str) -> str:
     if not stripped:
         return text
     return stripped[0].upper() + stripped[1:]
+
+
+def close_pleasantry(appointment=None, is_shona: bool = False) -> str:
+    """They acknowledged. Acknowledge back and stop.
+
+    The move the model asks for most often and was never allowed to make. In
+    the 100-conversation replay it proposed `close_pleasantry` on 15 turns
+    where the router asked another qualifying question instead, and in
+    production it did it again on a lead who had just said "Noted": the bot
+    came back with "Noted, sharp! We'll get that quote sorted for you. Anything
+    else on the property that needs looking at?".
+
+    Nothing is being sold here and nothing is being asked. "Anything else?" is
+    a question, and a question restarts a conversation the customer has just
+    closed. The whole value of this move is that it ENDS.
+
+    Lifted from how the owner actually signs off: "Got it, no problem.",
+    "All good, we'll speak on Thursday then...".
+    """
+    if is_shona:
+        return 'Zvakanaka, hapana dambudziko.'
+    return 'Got it, no problem.'

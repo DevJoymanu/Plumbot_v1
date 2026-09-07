@@ -102,3 +102,99 @@ def plan_clarifier(is_shona: bool = False) -> str:
     if is_shona:
         return 'Ndeyeplan here iyi, kana kuti mufananidzo wenzvimbo?'
     return 'Is that a plan, or a photo of the space?'
+
+
+# ── Whose document is this? ──────────────────────────────────────────────────
+# `is_plan_document` is only `mime == application/pdf`, and a PDF is not
+# evidence of anything. Both failure directions have happened:
+#
+#   too loose  barmak 966 — a SUPPLIER opened with "I'm Primrose from Edenvine
+#              construction, a leading supplier" and sent "our catalogue". It
+#              was filed as their plan, and the bot sent them fifteen photos of
+#              Barmak's own work asking which they liked.
+#   too tight  barmak 1012 — a real customer sent their plan unprompted as a
+#              PDF. Requiring vision to confirm it (vision cannot read PDFs)
+#              left them off the plan path, and the bot answered their
+#              quotation request with "send us the plan" — which they had.
+#
+# The signal that separates them is not in the file, it is in the conversation.
+# So ask, the way the rest of this codebase asks: model first, keywords when
+# the API is down.
+
+_VENDOR_WORDS = (
+    'supplier', 'suppliers', 'we supply', 'we sell', 'distributor',
+    'wholesale', 'wholesaler', 'our catalogue', 'our catalog',
+    'our products', 'our price list', 'we manufacture', 'trade prices',
+    'partnership', 'stockist',
+)
+
+
+def _vendor_keywords(appointment) -> bool:
+    """Does the customer's own side of the conversation read as a sales pitch?"""
+    said = ' '.join(
+        str(e.get('content') or '')
+        for e in (getattr(appointment, 'conversation_history', None) or [])
+        if isinstance(e, dict) and e.get('role') == 'user'
+    ).lower()
+    return any(w in said for w in _VENDOR_WORDS)
+
+
+def is_their_own_plan(appointment, asked_for_it=False,
+                      description: str = '') -> bool:
+    """Is this document the customer's plan, or someone selling to us?
+
+    Cheap short-circuits first, because a document arriving is rare and most of
+    them need no call at all:
+      * we ASKED for a plan, so it is one;
+      * vision looked at it and saw a drawing.
+
+    Otherwise the conversation decides. A wrong YES chases the plumber about a
+    sales pitch; a wrong NO asks a customer for a plan they already sent. The
+    second is the commoner event and the cheaper mistake, so an unreadable
+    answer resolves to YES unless the keywords say vendor.
+    """
+    if asked_for_it:
+        return True
+    if description and _description_is_a_plan_safe(description):
+        return True
+
+    if _vendor_keywords(appointment):
+        return False
+
+    try:
+        from bot.services.clients import deepseek_call
+        said = '\n'.join(
+            'CUSTOMER: %s' % str(e.get('content') or '')[:200]
+            for e in (getattr(appointment, 'conversation_history', None) or [])
+            if isinstance(e, dict) and e.get('role') == 'user'
+        )[-1500:]
+        raw = deepseek_call(
+            [{'role': 'system', 'content':
+              'A plumbing company received a document on WhatsApp. From what '
+              'this person has said, are they a CUSTOMER sending their own '
+              'building plan or drawing for us to quote, or a SUPPLIER or '
+              'company sending us their catalogue, price list or a pitch?\n'
+              # The literal word "json" must appear somewhere in the prompt or
+              # the API refuses the request: 400, "Prompt must contain the word
+              # 'json' in some form to use 'response_format' of type
+              # 'json_object'". JSON syntax in the prompt is not enough.
+              'Reply with json only: {"is_customer_plan": true} or '
+              '{"is_customer_plan": false}.'},
+             {'role': 'user', 'content': said or '(they have said nothing)'}],
+            temperature=0.0, max_tokens=40, json_response=True,
+            retries=1, timeout=10,
+        )
+        import json
+        return bool(json.loads(raw).get('is_customer_plan', True))
+    except Exception:
+        logger.warning('Could not classify the document sender; '
+                       'treating it as the customer plan', exc_info=True)
+        return True
+
+
+def _description_is_a_plan_safe(description: str) -> bool:
+    try:
+        from bot.whatsapp_webhook import _description_is_a_plan
+        return bool(_description_is_a_plan(description))
+    except Exception:
+        return False

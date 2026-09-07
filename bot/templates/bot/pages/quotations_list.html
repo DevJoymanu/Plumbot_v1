@@ -216,14 +216,19 @@ contract pinned by QuoteMobileLayoutTests).
                                 rather than hidden when there is no address, so
                                 the reason is visible.
                                 {% endcomment %}
+                                {% if q.appointment.customer_email %}
                                 <form method="post" action="{% url 'send_quotation_email' q.pk %}">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-secondary"
-                                            {% if not q.appointment.customer_email %}disabled
-                                            title="No email address on file for this lead"{% endif %}>
+                                    <button type="submit" class="btn btn-secondary">
                                         <i class="fas fa-envelope"></i> {% if q.sent_via_email %}Resend{% else %}Email{% endif %}
                                     </button>
                                 </form>
+                                {% else %}
+                                <a href="{% url 'edit_quotation' q.pk %}" class="btn btn-secondary"
+                                   title="Add an email address on the quote, then send">
+                                    <i class="fas fa-envelope"></i> Add email
+                                </a>
+                                {% endif %}
                                 <a href="{% url 'quotation_whatsapp_handoff' q.pk %}" class="btn btn-secondary">
                                     <i class="fab fa-whatsapp"></i> {% if q.sent_via_whatsapp %}Resend{% else %}Send{% endif %}
                                 </a>

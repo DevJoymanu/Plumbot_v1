@@ -3123,8 +3123,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # as everywhere else in this file: what the customer actually said
         # outranks whatever state we happen to be holding.
         try:
+            # This module has no top-level `import re` — every use is local to
+            # its own function, so the name is not in scope here without one.
+            import re as _re
             if not (appointment.customer_email or '').strip():
-                _found = re.search(
+                _found = _re.search(
                     r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}',
                     message_body or '')
                 if _found:
@@ -3280,12 +3283,18 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             _move = None
 
         if _move:
-            from bot.controller_templates import paid_visit_close, fee_objection
+            from bot.controller_templates import (
+                paid_visit_close, fee_objection, close_pleasantry)
             _is_shona = detect_language_simple(message_body) == 'shona'
             _cfg = plumbot.tenant_cfg
-            _reply = (paid_visit_close(_cfg, is_shona=_is_shona)
-                      if _move == 'book_visit'
-                      else fee_objection(_cfg, is_shona=_is_shona))
+            if _move == 'book_visit':
+                _reply = paid_visit_close(_cfg, is_shona=_is_shona)
+            elif _move == 'close_pleasantry':
+                # Ends the turn. No question, so the conversation the customer
+                # just closed stays closed.
+                _reply = close_pleasantry(appointment, is_shona=_is_shona)
+            else:
+                _reply = fee_objection(_cfg, is_shona=_is_shona)
             _controller.note_branch(appointment, _move)
             # Through the same choke point as every other reply, so the memory
             # check, the strippers and the dash rule all apply. A new send path
@@ -4577,10 +4586,24 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
         # (describe_customer_image returns None for PDFs), so we genuinely do
         # not know, and the honest default is to leave it for the plumber to
         # open rather than start a chase on a guess.
-        _verified_plan = bool(
-            _was_pending_upload
-            or (image_description and _description_is_a_plan(image_description))
-        )
+        _verified_plan = False
+        if is_plan_document or _was_pending_upload:
+            try:
+                from bot.plan_detection import is_their_own_plan
+                _verified_plan = is_their_own_plan(
+                    appointment,
+                    asked_for_it=_was_pending_upload,
+                    description=image_description or '',
+                )
+            except Exception as _who_exc:
+                # Could not tell. A customer sending their own plan is the
+                # commoner event and the cheaper mistake to make, so default to
+                # treating it as theirs.
+                print(f"Could not classify the document sender: {_who_exc}")
+                _verified_plan = True
+        elif image_description and _description_is_a_plan(image_description):
+            # An unprompted PHOTO that vision says is a drawing.
+            _verified_plan = True
 
         if _verified_plan:
             # ADVANCE plan_status. It is the field every authoritative reader

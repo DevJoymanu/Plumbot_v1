@@ -155,3 +155,117 @@ class ChainOrderTests(TestCase):
                    return_value=_reply('refine', 'Sure thing - when suits you?')):
             out = wh.finalise_outbound('Sure thing. When suits you?', lead, 'hi')
         self.assertNotIn(' - ', out)
+
+
+class VolunteeredEmailTests(TestCase):
+    """The email capture, exercised rather than grepped.
+
+    The first version of this was a TEST 0 case asserting the ROUTER SOURCE
+    contained the right marker string. It passed while the code raised
+    NameError on every message, because whatsapp_webhook has no top-level
+    `import re` and the block had no local one. Production logged
+    "Could not capture a volunteered email: name 're' is not defined" twice
+    before anybody noticed. A static check cannot see a NameError; this runs it.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Acme3', slug='acme3')
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+263771111111', tenant=self.tenant)
+
+    def _run(self, text):
+        from . import whatsapp_webhook as wh
+        # The capture sits at the top of the router, before any branch.
+        # These two are imported INSIDE the router, so they patch at source.
+        with patch('bot.out_of_scope_handler.is_hard_stop_request',
+                   return_value=True), \
+             patch('bot.out_of_scope_handler.build_hard_stop_reply',
+                   return_value='ok'), \
+             patch.object(wh, 'delayed_response'), \
+             patch('bot.services.clients.deepseek_call',
+                   return_value=_reply('ok')):
+            wh._generate_and_schedule_reply(
+                '263771111111', text, tenant=self.tenant)
+        self.lead.refresh_from_db()
+        return self.lead.customer_email
+
+    def test_an_email_in_the_message_is_captured(self):
+        self.assertEqual(self._run('sdziwotizeyi@gmail.com'),
+                         'sdziwotizeyi@gmail.com')
+
+    def test_it_is_found_inside_a_batched_turn(self):
+        self.lead.customer_email = None
+        self.lead.save(update_fields=['customer_email'])
+        got = self._run('needs demolition and new brickwork\nrudo@example.com')
+        self.assertEqual(got, 'rudo@example.com')
+
+    def test_an_existing_address_is_never_overwritten(self):
+        self.lead.customer_email = 'first@example.com'
+        self.lead.save(update_fields=['customer_email'])
+        self.assertEqual(self._run('second@example.com'), 'first@example.com')
+
+    def test_a_message_with_no_address_changes_nothing(self):
+        self.assertIsNone(self._run('what area are you in'))
+
+
+class DocumentSenderTests(TestCase):
+    """Whose document is this: a customer's plan, or somebody selling to us?"""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Acme4', slug='acme4')
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+263772222222', tenant=self.tenant)
+
+    def _said(self, *msgs):
+        for m in msgs:
+            self.lead.add_conversation_message('user', m)
+        self.lead.save()
+
+    def test_asking_for_it_needs_no_call_at_all(self):
+        from bot.plan_detection import is_their_own_plan
+        with patch('bot.services.clients.deepseek_call') as call:
+            self.assertTrue(is_their_own_plan(self.lead, asked_for_it=True))
+        call.assert_not_called()
+
+    def test_a_supplier_pitch_is_not_their_plan(self):
+        # Barmak 966, verbatim. Caught by keywords, so no call is needed.
+        self._said("I'm Primrose from Edenvine construction, a leading "
+                   "supplier of bathroom fittings", 'Here is our catalogue')
+        from bot.plan_detection import is_their_own_plan
+        with patch('bot.services.clients.deepseek_call') as call:
+            self.assertFalse(is_their_own_plan(self.lead))
+        call.assert_not_called()
+
+    def test_an_ordinary_customer_document_is_their_plan(self):
+        # Barmak 1012: sent a PDF unprompted, then asked for a quotation.
+        self._said('New installation', 'I need a quotation of both ensuite and toilats')
+        from bot.plan_detection import is_their_own_plan
+        import json as _j
+        with patch('bot.services.clients.deepseek_call',
+                   return_value=_j.dumps({'is_customer_plan': True})):
+            self.assertTrue(is_their_own_plan(self.lead))
+
+    def test_the_model_can_say_no_where_keywords_saw_nothing(self):
+        self._said('Good day, attached is our latest range for your review')
+        import json as _j
+        from bot.plan_detection import is_their_own_plan
+        with patch('bot.services.clients.deepseek_call',
+                   return_value=_j.dumps({'is_customer_plan': False})):
+            self.assertFalse(is_their_own_plan(self.lead))
+
+    def test_it_defaults_to_the_customer_when_the_api_is_down(self):
+        # A wrong NO asks a customer for a plan they already sent; a wrong YES
+        # chases the plumber about a pitch. The first is commoner and cheaper.
+        self._said('Here you go')
+        from bot.plan_detection import is_their_own_plan
+        with patch('bot.services.clients.deepseek_call',
+                   side_effect=Exception('down')):
+            self.assertTrue(is_their_own_plan(self.lead))
+
+    def test_the_prompt_carries_the_word_json(self):
+        # DeepSeek 400s in JSON mode without it, and the fallback then hides
+        # the fact that the model was never consulted.
+        import inspect
+        from bot import plan_detection
+        src = inspect.getsource(plan_detection.is_their_own_plan)
+        self.assertIn('json', src.lower())

@@ -82,6 +82,12 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
     with no letterhead gets empty values and the template omits those blocks
     outright, rather than borrowing another tenant's address or bank account.
     """
+    # Reopening a quote is editing the SAME job, so the client details come
+    # back from the quote's own lead. Passing the quotation alone left this
+    # None, which blanked CLIENT / CONTACT / ADDRESS / EMAIL on every edit and
+    # then refused the save: "enter the client name" about a name the sheet had
+    # simply forgotten to render.
+    appointment = appointment or getattr(quotation, 'appointment', None)
     tenant = tenant_of(request, appointment=appointment, quotation=quotation)
     letterhead = letterhead_for(tenant)
     return {
@@ -97,6 +103,12 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
         'terms_initial': (
             quote_terms(quotation, letterhead) if quotation
             else list(letterhead.get('terms') or [])
+        ),
+        # The business's own default on a new quote, whatever was agreed on
+        # this one when reopening it.
+        'deposit_percent_initial': (
+            quotation.deposit_percent if quotation
+            else letterhead.get('default_deposit_percent') or 0
         ),
     }
 
@@ -201,6 +213,20 @@ def _quote_notes(data, current=''):
     return data.get('notes', data.get('project_notes', current))
 
 
+def _deposit_percent(data, current=None):
+    """The deposit asked for on this quote, as a percentage.
+
+    Clamped to 0-100 on the way in as well as in the editor: the browser is a
+    convenience, not the guard, and a 400% deposit would print on a real
+    customer's document. Absent means "unchanged" on an edit and 0 on a new
+    quote, so a caller that never heard of deposits cannot clear one.
+    """
+    if 'deposit_percent' not in data:
+        return Decimal('0') if current is None else current
+    percent = _to_decimal(data.get('deposit_percent'), default='0')
+    return max(Decimal('0'), min(Decimal('100'), percent))
+
+
 def _apply_client_fields(appointment, data):
     """The sectioned sheet edits the client's own details in place, the way
     writing on the paper quote would. Only overwrite what was actually sent."""
@@ -261,6 +287,8 @@ def create_quotation_api(request):
                         materials_cost=_to_decimal(data.get('materials_cost', 0)),
                         discount=_to_decimal(data.get('discount', 0)),
                         vat_percent=_to_decimal(data.get('vat_percent', 0)),
+                        deposit_percent=_deposit_percent(data),
+                        client_phone=(data.get('client_phone') or '').strip()[:50],
                         notes=_quote_notes(data),
                         status='draft'
                     )
@@ -443,14 +471,19 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     # an attachment, which is a platform limit and not something to work around.
     # So the editor downloads the PDF first and opens the conversation beside
     # it, ready to attach.
-    from ..utils import clean_phone_number
     from ..plumber_notifications import tenant_customer_from_email
 
     lead = appointment or getattr(quotation, 'appointment', None)
-    context['lead_wa_digits'] = clean_phone_number(
-        getattr(lead, 'phone_number', '') or '') if lead else ''
+    context['lead_wa_digits'] = quote_send_digits(quotation, lead)
     context['lead_display_name'] = (
         (getattr(lead, 'customer_name', '') or '').strip() if lead else '')
+
+    # A new quote starts at the business's own default deposit; an existing one
+    # comes back on whatever was agreed for that job.
+    letterhead = context['lh']
+    context['quote_deposit_percent'] = (
+        _to_float(quotation.deposit_percent) if quotation is not None
+        else letterhead.get('default_deposit_percent') or 0)
 
     profile = getattr(tenant, 'profile', None) if tenant is not None else None
     context['quote_email_mode'] = getattr(profile, 'quote_email_mode', 'platform') or 'platform'
@@ -462,6 +495,30 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     context['configured_sender'] = parseaddr(
         tenant_customer_from_email(tenant) if tenant is not None else '')[1]
     return context
+
+
+def _wa_digits(value) -> str:
+    return re.sub(r'\D', '', str(value or ''))
+
+
+def quote_send_digits(quotation=None, appointment=None) -> str:
+    """The WhatsApp number this quote can be handed off to.
+
+    The lead's own number when there is a real one. A standalone quote's lead
+    is a stub carrying a synthetic key (quotation_only_… / email_…), which is
+    not a number anybody can be messaged on, so the phone the plumber typed on
+    the sheet stands in. Without that fallback a quote for a walk-in with no
+    email address could not be sent on either channel.
+    """
+    appointment = appointment or getattr(quotation, 'appointment', None)
+    raw = (getattr(appointment, 'phone_number', '') or '').strip()
+    if raw and not raw.startswith(('quotation_only_', 'email_')):
+        digits = _wa_digits(raw)
+        if digits:
+            return digits
+    # A number typed by hand carries spaces and brackets; a wa.me link takes
+    # digits and nothing else.
+    return _wa_digits(getattr(quotation, 'client_phone', '') or '')
 
 
 def _visible_quotations(request, across_tenants=None):
@@ -582,6 +639,9 @@ def quotation_detail_api(request, pk):
         'labor_cost': _to_float(quotation.labor_cost),
         'materials_cost': _to_float(quotation.materials_cost),
         'transport_cost': _to_float(quotation.transport_cost),
+        'deposit_percent': _to_float(quotation.deposit_percent),
+        'deposit_amount': _to_float(quotation.deposit_amount()),
+        'client_phone': quotation.client_phone or '',
         'total_amount': _to_float(quotation.total_amount),
         'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
         'updated_at': quotation.updated_at.isoformat() if quotation.updated_at else None,
@@ -670,6 +730,10 @@ class EditQuotationView(UpdateView):
             quotation.materials_cost = _to_decimal(data.get('materials_cost', quotation.materials_cost))
             quotation.discount = _to_decimal(data.get('discount', quotation.discount))
             quotation.vat_percent = _to_decimal(data.get('vat_percent', quotation.vat_percent))
+            quotation.deposit_percent = _deposit_percent(data, quotation.deposit_percent)
+            phone = (data.get('client_phone') or '').strip()
+            if phone:
+                quotation.client_phone = phone[:50]
             quotation.save()
 
             items_data = data.get('items', [])
@@ -707,12 +771,20 @@ class EditQuotationView(UpdateView):
 @require_http_methods(["POST"])
 def duplicate_quotation(request, pk):
     quotation = get_object_or_404(_visible_quotations(request), pk=pk)
+    # A duplicate is the same paper with a new number: the discount, VAT,
+    # deposit and the sections the items were grouped into all carry over, or
+    # duplicating a sectioned quote silently produced a flat one with
+    # different totals.
     new_quote = Quotation.objects.create(
         appointment=quotation.appointment,
         plumber=quotation.plumber,
         labor_cost=quotation.labor_cost,
         materials_cost=quotation.materials_cost,
         transport_cost=quotation.transport_cost,
+        discount=quotation.discount,
+        vat_percent=quotation.vat_percent,
+        deposit_percent=quotation.deposit_percent,
+        client_phone=quotation.client_phone,
         notes=quotation.notes,
         status='draft',
     )
@@ -720,7 +792,9 @@ def duplicate_quotation(request, pk):
         QuotationItem.objects.create(
             quotation=new_quote,
             description=item.description,
+            section=item.section,
             quantity=item.quantity,
+            quantity_text=item.quantity_text,
             unit_price=item.unit_price,
         )
     new_quote.save()
@@ -858,7 +932,7 @@ def quotation_whatsapp_handoff(request, pk):
         'quotation': quotation,
         'appointment': appointment,
         'lead_name': lead_name or 'the customer',
-        'lead_wa_digits': clean_phone_number(getattr(appointment, 'phone_number', '') or ''),
+        'lead_wa_digits': quote_send_digits(quotation, appointment),
         'prefilled_message': message,
         'pdf_filename': f'Quotation-{quotation.quotation_number}.pdf',
         'active_nav': 'quotations',

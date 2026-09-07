@@ -566,7 +566,33 @@ CONTROLLER_DRIVES_ROUTING = os.environ.get(
 # with the existing router, which already handles them well: show_work has the
 # photo path and ask_qualifying_question is the whole booking flow. Promoting
 # those buys nothing and risks a lot.
-DRIVABLE_MOVES = frozenset({'book_visit', 'handle_objection', 'show_work'})
+DRIVABLE_MOVES = frozenset({
+    'book_visit', 'handle_objection', 'show_work',
+    # Promoted 2026-09-07 on the replay evidence. `close_pleasantry` was the
+    # model's single most-discarded call: 15 of the ~34 disagreements over 100
+    # conversations, every one of them the model saying "this is finished" and
+    # the router asking another qualifying question. Production did it again on
+    # a lead who had just said "Noted" and got "Anything else on the property
+    # that needs looking at?" back.
+    #
+    # It is also the safest to promote, because it is the only one of the
+    # remaining moves that is purely a message. The others are NOT simple
+    # promotions and are deliberately still excluded:
+    #   slow_lead_nudge      the delay flow behind it writes a pending state
+    #                        and schedules a check-back date; driving the
+    #                        message alone would send the words and lose the
+    #                        machinery.
+    #   out_of_scope_redirect / escalate_to_human
+    #                        both already fire from their own signals earlier
+    #                        in the router; promoting them risks answering the
+    #                        same turn twice.
+    #   greet / ask_qualifying_question
+    #                        ask_qualifying_question IS the fall-through, so
+    #                        the model "driving" it is what already happens.
+    #   present_value        the model chose it 0 times in 339 turns; there is
+    #                        nothing to promote yet.
+    'close_pleasantry',
+})
 
 
 def should_show_work(appointment) -> bool:
@@ -584,6 +610,26 @@ def should_show_work(appointment) -> bool:
     """
     return (description_captured(appointment)
             and not work_already_shown(appointment))
+
+
+def _asks_us_something(uclass) -> bool:
+    """Did this turn carry a question for us?
+
+    Deterministic and deliberately generous: a false positive costs one extra
+    qualifying question, a false negative closes the conversation on somebody
+    who just asked for something.
+    """
+    try:
+        from bot.unified_classifier import uc_intent, uc_is_photo_request
+        if uc_is_photo_request(uclass):
+            return True
+        if uc_intent(uclass) in ('price_question', 'out_of_scope', 'complaint'):
+            return True
+    except Exception:
+        pass
+    payload = uclass if isinstance(uclass, dict) else {}
+    speech = str(payload.get('speech_act') or '').lower()
+    return speech in ('question', 'price_ask', 'quote_request')
 
 
 def decide_move(uclass, appointment):
@@ -649,6 +695,14 @@ def decide_move(uclass, appointment):
         move = apply_plan_path_gate('book_visit', appointment)
 
     if move not in DRIVABLE_MOVES:
+        return None
+
+    # A closing pleasantry ENDS the turn, so it must never swallow a question.
+    # The house rule is that the customer's own words outrank any gate: if they
+    # asked us something, answering it beats acknowledging them, whatever the
+    # model concluded.
+    if move == 'close_pleasantry' and _asks_us_something(uclass):
+        logger.info('close_pleasantry held back: the customer asked something')
         return None
     # The proof is worth sending once, and only once we know what to match it
     # against. A model that asks for it twice, or before the job is known, is

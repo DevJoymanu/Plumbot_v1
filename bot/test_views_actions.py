@@ -3118,7 +3118,11 @@ class GalleryPortalTests(TestCase):
         from .whatsapp_webhook import handle_media_message
         wa = MagicMock()
         wa.download_media.return_value = b'%PDF fake plan'
+        # A document now asks WHO sent it (customer plan vs supplier pitch),
+        # which is a DeepSeek call. This suite is the offline commit gate, so
+        # it is stubbed here rather than left to reach the network.
         with patch('bot.whatsapp_cloud_api.get_client_for_tenant', return_value=wa), \
+             patch('bot.plan_detection.is_their_own_plan', return_value=True), \
              patch('bot.whatsapp_webhook._schedule_media_ack'):
             handle_media_message('263771000111',
                                  {'id': 'MID1', 'mime_type': 'application/pdf'},
@@ -7282,3 +7286,470 @@ class QuotePdfGeometryTests(StaffClientTestCase):
         subtotals = [t for _, _, _, t in self._placed() if t == 'SUB-TOTAL']
         # One per section, plus the net sub-total in the totals block.
         self.assertGreaterEqual(len(subtotals), 3)
+
+
+# ======================================================================
+# The quote editor's own workflow: find the lead, start from a template,
+# set the deposit, then save and send from the bottom of the sheet.
+# ======================================================================
+
+class LeadPickerTests(StaffClientTestCase):
+    """Attaching a quote to a lead without leaving the quote.
+
+    The search endpoint existed and no screen used it: the only route to a
+    quote for a lead was to find them in the inbox and open them first.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9611, customer_name='Tendai Moyo',
+                              customer_area='Borrowdale',
+                              customer_email='tendai@example.com')
+
+    def _search(self, query=''):
+        response = self.client.get(reverse('appointment_search_api'), {'q': query})
+        self.assertEqual(response.status_code, 200)
+        return response.json()['appointments']
+
+    def test_an_empty_query_answers_with_the_recent_leads(self):
+        """"Who have I been talking to?" is a real question. Returning nothing
+        until two characters were typed made attaching a lead a memory test."""
+        names = [row['customer_name'] for row in self._search('')]
+        self.assertIn('Tendai Moyo', names)
+
+    def test_a_lead_is_found_by_name_number_area_or_email(self):
+        for query in ('Tendai', '9611', 'Borrowdale', 'tendai@example.com'):
+            with self.subTest(query=query):
+                ids = [row['id'] for row in self._search(query)]
+                self.assertIn(self.lead.pk, ids)
+
+    def test_quote_and_email_stubs_are_never_offered(self):
+        """Neither is a lead anybody spoke to: their phone_number is a
+        synthetic key, and every proactive send already skips them."""
+        Appointment.objects.create(phone_number='quotation_only_abc123',
+                                   customer_name='Stub Client')
+        Appointment.objects.create(phone_number='email_abc123',
+                                   customer_name='Stub Emailer')
+        names = [row['customer_name'] for row in self._search('Stub')]
+        self.assertEqual(names, [])
+
+    def test_the_search_stays_inside_the_workspace(self):
+        other = Tenant.objects.create(name='Acme Plumbing', slug='acme-picker')
+        make_lead(9612, tenant=other, customer_name='Tendai Other')
+        names = [row['customer_name'] for row in self._search('Tendai')]
+        self.assertEqual(names, ['Tendai Moyo'])
+
+    def test_the_picker_is_on_the_editors_that_can_still_attach_one(self):
+        """A new quote can be pointed at a lead; an edit is already attached,
+        so it gets the record rather than a search box."""
+        for name, url in (('standalone', reverse('standalone_quotation')),
+                          ('create', reverse('create_quotation', args=[self.lead.pk]))):
+            with self.subTest(screen=name):
+                body = self.client.get(url).content.decode()
+                self.assertIn('id="qlpSearch"', body)
+                self.assertIn('window.quoteLeadPicked', body)
+
+        quote = Quotation.objects.create(appointment=self.lead)
+        body = self.client.get(reverse('edit_quotation', args=[quote.pk])).content.decode()
+        self.assertNotIn('id="qlpSearch"', body)
+
+
+class QuoteDepositTests(StaffClientTestCase):
+    """The deposit, adjustable per quote.
+
+    It only ever existed as words in the payment terms ("deposit 75%"), which
+    could be printed but never actually changed for a job that was agreed
+    differently. It is a figure on the quote now, defaulted from the business's
+    own setting.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9620, customer_name='Deposit Lead',
+                              customer_email='deposit@example.com',
+                              project_type='bathroom_renovation')
+
+    def _create(self, **extra):
+        payload = {
+            'appointment_id': self.lead.pk,
+            'client_name': 'Deposit Lead',
+            'items': [{'name': 'Basin mixer', 'qty': 2, 'unit': 40}],
+            'labour_cost': 20,
+            'materials_cost': 0,
+        }
+        payload.update(extra)
+        response = self.client.post(reverse('create_quotation_api'),
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        return Quotation.objects.get(pk=response.json()['quotation_id'])
+
+    def test_the_deposit_is_saved_and_derived_from_the_total(self):
+        quote = self._create(deposit_percent=50)
+        self.assertEqual(quote.total_amount, Decimal('100.00'))
+        self.assertEqual(quote.deposit_percent, Decimal('50.00'))
+        self.assertEqual(quote.deposit_amount(), Decimal('50.00'))
+
+    def test_the_deposit_follows_the_total_rather_than_being_stored_beside_it(self):
+        """A stored amount would stop agreeing with a total that moves on
+        every edit, and the customer would be reading two different papers."""
+        quote = self._create(deposit_percent=50)
+        QuotationItem.objects.create(quotation=quote, description='Extra',
+                                     quantity=1, unit_price=Decimal('100'))
+        quote.save()
+        self.assertEqual(quote.total_amount, Decimal('200.00'))
+        self.assertEqual(quote.deposit_amount(), Decimal('100.00'))
+
+    def test_no_deposit_means_no_deposit(self):
+        quote = self._create()
+        self.assertEqual(quote.deposit_percent, Decimal('0.00'))
+        self.assertEqual(quote.deposit_amount(), Decimal('0.00'))
+
+    def test_a_nonsense_percentage_is_clamped_before_it_is_stored(self):
+        """The browser input is a convenience, not the guard: a 400% deposit
+        would print on a real customer's document."""
+        self.assertEqual(self._create(deposit_percent=400).deposit_percent,
+                         Decimal('100.00'))
+        self.assertEqual(self._create(deposit_percent=-5).deposit_percent,
+                         Decimal('0.00'))
+
+    def test_editing_changes_it_and_the_editor_gets_it_back(self):
+        quote = self._create(deposit_percent=50)
+        response = self.client.post(
+            reverse('edit_quotation', args=[quote.pk]),
+            data=json.dumps({'deposit_percent': 30, 'items': [
+                {'name': 'Basin mixer', 'qty': 2, 'unit': 40}]}),
+            content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        quote.refresh_from_db()
+        self.assertEqual(quote.deposit_percent, Decimal('30.00'))
+
+        payload = self.client.get(
+            reverse('quotation_detail_api', args=[quote.pk])).json()
+        self.assertEqual(payload['deposit_percent'], 30.0)
+
+    def test_a_caller_that_never_heard_of_deposits_cannot_clear_one(self):
+        quote = self._create(deposit_percent=50)
+        self.client.post(reverse('edit_quotation', args=[quote.pk]),
+                         data=json.dumps({'labour_cost': 30}),
+                         content_type='application/json')
+        quote.refresh_from_db()
+        self.assertEqual(quote.deposit_percent, Decimal('50.00'))
+
+    # -- what the customer actually sees ------------------------------------
+
+    def test_the_client_copy_prints_it_only_when_there_is_one(self):
+        quote = self._create(deposit_percent=50)
+        body = self.client.get(reverse('view_quotation', args=[quote.pk])).content.decode()
+        self.assertIn('Deposit due (50%)', body)
+        self.assertIn('US$50.00', body)
+
+        plain = self._create()
+        body = self.client.get(reverse('view_quotation', args=[plain.pk])).content.decode()
+        self.assertNotIn('Deposit due', body)
+
+    def test_the_editor_can_change_it(self):
+        body = self.client.get(
+            reverse('create_quotation', args=[self.lead.pk])).content.decode()
+        self.assertIn('id="depositPercent"', body)
+        self.assertIn('id="depositAmount"', body)
+
+    def test_the_pdf_prints_what_the_screen_showed(self):
+        quote = self._create(deposit_percent=50)
+        # Parentheses are escaped in a PDF content stream, so the label is
+        # matched up to them.
+        text = QuotePdfMatchesTheAppTests._text(quote)
+        self.assertIn('Deposit due', text)
+        self.assertIn('50%', text)
+        self.assertIn('US$50.00', text)
+
+    def test_the_pdf_leaves_it_off_when_none_is_asked_for(self):
+        text = QuotePdfMatchesTheAppTests._text(self._create())
+        self.assertNotIn('Deposit due', text)
+
+    # -- the business sets its own starting figure --------------------------
+
+    def test_the_default_is_the_tenants_own_and_reaches_a_new_quote(self):
+        response = self.client.post(reverse('profile'), {
+            'letterhead_submit': '1',
+            'lh_default_deposit_percent': '40',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        profile = TenantProfile.objects.get(tenant=Tenant.objects.get(slug='homebase'))
+        self.assertEqual(profile.letterhead['default_deposit_percent'], 40)
+
+        response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertEqual(response.context['quote_deposit_percent'], 40)
+
+    def test_the_profile_page_offers_the_setting(self):
+        body = self.client.get(reverse('profile')).content.decode()
+        self.assertIn('name="lh_default_deposit_percent"', body)
+
+
+class QuoteSendableWithoutEmailTests(StaffClientTestCase):
+    """A quote is sendable on at least one channel, always.
+
+    A standalone quote's lead is a stub with a synthetic phone key, so the
+    WhatsApp handoff had no chat to open; with no email either, the quote could
+    not be sent at all. The number typed on the sheet is kept with the quote and
+    is what the handoff opens.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9630, customer_name='Reachable Lead')
+
+    def _standalone(self, **extra):
+        payload = {'client_name': 'Walk In', 'client_phone': '+263 77 555 4444',
+                   'items': [{'name': 'Geyser', 'qty': 1, 'unit': 250}]}
+        payload.update(extra)
+        response = self.client.post(reverse('create_standalone_quotation_api'),
+                                    data=json.dumps(payload),
+                                    content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        return Quotation.objects.get(pk=response.json()['quotation_id'])
+
+    def test_a_quote_with_no_lead_keeps_the_number_it_goes_to(self):
+        quote = self._standalone()
+        self.assertEqual(quote.client_phone, '+263 77 555 4444')
+        self.assertTrue(quote.appointment.phone_number.startswith('quotation_only_'))
+
+    def test_the_stub_lead_is_still_kept_out_of_proactive_messaging(self):
+        """The synthetic key is what every cron filters on. A real number in
+        that column would start chasing someone who never messaged us."""
+        quote = self._standalone()
+        self.assertNotIn('263', quote.appointment.phone_number)
+
+    def test_the_handoff_opens_the_typed_number(self):
+        quote = self._standalone()
+        body = self.client.get(
+            reverse('quotation_whatsapp_handoff', args=[quote.pk])).content.decode()
+        self.assertIn('https://wa.me/263775554444', body)
+
+    def test_the_lead_own_number_still_wins(self):
+        quote = Quotation.objects.create(appointment=self.lead,
+                                         client_phone='+263 77 000 0000')
+        from bot.views.quotations import quote_send_digits
+        self.assertEqual(quote_send_digits(quote), '15550009630')
+
+    def test_a_missing_email_never_leaves_a_dead_button(self):
+        """Disabled with a tooltip reads as a broken feature. It points at the
+        screen where the address is added, and WhatsApp is unaffected."""
+        quote = Quotation.objects.create(appointment=self.lead)
+        for name, url in (('view', reverse('view_quotation', args=[quote.pk])),
+                          ('list', reverse('quotations_list'))):
+            with self.subTest(page=name):
+                body = self.client.get(url).content.decode()
+                self.assertNotIn('No email address on file', body)
+                self.assertIn(reverse('edit_quotation', args=[quote.pk]), body)
+                self.assertIn(reverse('quotation_whatsapp_handoff', args=[quote.pk]), body)
+
+    def test_the_editor_offers_whatsapp_with_no_email_at_all(self):
+        """The email route asks for an address; the WhatsApp route only ever
+        needed a number, and must not be gated behind the email one."""
+        body = self.client.get(reverse('standalone_quotation')).content.decode()
+        self.assertIn('function sendableDigits()', body)
+        self.assertIn("val('clientPhone').replace(/[^0-9]/g, '')", body)
+
+
+class SectionedEditorWorkflowTests(TestCase):
+    """The sectioned sheet works the way the flat one does.
+
+    It had Save alone at the top, above a sheet nobody had filled in yet, no
+    way to start from a template, no way to attach a lead, no send buttons at
+    all, and it refused to save a quote that was not already attached to a
+    lead.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Barmak Plumbing',
+                                            slug='barmak-workflow')
+        TenantProfile.objects.create(tenant=self.tenant,
+                                     letterhead=dict(SECTIONED_LETTERHEAD,
+                                                     default_deposit_percent=75))
+        self.user = get_user_model().objects.create_user(
+            username='sectioned-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=self.user, tenant=self.tenant, role='staff')
+        self.client.force_login(self.user)
+        self.lead = make_lead(9640, tenant=self.tenant, customer_name='Sect Client',
+                              customer_area='Budiriro', customer_email='sect@example.com')
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    def _editors(self):
+        quote = Quotation.objects.create(appointment=self.lead)
+        return {
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    # -- the screen is laid out in the order the work is done ---------------
+
+    def test_the_template_loader_is_above_the_sheet(self):
+        for name, url in self._editors().items():
+            with self.subTest(screen=name):
+                html = self._html(url)
+                self.assertIn('id="bqUseTemplate"', html)
+                self.assertIn('id="templateModal"', html)
+                self.assertLess(html.index('id="bqUseTemplate"'), html.index('id="bqSheet"'),
+                                'the template loader is below the sheet')
+
+    def test_saving_and_sending_are_below_the_sheet(self):
+        for name, url in self._editors().items():
+            with self.subTest(screen=name):
+                html = self._html(url)
+                for marker in ('id="bqSave"', 'id="bqSendEmail"', 'id="bqSendWhatsapp"'):
+                    self.assertIn(marker, html, f'{name} is missing {marker}')
+                    self.assertGreater(html.index(marker), html.index('id="bqSheet"'),
+                                       f'{name} keeps {marker} above the sheet')
+
+    def test_neither_send_button_is_disabled(self):
+        """Disabling them would put Save back in front of Send, which is the
+        order that had the plumber sending a quote from a screen they had
+        already left."""
+        import re as _re
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        for btn_id in ('bqSendEmail', 'bqSendWhatsapp'):
+            with self.subTest(button=btn_id):
+                tag = _re.search(r'<button[^>]*id="' + btn_id + r'"[^>]*>', html).group(0)
+                self.assertNotIn('disabled', tag)
+
+    def test_every_send_saves_first(self):
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('const id = await persist();', html)
+
+    def test_a_new_quote_can_be_pointed_at_a_lead(self):
+        html = self._html(reverse('standalone_quotation'))
+        self.assertIn('id="qlpSearch"', html)
+        self.assertIn('window.quoteLeadPicked', html)
+
+    # -- reopening a quote ---------------------------------------------------
+
+    def test_editing_brings_the_client_details_back(self):
+        """The sheet rendered CLIENT / CONTACT / ADDRESS / EMAIL empty on every
+        edit and then refused the save: "enter the client name" about a name it
+        had simply forgotten to draw."""
+        quote = Quotation.objects.create(appointment=self.lead)
+        html = self._html(reverse('edit_quotation', args=[quote.pk]))
+        self.assertIn('value="Sect Client"', html)
+        self.assertIn('value="sect@example.com"', html)
+
+    # -- the deposit ---------------------------------------------------------
+
+    def test_the_deposit_row_starts_at_the_businesss_own_default(self):
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('id="t-depositpct"', html)
+        self.assertIn('value="75"', html)
+
+    def test_the_saved_sheet_shows_the_deposit_only_when_there_is_one(self):
+        quote = Quotation.objects.create(appointment=self.lead,
+                                         labor_cost=Decimal('100'),
+                                         deposit_percent=Decimal('75'))
+        html = self._html(reverse('view_quotation', args=[quote.pk]))
+        self.assertIn('DEPOSIT (75%)', html)
+        self.assertIn('75.00', html)
+
+        plain = Quotation.objects.create(appointment=self.lead, labor_cost=Decimal('100'))
+        self.assertNotIn('DEPOSIT (', self._html(reverse('view_quotation', args=[plain.pk])))
+
+    # -- saving with no lead attached ---------------------------------------
+
+    def _standalone_payload(self):
+        return {
+            'client_name': 'Walk In',
+            'client_phone': '+263 77 555 1234',
+            'client_address': 'Budiriro 5',
+            'items': [
+                {'name': 'Basin mixer', 'section': 'PLUMBING MATERIALS',
+                 'qty_text': '2 pcs', 'qty': 2, 'unit': 40},
+                {'name': 'Angle valve', 'section': 'FITTINGS',
+                 'qty_text': '3', 'qty': 3, 'unit': 3},
+            ],
+            'labour_cost': 100,
+            'transport_cost': 20,
+            'discount': 9,
+            'vat_percent': 15,
+            'deposit_percent': 75,
+            'materials_cost': 0,
+            'terms': ['deposit 75%', 'Balance on completion'],
+        }
+
+    def test_a_quote_with_no_lead_saves_as_the_sheet_showed_it(self):
+        response = self.client.post(reverse('create_standalone_quotation_api'),
+                                    data=json.dumps(self._standalone_payload()),
+                                    content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+
+        # materials 89 + labour 100 + transport 20 = 209, less 9 = 200, +15% = 230
+        self.assertEqual(quote.total_amount, Decimal('230.00'))
+        self.assertEqual(quote.deposit_percent, Decimal('75.00'))
+        self.assertEqual(quote.deposit_amount(), Decimal('172.50'))
+        self.assertEqual(quote.notes.splitlines(),
+                         ['deposit 75%', 'Balance on completion'])
+        self.assertEqual([i.section for i in quote.items.all()],
+                         ['PLUMBING MATERIALS', 'FITTINGS'])
+        self.assertEqual([i.quantity_text for i in quote.items.all()], ['2 pcs', '3'])
+
+    def test_reopening_that_quote_rebuilds_its_sections(self):
+        response = self.client.post(reverse('create_standalone_quotation_api'),
+                                    data=json.dumps(self._standalone_payload()),
+                                    content_type='application/json')
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+
+        from bot.views.quote_layout import sections_payload
+        self.assertEqual([g['title'] for g in sections_payload(quote)],
+                         ['PLUMBING MATERIALS', 'FITTINGS'])
+        self.assertIn('bot/pages/quote_sectioned_form.html',
+                      [t.name for t in
+                       self.client.get(reverse('edit_quotation', args=[quote.pk])).templates])
+
+    def test_that_quote_is_sendable_on_whatsapp(self):
+        """No lead and no email address is the walk-in case, and it must not be
+        a quote that cannot be sent at all."""
+        response = self.client.post(reverse('create_standalone_quotation_api'),
+                                    data=json.dumps(self._standalone_payload()),
+                                    content_type='application/json')
+        quote = Quotation.objects.get(pk=response.json()['quotation_id'])
+        html = self._html(reverse('quotation_whatsapp_handoff', args=[quote.pk]))
+        self.assertIn('https://wa.me/263775551234', html)
+
+    def test_duplicating_keeps_the_sheet_it_was(self):
+        """A duplicate is the same paper with a new number: sections, discount,
+        VAT and deposit all carry, or a sectioned quote duplicates into a flat
+        one with different totals."""
+        response = self.client.post(reverse('create_standalone_quotation_api'),
+                                    data=json.dumps(self._standalone_payload()),
+                                    content_type='application/json')
+        original = Quotation.objects.get(pk=response.json()['quotation_id'])
+
+        self.client.post(reverse('duplicate_quotation', args=[original.pk]))
+        copy = Quotation.objects.exclude(pk=original.pk).latest('created_at')
+        self.assertEqual(copy.total_amount, original.total_amount)
+        self.assertEqual(copy.deposit_percent, Decimal('75.00'))
+        self.assertEqual([i.section for i in copy.items.all()],
+                         ['PLUMBING MATERIALS', 'FITTINGS'])
+
+    def test_the_pdf_prints_the_deposit_the_sheet_showed(self):
+        """The customer's copy of a sectioned quote words it the way their
+        sheet does, not the flat sheet's way."""
+        quote = Quotation.objects.create(appointment=self.lead,
+                                         labor_cost=Decimal('100'),
+                                         deposit_percent=Decimal('75'))
+        text = QuotePdfMatchesTheAppTests._text(quote)
+        self.assertIn('DEPOSIT', text)
+        self.assertIn('75%', text)
+        self.assertIn('75.00', text)
+
+    # -- the shared layer the new chrome depends on -------------------------
+
+    def test_the_sheet_ships_the_shared_quote_styles(self):
+        """The modals, the alerts and the action bar are all pbq-* chrome."""
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('Quote workflow — shared responsive layer', html)
+        self.assertEqual(html.count('<!DOCTYPE'), 1)
