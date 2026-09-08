@@ -287,6 +287,155 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
     let itemSeq = 0;
     let allTemplates = [];
 
+    // ── Draft autosave ───────────────────────────────────────────────────
+    // A quote in progress is kept in the browser so pressing Back, closing the
+    // tab, or a crash never loses what was typed. It is written as they type
+    // (debounced) and flushed the moment the page is hidden; it is restored on
+    // the next visit to THIS editor and dropped as soon as a real save lands,
+    // so a saved quote never resurrects as a stale draft.
+    //
+    // The key follows the QUOTE, not the screen: once a save has given this
+    // sheet a row id its draft belongs to that row, so the same draft is found
+    // again from the edit screen - and a fresh quote for the same lead opens
+    // BLANK rather than restoring one already raised.
+    const BQ_DRAFT_VERSION = 1;
+    const BQ_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+    const BQ_DRAFT_META = ['m-date', 'm-client', 'm-contact', 'm-address', 'm-email'];
+    const BQ_DRAFT_TOTALS = ['t-labour', 't-transport', 't-discount', 't-vatpct', 't-depositpct'];
+    // The sheet's own inputs. The lead picker's search box and the template
+    // modal's live on this page too, and typing in them is not typing a quote.
+    const BQ_DRAFT_CLASSES = ['bq-term', 'bq-qty', 'bq-desc', 'bq-unit', 'bq-sec-title'];
+    let bqDraftTimer = null;
+    // Only write once something has actually changed since the last save, or
+    // the flush on navigation would resurrect the draft we just cleared.
+    let bqDraftDirty = false;
+    // The key the draft was last written under. It moves when the first save
+    // returns an id, or when the lead picker attaches a lead, and the old copy
+    // has to go as it moves or that is what the next visit restores.
+    let bqDraftKeyWritten = null;
+    // Every key this page could hold a draft under: the one it OPENED on as
+    // well as any it has written since. A save clears them all, because the
+    // copy that reopens this screen is whichever one is still on disk, and the
+    // key the draft was written under may belong to a previous page load.
+    const bqDraftKeysSeen = new Set();
+
+    function bqDraftKey() {
+        const key = bqCurrentId
+            ? 'pbq_draft_sectioned_' + bqCurrentId
+            : 'pbq_draft_sectioned_new_' + (bqAppointmentId || 'new');
+        bqDraftKeysSeen.add(key);
+        return key;
+    }
+
+    function bqIsDraftField(target) {
+        if (!target) { return false; }
+        if (target.id && (BQ_DRAFT_META.indexOf(target.id) !== -1
+                          || BQ_DRAFT_TOTALS.indexOf(target.id) !== -1)) { return true; }
+        return BQ_DRAFT_CLASSES.some(function (cls) {
+            return target.classList && target.classList.contains(cls);
+        });
+    }
+
+    // The full sheet, blank rows and all — a faithful snapshot, unlike
+    // collect() which drops scaffolding rows on the way to the server.
+    function bqSnapshot() {
+        const sections = [];
+        document.querySelectorAll('#bqSections tr.bq-section-head').forEach(function (head) {
+            const sid = head.dataset.section;
+            const items = [];
+            document.querySelectorAll('tr.bq-item[data-item-sec="' + sid + '"]').forEach(function (row) {
+                items.push({
+                    qty: row.querySelector('.bq-qty').value,
+                    description: row.querySelector('.bq-desc').value,
+                    unit: row.querySelector('.bq-unit').value,
+                });
+            });
+            sections.push({ title: head.querySelector('.bq-sec-title').value, items: items });
+        });
+        const meta = {};
+        BQ_DRAFT_META.forEach(function (id) {
+            const el = document.getElementById(id); if (el) { meta[id] = el.value; }
+        });
+        const totals = {};
+        BQ_DRAFT_TOTALS.forEach(function (id) {
+            const el = document.getElementById(id); if (el) { totals[id] = el.value; }
+        });
+        const terms = [...document.querySelectorAll('.bq-term')].map(function (i) { return i.value; });
+        return {
+            v: BQ_DRAFT_VERSION, ts: Date.now(), appointmentId: bqAppointmentId,
+            leadName: bqLeadName, leadDigits: bqLeadDigits,
+            meta: meta, totals: totals, sections: sections, terms: terms,
+        };
+    }
+
+    function saveDraft() {
+        if (!bqDraftDirty) { return; }
+        try {
+            const key = bqDraftKey();
+            if (bqDraftKeyWritten && bqDraftKeyWritten !== key) {
+                localStorage.removeItem(bqDraftKeyWritten);
+            }
+            bqDraftKeyWritten = key;
+            localStorage.setItem(key, JSON.stringify(bqSnapshot()));
+        } catch (error) { /* storage disabled or full: the draft is best effort */ }
+    }
+
+    function scheduleDraftSave() {
+        bqDraftDirty = true;
+        if (bqDraftTimer) { clearTimeout(bqDraftTimer); }
+        bqDraftTimer = setTimeout(saveDraft, 400);
+    }
+
+    function onDraftEdit(event) {
+        if (bqIsDraftField(event.target)) { scheduleDraftSave(); }
+    }
+
+    function clearDraft() {
+        if (bqDraftTimer) { clearTimeout(bqDraftTimer); bqDraftTimer = null; }
+        bqDraftDirty = false;
+        if (bqDraftKeyWritten) { bqDraftKeysSeen.add(bqDraftKeyWritten); }
+        bqDraftKeysSeen.add(bqDraftKey());
+        try {
+            bqDraftKeysSeen.forEach(function (key) { localStorage.removeItem(key); });
+        } catch (error) { /* nothing to clear */ }
+        bqDraftKeysSeen.clear();
+        bqDraftKeyWritten = null;
+    }
+
+    function loadDraftData() {
+        let raw;
+        try { raw = localStorage.getItem(bqDraftKey()); } catch (error) { return null; }
+        if (!raw) { return null; }
+        let data;
+        try { data = JSON.parse(raw); } catch (error) { clearDraft(); return null; }
+        if (!data || data.v !== BQ_DRAFT_VERSION) { clearDraft(); return null; }
+        if (data.ts && (Date.now() - data.ts) > BQ_DRAFT_TTL_MS) { clearDraft(); return null; }
+        return data;
+    }
+
+    function applyDraft(data) {
+        (data.meta ? Object.keys(data.meta) : []).forEach(function (id) {
+            const el = document.getElementById(id); if (el) { el.value = data.meta[id]; }
+        });
+        (data.totals ? Object.keys(data.totals) : []).forEach(function (id) {
+            const el = document.getElementById(id); if (el) { el.value = data.totals[id]; }
+        });
+        const termInputs = document.querySelectorAll('.bq-term');
+        (data.terms || []).forEach(function (value, i) {
+            if (termInputs[i]) { termInputs[i].value = value; }
+        });
+        (data.sections || []).forEach(function (sec) {
+            addSection(sec.title, (sec.items || []).map(function (it) {
+                return { qty: it.qty, description: it.description, unit: it.unit };
+            }));
+        });
+        if (!(data.sections || []).length) { addSection(); }
+        if (data.appointmentId) { bqAppointmentId = data.appointmentId; }
+        if (data.leadName) { bqLeadName = data.leadName; }
+        if (data.leadDigits) { bqLeadDigits = data.leadDigits; }
+        recalc();
+    }
+
     function esc(value) {
         return String(value === null || value === undefined ? '' : value)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -374,6 +523,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         ).forEach(el => el.remove());
         renumberSections();
         recalc();
+        scheduleDraftSave();
     }
 
     function addItem(sid, item) {
@@ -428,6 +578,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             addItem(sid);
         }
         recalc();
+        scheduleDraftSave();
     }
 
     function renumberSections() {
@@ -583,6 +734,9 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         if (!bqAppointmentId && result.appointment_id) {
             bqAppointmentId = String(result.appointment_id);
         }
+        // Saved to the server: the local draft is now redundant. Any later
+        // edit re-creates one.
+        clearDraft();
         return bqCurrentId;
     }
 
@@ -841,6 +995,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             if (transport && !parseFloat(transport.value)) { transport.value = template.default_transport_cost || 0; }
 
             recalc();
+            scheduleDraftSave();
             closeTemplateModal();
             showAlert('Template added as a new section.', 'success');
         } catch (error) {
@@ -861,6 +1016,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         fill('m-contact', lead.phone_number);
         fill('m-address', lead.customer_area);
         fill('m-email', lead.customer_email);
+        scheduleDraftSave();
         showAlert('Quote attached to ' + (bqLeadName || 'this lead') + '.', 'success');
     };
 
@@ -884,12 +1040,32 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             try { seeded = JSON.parse(raw.textContent) || []; } catch (e) { seeded = []; }
         }
 
-        if (seeded.length) {
+        // An unsaved draft is the most recent thing the plumber typed, so it
+        // is laid down INSTEAD of the seeded/blank sheet when one is present.
+        const draft = loadDraftData();
+        if (draft) {
+            applyDraft(draft);
+            showAlert('Restored your unsaved changes to this quote.', 'success');
+        } else if (seeded.length) {
             seeded.forEach(group => addSection(group.title, group.items));
         } else {
             addSection();
         }
         recalc();
+
+        // Wire autosave only AFTER the initial build, so restoring a draft or
+        // seeding the sheet does not itself count as a change.
+        document.addEventListener('input', onDraftEdit);
+        document.addEventListener('change', onDraftEdit);
+    });
+
+    // Flush the draft the instant the page is hidden or closed: pagehide and
+    // the hidden visibility state survive a tab close or a mobile app switch,
+    // where a plain unload does not.
+    window.addEventListener('pagehide', saveDraft);
+    window.addEventListener('beforeunload', saveDraft);
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') { saveDraft(); }
     });
 
     // Delegated, so the template list never loses its handlers.

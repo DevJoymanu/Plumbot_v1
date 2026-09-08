@@ -175,14 +175,15 @@ class QuotationTemplateItemForm(forms.ModelForm):
 
 
 # Create formset for template items
-# ONE spare card, not five. The builder adds another the moment the last one
-# is filled in, so five blanks were five screens of scaffolding to scroll past
-# — cheap as table rows, expensive as the item cards the builder now uses.
+# ONE blank card, exactly as the quote editor opens: min_num renders it, and
+# the builder adds the next the moment that one is filled in. `extra` was 5,
+# which was cheap as table rows and is five screens of scaffolding as the item
+# cards the builder now uses.
 QuotationTemplateItemFormSet = inlineformset_factory(
     QuotationTemplate,
     QuotationTemplateItem,
     form=QuotationTemplateItemForm,
-    extra=1,
+    extra=0,
     can_delete=True,
     min_num=1,
     validate_min=True

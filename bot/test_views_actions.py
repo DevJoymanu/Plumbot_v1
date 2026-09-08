@@ -8073,12 +8073,42 @@ class OneTemplateBuilderTests(StaffClientTestCase):
                 self.assertNotIn('<table', panel)
                 self.assertIn('pbq-item__row', panel)
 
-    def test_the_list_opens_with_one_spare_card_not_five(self):
-        """Five blank forms were cheap as table rows and are five screens of
-        scaffolding as cards; the builder adds another as soon as the last is
-        filled."""
+    def test_an_item_card_reads_exactly_like_the_quote_editors(self):
+        """Description, then qty and unit price side by side, then the line
+        total — the quote editor's card, in that order.
+
+        Category and Optional are real fields (the detail page shows them and
+        Duplicate carries them), so they are tucked into a disclosure that is
+        SHUT on load rather than deleted: closed, the card is the quote's card.
+        """
+        html = self._html(reverse('create_quotation_template'))
+        # The create screen renders exactly one card, so the card is
+        # everything between its start and the foot of the list.
+        card = (html.split('class="pbq-item item-row', 1)[1]
+                    .split('pbq-items-foot', 1)[0])
+
+        at = -1
+        for marker in ('pbq-item__head', '-description', 'pbq-item__row',
+                       '-quantity', '-unit_price', 'pbq-item__total'):
+            found = card.find(marker, at + 1)
+            self.assertGreater(found, at, f'{marker} is missing or out of order')
+            at = found
+
+        # The extras come after the total, and the disclosure is not open.
+        self.assertLess(card.index('pbq-item__total'), card.index('qt-more'))
+        self.assertNotIn('<details class="qt-more" open', card)
+        for field in ('-category', '-is_optional'):
+            self.assertGreater(card.index(field), card.index('qt-more'),
+                               f'{field} is on the face of the card')
+
+    def test_the_list_opens_with_one_card_like_the_quote_editor(self):
+        """The quote editor opens on ONE blank item and adds the next when
+        that one is filled. Five blank forms were cheap as table rows and are
+        five screens of scaffolding as cards."""
         response = self.client.get(reverse('create_quotation_template'))
-        self.assertLessEqual(len(response.context['formset'].forms), 2)
+        self.assertEqual(len(response.context['formset'].forms), 1)
+        self.assertEqual(
+            response.content.decode().count('class="pbq-item item-row'), 1)
 
     # -- it still saves through the formset ---------------------------------
 
@@ -8174,3 +8204,114 @@ class OneTemplateBuilderTests(StaffClientTestCase):
                          self._payload(name='Standard Bathroom', is_global='on'))
         self.template.refresh_from_db()
         self.assertFalse(self.template.is_global)
+
+
+class QuoteDraftAutosaveTests(StaffClientTestCase):
+    """A quote in progress survives Back, a closed tab and a dead battery.
+
+    A quote is twenty minutes of typing on a phone, on site, next to a customer.
+    Pressing Back to check the lead's address, an incoming call, or the browser
+    reclaiming a backgrounded tab all threw the lot away and left the plumber
+    starting again. The sheet is now kept in the browser as it is typed and laid
+    back down on the next visit to that same editor.
+
+    The mechanics are exercised for real in jsdom against the rendered pages
+    (bot/test_dump_quote_pages.py); these cases pin the wiring that makes it
+    possible, on every editor of both layouts, so a refactor cannot quietly drop
+    a screen out of it.
+    """
+
+    SECTIONED_SLUG = 'barmak-draft'
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9660, customer_name='Draft Client',
+                              customer_email='draft@example.com')
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    def _flat_editors(self):
+        quote = Quotation.objects.create(appointment=self.lead)
+        return {
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _sectioned_editors(self):
+        """The sectioned sheet is a tenant's own layout, so it needs its own."""
+        tenant = Tenant.objects.create(name='Barmak Draft', slug=self.SECTIONED_SLUG)
+        TenantProfile.objects.create(tenant=tenant, letterhead=SECTIONED_LETTERHEAD)
+        user = get_user_model().objects.create_user(
+            username='draft-sectioned', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        self.client.force_login(user)
+        lead = make_lead(9661, tenant=tenant, customer_name='Sectioned Draft')
+        quote = Quotation.objects.create(appointment=lead)
+        return {
+            'create': reverse('create_quotation', args=[lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _every_editor(self):
+        for name, url in self._flat_editors().items():
+            yield 'flat ' + name, self._html(url)
+        for name, url in self._sectioned_editors().items():
+            yield 'sectioned ' + name, self._html(url)
+
+    def test_every_editor_keeps_what_is_typed_and_lays_it_back_down(self):
+        for screen, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn('localStorage.setItem', html, 'nothing is kept')
+                self.assertIn('scheduleDraftSave', html, 'nothing is kept as they type')
+                self.assertIn('pbq_draft_', html, 'the draft has no key')
+
+    def test_leaving_the_page_flushes_the_keystroke_in_hand(self):
+        """The write is debounced, so the last thing typed is still pending when
+        the page goes. pagehide and the hidden visibility state are the events
+        that survive a tab close or a phone switching apps; unload does not."""
+        for screen, html in self._every_editor():
+            with self.subTest(screen=screen):
+                for event in ('pagehide', 'beforeunload', 'visibilitychange'):
+                    self.assertIn("'" + event + "'", html, f'{screen} misses {event}')
+
+    def test_a_saved_quote_leaves_no_draft_to_come_back(self):
+        """The draft is a stand-in for the row until the row exists. Left behind
+        after a save it would reopen the screen on a copy of a quote that has
+        already been raised."""
+        for screen, html in self._every_editor():
+            with self.subTest(screen=screen):
+                marker = 'the local draft is now redundant'
+                self.assertIn(marker, html, f'{screen} never drops the draft')
+                after = html[html.index(marker):][:200]
+                self.assertIn('clearDraft();', after,
+                              f'{screen} saves without dropping the draft')
+                self.assertGreater(html.index(marker),
+                                   html.index('async function persist'),
+                                   f'{screen} drops the draft somewhere other '
+                                   f'than the save')
+
+    def test_the_draft_follows_the_quote_once_it_has_a_row(self):
+        """Keyed to the screen alone, the draft written after the first save
+        would be found by the NEXT new quote for that lead rather than by the
+        quote it belongs to."""
+        for screen, html in self._flat_editors().items():
+            with self.subTest(screen='flat ' + screen):
+                self.assertIn("'pbq_draft_flat_edit_' + currentQuotationId",
+                              self._html(html))
+        for screen, url in self._sectioned_editors().items():
+            with self.subTest(screen='sectioned ' + screen):
+                self.assertIn("'pbq_draft_sectioned_' + bqCurrentId", self._html(url))
+
+    def test_searching_for_a_lead_is_not_typing_a_quote(self):
+        """The lead picker and the template modal live on these pages too. A
+        draft written from their search boxes would greet the next visit with
+        "restored your unsaved changes" over a sheet nobody had touched."""
+        for screen, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn('onDraftEdit', html)
+                self.assertNotIn("addEventListener('input', scheduleDraftSave)", html)

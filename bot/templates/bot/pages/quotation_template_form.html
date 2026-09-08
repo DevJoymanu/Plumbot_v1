@@ -55,6 +55,28 @@ of a row in a nine-column table.
     /* sort_order is bookkeeping the JS maintains, not something to fill in. */
     .qt-hidden { display: none; }
 
+    /* The per-item extras. Shut, the card is the quote editor's card. */
+    .qt-more { margin-top: 8px; }
+
+    .qt-more > summary {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        cursor: pointer;
+        list-style: none;
+        font-family: var(--font-label);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        color: var(--color-muted);
+    }
+
+    .qt-more > summary::-webkit-details-marker { display: none; }
+    .qt-more > summary::after { content: '+'; font-size: 14px; }
+    .qt-more[open] > summary::after { content: '2'; }
+
     .qt-errors { margin-top: 6px; font-size: 12.5px; color: var(--color-on-error-container); }
 </style>
 {% endblock %}
@@ -189,20 +211,30 @@ of a row in a nine-column table.
                                 </div>
                             </div>
 
-                            <div class="pbq-item__row">
-                                <div class="pbq-field">
-                                    <label for="{{ item_form.category.id_for_label }}">Category</label>
-                                    {{ item_form.category }}
-                                </div>
-                                <div class="qt-tick">
-                                    {{ item_form.is_optional }}
-                                    <label for="{{ item_form.is_optional.id_for_label }}">Optional</label>
-                                </div>
-                            </div>
-
                             <div class="pbq-item__total">
                                 Total <span class="line-total">{{ quote_currency }}0.00</span>
                             </div>
+
+                            {% comment %}
+                            Closed by default, so the card reads exactly as the
+                            quote editor's does: description, qty, unit price,
+                            total. Category and Optional are real fields the
+                            template detail page shows and Duplicate carries,
+                            so they are one tap away rather than deleted.
+                            {% endcomment %}
+                            <details class="qt-more">
+                                <summary>More</summary>
+                                <div class="pbq-item__row">
+                                    <div class="pbq-field">
+                                        <label for="{{ item_form.category.id_for_label }}">Category</label>
+                                        {{ item_form.category }}
+                                    </div>
+                                    <div class="qt-tick">
+                                        {{ item_form.is_optional }}
+                                        <label for="{{ item_form.is_optional.id_for_label }}">Optional</label>
+                                    </div>
+                                </div>
+                            </details>
 
                             {# Bookkeeping the JS maintains; nothing to fill in. #}
                             <div class="qt-hidden">
@@ -436,6 +468,10 @@ of a row in a nine-column table.
 
             row.classList.remove('deleted-row');
             row.style.display = '';
+            // The clone copies the card it was made from, open extras and all.
+            // A new card starts shut, like the first one did.
+            const extras = row.querySelector('.qt-more');
+            if (extras) { extras.open = false; }
             row.dataset.itemId = index + 1;
             row.id = 'row-' + (index + 1);
             const cell = row.querySelector('.line-total');
