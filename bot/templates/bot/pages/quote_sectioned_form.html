@@ -42,12 +42,10 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         flex-wrap: wrap;
     }
 
-    /* The bottom bar is the one place actions live. Sticky rather than fixed,
-       and offset by the mobile nav, exactly as .pbq-actionbar is. */
+    /* The bottom bar is the one place actions live, and it sits at the END OF
+       THE PAGE rather than following the scroll (owner rule, 2026-09-08) —
+       the same rule .pbq-actionbar follows on the flat sheet. */
     .bq-actions--bottom {
-        position: sticky;
-        bottom: calc(var(--bottom-nav-h, 0px) + 8px);
-        z-index: 20;
         margin: 18px auto 0;
         padding: 10px;
         border-radius: var(--radius-md);

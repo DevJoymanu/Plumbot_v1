@@ -55,7 +55,7 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
 {% endblock %}
 
 {% block content %}
-<div class="pbq-page pbq-page--barred" id="quoteFormPage">
+<div class="pbq-page" id="quoteFormPage">
 
     <div class="pbq-head pbq-no-print">
         <div>
@@ -248,9 +248,9 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     </div>
 
     {% comment %}
-    Sticky, not fixed, and offset by --bottom-nav-h: .pb-content__inner runs a
-    keyframe with animation-fill-mode both, and a retained transform would make
-    it the containing block for any fixed descendant (CLAUDE.md).
+    The bar closes the page: in flow at the very bottom, never pinned to the
+    viewport (owner rule, 2026-09-08). A bar that followed the scroll sat over
+    the form on a short screen and made the page read as a floating toolbar.
     {% endcomment %}
     {% comment %}
     The send buttons are INDEPENDENT of Save and are never disabled: pressing

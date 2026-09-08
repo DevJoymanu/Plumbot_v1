@@ -911,6 +911,31 @@ class QuoteMobileLayoutTests(StaffClientTestCase):
                                 after_scroll_box.index('pbq-total-row--grand'),
                                 f'{name} renders its totals inside the scroll box')
 
+    def test_the_action_bar_is_not_pinned_to_the_viewport(self):
+        """The buttons sit at the END OF THE PAGE, in flow (owner rule,
+        2026-09-08). A bar that followed the scroll sat over the form on a
+        short screen and made every quote screen read as a floating toolbar."""
+        import re as _re
+
+        html = self._html(self.quote_pages()['standalone_quotation'])
+        blocks = _re.findall(r'\.pbq-actionbar[^{}]*\{([^}]*)\}', html)
+        self.assertTrue(blocks, 'no .pbq-actionbar rule on the page at all')
+        for block in blocks:
+            self.assertNotIn('position:', block,
+                             'the action bar is positioned out of flow')
+
+    def test_the_action_bar_closes_every_editor(self):
+        """Last thing on the page, below the totals — on the quote editors and
+        the template builder alike."""
+        for name in ('create_quotation', 'standalone_quotation', 'edit_quotation',
+                     'create_quotation_template', 'edit_quotation_template'):
+            with self.subTest(page=name):
+                html = self._html(self.quote_pages()[name])
+                body = html[html.index('class="pbq-page'):]
+                self.assertLess(body.index('pbq-total-row--grand'),
+                                body.index('pbq-actionbar'),
+                                f'{name} puts its buttons above the totals')
+
     def test_cap_constant_is_declared_before_it_is_used(self):
         """`const` is in the temporal dead zone until its own line runs. The
         template builder calls calculateAllTotals() — which reads the cap — at
@@ -7973,6 +7998,35 @@ class OneTemplateBuilderTests(StaffClientTestCase):
                                'pbq-section-title', 'pbq-items-panel',
                                'pbq-items-bar', 'pbq-totals', 'pbq-actionbar'):
                     self.assertIn(marker, html, f'{name} is missing {marker}')
+
+    #: The skeleton of the quote editor, in order. The builder holds fewer
+    #: cards — a template has no client and no project — but every block it
+    #: does have is the same component in the same place.
+    #:
+    #: Only the server-rendered frame: the quote editor's own item CARDS are
+    #: built by its JS, so they are not on the page until something is added.
+    QUOTE_SKELETON = ['pbq-page', 'pbq-head__title', 'pbq-head__sub',
+                      'pbq-head__actions', 'pbq-card', 'pbq-section-title',
+                      'pbq-field', 'pbq-items-panel', 'pbq-items-bar',
+                      'pbq-items-scroll', 'pbq-items-foot', 'pbq-add',
+                      'pbq-totals', 'pbq-total-row', 'pbq-total-input',
+                      'pbq-total-row--grand', 'pbq-actionbar']
+
+    def test_the_builder_renders_the_quote_editors_skeleton_in_order(self):
+        """"Identical layout" measured rather than asserted: the same blocks,
+        in the same order, on both screens."""
+        pages = dict(self._builders())
+        pages['quote'] = reverse('standalone_quotation')
+        for name, url in pages.items():
+            html = self._html(url)
+            body = html[html.index('class="pbq-page'):]
+            with self.subTest(screen=name):
+                at = -1
+                for marker in self.QUOTE_SKELETON:
+                    found = body.find(marker, at + 1)
+                    self.assertGreater(found, at,
+                                       f'{name}: {marker} is missing or out of order')
+                    at = found
 
     def test_saving_is_the_last_thing_on_the_page(self):
         """The quote editor ends on its action bar; a builder whose Save sat

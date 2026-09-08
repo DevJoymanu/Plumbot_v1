@@ -7,7 +7,7 @@ THE quotation-template builder. One template for both editors.
 It is the QUOTE editor's layout (`quote_flat_form.html`), because building a
 template is building a quote: the same cards in the same order, the same item
 list where what is already added stays on screen, the same totals block, and
-the same pinned action bar at the foot. A builder that looked like a different
+the same action bar closing the page. A builder that looked like a different
 product taught the plumber a second set of habits for the same job.
 
 Create and edit used to be two files (835 + 972 lines) that had drifted apart
@@ -60,7 +60,7 @@ of a row in a nine-column table.
 {% endblock %}
 
 {% block content %}
-<div class="pbq-page pbq-page--barred">
+<div class="pbq-page">
 
     <div class="pbq-head pbq-no-print">
         <div>
@@ -95,7 +95,7 @@ of a row in a nine-column table.
         {% csrf_token %}
 
         <!-- Template information -->
-        <div class="pbq-card">
+        <div class="pbq-card pbq-no-print">
             <h2 class="pbq-section-title"><i class="fas fa-info-circle"></i> Template Information</h2>
 
             <div class="pbq-field">
@@ -142,7 +142,7 @@ of a row in a nine-column table.
         </div>
 
         <!-- Items -->
-        <div class="pbq-card">
+        <div class="pbq-card pbq-no-print">
             <h2 class="pbq-section-title"><i class="fas fa-list"></i> Items &amp; Materials</h2>
             {{ formset.management_form }}
 
@@ -223,7 +223,7 @@ of a row in a nine-column table.
         </div>
 
         <!-- Totals -->
-        <div class="pbq-card">
+        <div class="pbq-card pbq-no-print">
             <h2 class="pbq-section-title"><i class="fas fa-calculator"></i> Default Costs</h2>
             <p class="qt-tick__hint" style="margin:-6px 0 14px;">
                 What a quote starts from when it uses this template. The plumber
@@ -250,10 +250,9 @@ of a row in a nine-column table.
         </div>
 
         {% comment %}
-        Sticky, not fixed, and offset by --bottom-nav-h — the same bar the quote
-        editor ends on, for the same reason: .pb-content__inner runs a keyframe
-        with animation-fill-mode both, and a retained transform would make it
-        the containing block for any fixed descendant (CLAUDE.md).
+        The same bar the quote editor ends on, in the same place: at the END OF
+        THE PAGE, in flow, never pinned to the viewport (owner rule,
+        2026-09-08). You reach it once the sheet is filled in.
         {% endcomment %}
         <div class="pbq-actionbar pbq-no-print">
             <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">

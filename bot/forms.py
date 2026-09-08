@@ -119,15 +119,21 @@ class QuotationTemplateForm(forms.ModelForm):
                 'placeholder': 'Describe what this template includes...'
             }),
             'project_type': forms.Select(attrs={'class': 'form-control'}),
+            # pbq-total-input is the quote editor's compact, right-aligned
+            # figure box: these two sit in a .pbq-total-row on the builder, the
+            # same row the quote editor puts labour and transport in, and a
+            # full-width .form-control there looked like a different screen.
             'default_labor_cost': forms.NumberInput(attrs={
-                'class': 'form-control',
+                'class': 'form-control pbq-total-input',
                 'placeholder': '0.00',
-                'step': '0.01'
+                'step': '0.01',
+                'inputmode': 'decimal',
             }),
             'default_transport_cost': forms.NumberInput(attrs={
-                'class': 'form-control',
+                'class': 'form-control pbq-total-input',
                 'placeholder': '0.00',
-                'step': '0.01'
+                'step': '0.01',
+                'inputmode': 'decimal',
             }),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
