@@ -236,8 +236,20 @@ of a row in a nine-column table.
                                 </div>
                             </details>
 
-                            {# Bookkeeping the JS maintains; nothing to fill in. #}
+                            {% comment %}
+                            Bookkeeping the JS maintains; nothing to fill in.
+
+                            `section` and `quantity_text` belong to the
+                            SECTIONED builder and have no place on this screen,
+                            but they are posted back untouched: a global
+                            template built on the sectioned sheet can be opened
+                            here by the operator, and a field this form simply
+                            did not render would come back blank and wipe the
+                            sections it was grouped by.
+                            {% endcomment %}
                             <div class="qt-hidden">
+                                {{ item_form.section }}
+                                {{ item_form.quantity_text }}
                                 {{ item_form.sort_order }}
                                 {{ item_form.DELETE }}
                             </div>
@@ -378,6 +390,15 @@ of a row in a nine-column table.
 
         // Delegated, so cards added later keep working.
         document.addEventListener('input', function (event) {
+            if (event.target.matches('input[id$="-quantity"]')) {
+                // The trade's own wording of a quantity ("19 length") belongs
+                // to the number it was written for, and this screen edits the
+                // number. A row changed here gives the wording up rather than
+                // printing one figure against another.
+                const row = event.target.closest('.item-row');
+                const wording = row && row.querySelector('input[id$="-quantity_text"]');
+                if (wording) { wording.value = ''; }
+            }
             if (event.target.matches('input[id$="-quantity"], input[id$="-unit_price"], input[id$="-description"]')) {
                 calculateAllTotals();
                 checkIfNewRowNeeded();

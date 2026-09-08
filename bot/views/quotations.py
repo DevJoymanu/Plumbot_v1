@@ -75,6 +75,40 @@ from .quote_layout import (
 )
 
 
+def quote_lead_panel(lead):
+    """What sits behind the PLAN tab: the customer's own words, and every file
+    they sent.
+
+    The plumber types a quote off a drawing, and the measurement they need is on
+    the lead's page, not this one. Reaching it used to mean leaving the quote,
+    so both are on this screen now and the tab bar switches between them without
+    navigating anywhere.
+
+    Files are addressed by INDEX into `get_all_uploaded_files()`, which is what
+    `serve_document` takes, so the browser never touches a storage URL: R2's
+    presigned links expire, and a mis-set backend hands back a bare path that
+    404s. Same reason the lead page links them that way.
+
+    A lead with neither words nor files gets NO tab bar (`has_context` False) —
+    a tab that opens on an empty page is a dead control.
+    """
+    if lead is None or not getattr(lead, 'pk', None):
+        return {'quote_lead': None, 'quote_lead_files': [],
+                'quote_lead_has_context': False}
+
+    files = [
+        {'index': index, 'label': entry.get('label') or 'File',
+         'type': entry.get('type') or 'document'}
+        for index, entry in enumerate(lead.get_all_uploaded_files())
+    ]
+    return {
+        'quote_lead': lead,
+        'quote_lead_files': files,
+        'quote_lead_has_context': bool(
+            files or (getattr(lead, 'project_description', '') or '').strip()),
+    }
+
+
 def _sectioned_form_context(request, appointment=None, quotation=None):
     """Shared context for the sectioned quote editor.
 
@@ -94,6 +128,9 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
         'lh': letterhead,
         'appointment': appointment,
         'quotation': quotation,
+        # The plan and the customer's own words, on this screen rather than one
+        # Back press away. Same resolver as the flat editor's.
+        **quote_lead_panel(appointment),
         'existing_sections': sections_payload(quotation) if quotation else [],
         'quote_date': quotation.created_at if quotation else timezone.localdate(),
         'vat_percent_initial': (
@@ -475,6 +512,9 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
 
     lead = appointment or getattr(quotation, 'appointment', None)
     context['lead_wa_digits'] = quote_send_digits(quotation, lead)
+    # The plan and the customer's own words, on this screen rather than one Back
+    # press away. Same resolver as the sectioned editor's.
+    context.update(quote_lead_panel(lead))
     context['lead_display_name'] = (
         (getattr(lead, 'customer_name', '') or '').strip() if lead else '')
 

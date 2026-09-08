@@ -1,0 +1,206 @@
+{% comment %}
+Two tabs, stuck to the top of the quote screen: QUOTE and the PLAN.
+
+A quote is typed off a drawing. The measurement the plumber needs is on the
+lead's page, so the loop was: leave the quote, find the plan block, open the
+plan, read one number, come back, find your place in the item list. Twenty
+times a quote, on a phone, on site.
+
+Switching tabs does not navigate. The quote panel is hidden, not unloaded, so
+every field, the item list, its scroll position and the caret are exactly where
+they were when it comes back. The draft autosave is the safety net underneath
+this, not the mechanism.
+
+Rendered by both layouts from one include, and only when the lead actually has
+something behind the second tab (`quote_lead_has_context`): a tab that opens on
+an empty page is a dead control.
+
+Media is loaded on FIRST OPEN, never at page load. A building plan is often a
+PDF of several MB and this screen is used on site, on mobile data; nobody should
+pay for it on a quote where they never look at the plan.
+{% endcomment %}
+{% if quote_lead_has_context %}
+<div class="pbq-tabs pbq-no-print bq-no-print" id="pbqTabs" role="tablist"
+     aria-label="Quote and plan">
+    <button type="button" class="pbq-tab is-active" data-pbq-tab="quote"
+            role="tab" aria-selected="true" aria-controls="pbqQuotePanel">
+        <i class="fas fa-file-invoice-dollar"></i> Quote
+    </button>
+    <button type="button" class="pbq-tab" data-pbq-tab="plan"
+            role="tab" aria-selected="false" aria-controls="pbqPlanPanel">
+        {% if quote_lead_files %}
+        <i class="far fa-file-alt"></i> Plan
+        <span class="pbq-tab__count">{{ quote_lead_files|length }}</span>
+        {% else %}
+        <i class="far fa-comment-dots"></i> Details
+        {% endif %}
+    </button>
+</div>
+
+<div class="pbq-tabpanel pbq-plan pbq-no-print bq-no-print" id="pbqPlanPanel"
+     role="tabpanel" aria-labelledby="pbqTabs" hidden>
+
+    {% comment %}
+    The customer's own words, verbatim and first. A quote written off a tidied-up
+    summary misses what they actually asked for.
+    {% endcomment %}
+    <div class="pbq-card pbq-plan__words">
+        <div class="pbq-plan__label">In the customer's own words</div>
+        {% if quote_lead.project_description %}
+        <p class="pbq-plan__text">{{ quote_lead.project_description }}</p>
+        {% else %}
+        <p class="pbq-plan__empty">They have not described the job in writing yet.</p>
+        {% endif %}
+        <div class="pbq-plan__meta">
+            {{ quote_lead.customer_name|default:"This lead" }}{% if quote_lead.customer_area %} · {{ quote_lead.customer_area }}{% endif %}
+        </div>
+    </div>
+
+    {% for file in quote_lead_files %}
+    <div class="pbq-card pbq-plan__file">
+        <div class="pbq-plan__filehead">
+            <span class="pbq-plan__name">{{ file.label }}</span>
+            {% comment %}
+            An iPhone will often render only the first page of an embedded PDF,
+            so the browser's own viewer is always one tap away. It leaves the
+            page, which is exactly what the draft autosave is there for.
+            {% endcomment %}
+            <a class="pbq-plan__open" target="_blank" rel="noopener"
+               href="{% url 'appointment_document_file' quote_lead.pk file.index %}">
+                <i class="fas fa-up-right-and-down-left-from-center"></i> Full screen
+            </a>
+        </div>
+
+        {% if file.type == 'image' %}
+        <img class="pbq-plan__img" alt="{{ file.label }}" decoding="async"
+             data-pbq-src="{% url 'appointment_document_file' quote_lead.pk file.index %}">
+        {% elif file.type == 'video' %}
+        <video class="pbq-plan__video" controls preload="none"
+               data-pbq-src="{% url 'appointment_document_file' quote_lead.pk file.index %}"></video>
+        {% else %}
+        <iframe class="pbq-plan__doc" title="{{ file.label }}"
+                data-pbq-src="{% url 'appointment_document_file' quote_lead.pk file.index %}"></iframe>
+        {% endif %}
+    </div>
+    {% empty %}
+    <div class="pbq-card pbq-plan__file">
+        <p class="pbq-plan__empty">Nothing has been sent through yet. Anything the
+        customer sends on WhatsApp turns up here.</p>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    // Wired on DOMContentLoaded, not at parse time. This include sits ABOVE the
+    // quote panel it switches to, so #pbqQuotePanel does not exist yet when
+    // this script runs and looking it up here left both tabs inert.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    function init() {
+
+    const tabs = document.getElementById('pbqTabs');
+    const panels = {
+        quote: document.getElementById('pbqQuotePanel'),
+        plan: document.getElementById('pbqPlanPanel')
+    };
+    if (!tabs || !panels.quote || !panels.plan) { return; }
+
+    // The page does not scroll: .pb-content is the scroller (the shell is
+    // height:100vh, overflow:hidden), so window.scrollY is always 0 here and
+    // restoring the plumber's place means restoring THAT element's scrollTop.
+    const scroller = document.getElementById('pb-content') || document.scrollingElement;
+
+    const scrollAt = { quote: 0, plan: 0 };
+    let current = 'quote';
+    let mediaLoaded = false;
+    // The field and caret position the plumber left mid-item. Coming back to
+    // the top of a sheet with nothing focused is the thing that made going to
+    // look at the plan feel like starting again.
+    let resume = null;
+
+    function rememberFocus() {
+        const el = document.activeElement;
+        resume = null;
+        if (!el || !panels.quote.contains(el)) { return; }
+        const tag = (el.tagName || '').toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') { return; }
+        let start = null, end = null;
+        // A number input has no selection range and THROWS when asked for one.
+        try { start = el.selectionStart; end = el.selectionEnd; } catch (error) { start = null; }
+        resume = { el: el, start: start, end: end };
+        // Drop the keyboard so the plan gets the whole screen.
+        try { el.blur(); } catch (error) { /* nothing focused */ }
+    }
+
+    function restoreFocus() {
+        const saved = resume;
+        resume = null;
+        if (!saved || !document.contains(saved.el)) { return; }
+        try {
+            saved.el.focus({ preventScroll: true });
+            if (saved.start !== null && saved.start !== undefined) {
+                saved.el.setSelectionRange(saved.start, saved.end);
+            }
+        } catch (error) { /* a number input refuses a selection range */ }
+    }
+
+    // The item list has its own scrollbar once the quote is long, and hiding
+    // its container resets that. Saved and put back with everything else.
+    function itemsScroll() { return document.getElementById('itemsScroll'); }
+
+    function loadMedia() {
+        if (mediaLoaded) { return; }
+        mediaLoaded = true;
+        panels.plan.querySelectorAll('[data-pbq-src]').forEach(function (node) {
+            node.setAttribute('src', node.getAttribute('data-pbq-src'));
+        });
+    }
+
+    function show(name) {
+        if (name === current || !panels[name]) { return; }
+
+        scrollAt[current] = scroller ? scroller.scrollTop : 0;
+        const list = itemsScroll();
+        const listAt = list ? list.scrollTop : 0;
+        if (current === 'quote') { rememberFocus(); }
+
+        panels[current].hidden = true;
+        panels[name].hidden = false;
+        current = name;
+
+        tabs.querySelectorAll('.pbq-tab').forEach(function (tab) {
+            const active = tab.dataset.pbqTab === name;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+
+        if (name === 'plan') { loadMedia(); }
+        if (scroller) { scroller.scrollTop = scrollAt[name] || 0; }
+        if (name === 'quote') {
+            const back = itemsScroll();
+            if (back) { back.scrollTop = listAt; }
+            restoreFocus();
+        }
+    }
+
+    tabs.addEventListener('click', function (event) {
+        const tab = event.target.closest('[data-pbq-tab]');
+        if (tab) { show(tab.dataset.pbqTab); }
+    });
+
+    // So a print started from the plan tab still prints the quote.
+    window.addEventListener('beforeprint', function () { show('quote'); });
+
+    window.pbqShowTab = show;
+
+    }
+}());
+</script>
+{% endif %}

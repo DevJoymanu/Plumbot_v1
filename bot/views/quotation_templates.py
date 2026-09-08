@@ -38,6 +38,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from .. import branding
+from .quote_layout import is_sectioned, letterhead_for
 from ..decorators import (staff_required, anonymous_required, StaffRequiredMixin,
                           is_platform_owner)
 from ..whatsapp_cloud_api import whatsapp_api
@@ -61,12 +62,20 @@ def quotation_templates_api(request):
         # Get query parameters
         project_type = request.GET.get('project_type')
         search = request.GET.get('search')
+        template_id = request.GET.get('template_id')
         active_only = request.GET.get('active_only', 'true').lower() == 'true'
         
         # Build queryset
         templates = _visible_templates(request)
         
-        if active_only:
+        # Both quote editors ask for ONE template by id when the plumber picks
+        # it. The filter was never implemented, so the whole list came back and
+        # the editors read [0] - the most-used template - which is what named
+        # the new section and supplied the default costs, whichever row had
+        # actually been tapped.
+        if template_id:
+            templates = templates.filter(id=template_id)
+        elif active_only:
             templates = templates.filter(is_active=True)
         
         if project_type:
@@ -95,6 +104,11 @@ def quotation_templates_api(request):
                 'estimated_cost': float(template.get_total_estimated_cost()),
                 'labor_cost': float(template.default_labor_cost),
                 'transport_cost': float(template.default_transport_cost),
+                # The editors read the MODEL's own names; without these two the
+                # template's default labour and transport silently arrived as 0
+                # on every quote started from it.
+                'default_labor_cost': float(template.default_labor_cost),
+                'default_transport_cost': float(template.default_transport_cost),
                 'is_active': template.is_active,
                 'created_at': template.created_at.isoformat(),
                 'updated_at': template.updated_at.isoformat(),
@@ -400,17 +414,72 @@ class QuotationTemplatesListView(ListView):
 # the file itself. `create_quotation_template.html` / `edit_quotation_template.html`
 # are deleted: two copies had drifted into two different products, one of them
 # printing every figure in rand.
+#
+# And because the QUOTE editor's layout is per tenant, so is the builder's: a
+# tenant on the sectioned sheet builds their template on that same sheet, with
+# the same letterhead, the same numbered sections and per-section subtotals,
+# and the same QTY / DESCRIPTION / UNIT PRICE / TOTAL PRICE columns. Same
+# switch as every quote screen (`is_sectioned`), which is tenant data and never
+# a slug check, so one tenant's document can never render for another.
 TEMPLATE_FORM_TEMPLATE = 'bot/pages/quotation_template_form.html'
+TEMPLATE_SECTIONED_FORM_TEMPLATE = 'bot/pages/quotation_template_sectioned_form.html'
+
+
+def builder_template_names(request):
+    """Which builder this workspace gets — the mirror of the quote editors'
+    `get_template_names`, reading the same tenant switch."""
+    tenant = getattr(request, 'tenant', None)
+    if is_sectioned(tenant):
+        return [TEMPLATE_SECTIONED_FORM_TEMPLATE]
+    return [TEMPLATE_FORM_TEMPLATE]
+
+
+def group_formset_by_section(formset):
+    """The formset's forms, grouped into the sections they belong to.
+
+    Same consecutive-title rule the sheet itself uses, read off the BOUND value
+    rather than the instance: on a re-render after a failed save the section
+    the plumber typed lives in the posted data, and grouping by the saved
+    instance would scatter their rows back into the sections they came from.
+
+    A formset with no sections at all comes back as one untitled group, which
+    is what a brand new template and every flat template are.
+    """
+    groups = []
+    for form in formset.forms:
+        title = (form['section'].value() or '').strip()
+        if not groups or groups[-1]['title'] != title:
+            groups.append({'title': title, 'forms': []})
+        groups[-1]['forms'].append(form)
+    return groups
 
 
 def template_form_context(request, mode, template=None):
     """What both builder screens need. The currency is the TENANT's own, never
-    a symbol typed into the markup."""
+    a symbol typed into the markup.
+
+    The sectioned builder needs the rest of the sheet as well: the tenant's own
+    letterhead and logo, and — on an edit — the saved rows already grouped into
+    the sections they were typed in. Every one of those values is resolved
+    through the tenant, and absent means the block is omitted rather than
+    borrowed from another tenant.
+    """
     from ..tenant_config import get_config
 
+    tenant = getattr(request, 'tenant', None)
+    letterhead = letterhead_for(tenant)
     return {
         'template_mode': mode,
-        'quote_currency': get_config(getattr(request, 'tenant', None)).currency,
+        'quote_currency': get_config(tenant).currency,
+        'lh': letterhead,
+        **branding.branding_context(tenant),
+        # A template holds no discount and no per-job figures, but the sheet it
+        # prints on does: these are the business's OWN defaults, shown on the
+        # sheet exactly where a quote will carry them, and set on the Profile
+        # page rather than here.
+        'default_vat_percent': letterhead.get('default_vat_percent') or 0,
+        'default_deposit_percent': letterhead.get('default_deposit_percent') or 0,
+        'default_terms': list(letterhead.get('terms') or []),
     }
 
 
@@ -420,7 +489,10 @@ class CreateQuotationTemplateView(CreateView):
     model = QuotationTemplate
     form_class = QuotationTemplateForm
     template_name = TEMPLATE_FORM_TEMPLATE
-    
+
+    def get_template_names(self):
+        return builder_template_names(self.request)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(template_form_context(self.request, 'new'))
@@ -428,6 +500,7 @@ class CreateQuotationTemplateView(CreateView):
             context['formset'] = QuotationTemplateItemFormSet(self.request.POST)
         else:
             context['formset'] = QuotationTemplateItemFormSet()
+        context['formset_sections'] = group_formset_by_section(context['formset'])
         # Only the platform operator is offered the "share with every client"
         # checkbox; a client's create screen never shows it, and the POST is
         # re-checked below rather than trusting the absent field.
@@ -469,7 +542,9 @@ class EditQuotationTemplateView(UpdateView):
     model = QuotationTemplate
     form_class = QuotationTemplateForm
     template_name = TEMPLATE_FORM_TEMPLATE
-    
+
+    def get_template_names(self):
+        return builder_template_names(self.request)
 
     def get_queryset(self):
         return _visible_templates(self.request)
@@ -497,6 +572,7 @@ class EditQuotationTemplateView(UpdateView):
             context['formset'] = QuotationTemplateItemFormSet(self.request.POST, instance=self.object)
         else:
             context['formset'] = QuotationTemplateItemFormSet(instance=self.object)
+        context['formset_sections'] = group_formset_by_section(context['formset'])
         return context
     
     def form_valid(self, form):
@@ -697,7 +773,9 @@ def use_template(request, template_pk, appointment_pk=None):
         QuotationItem.objects.create(
             quotation=quotation,
             description=template_item.description,
+            section=template_item.section,
             quantity=template_item.quantity,
+            quantity_text=template_item.quantity_text,
             unit_price=template_item.unit_price
         )
     
@@ -712,15 +790,25 @@ def use_template(request, template_pk, appointment_pk=None):
 
 @staff_required
 def template_items_api(request, template_id):
-    """Get template items for loading into quotation form"""
+    """Get template items for loading into quotation form.
+
+    Scoped through `_visible_templates`, like every other per-template action:
+    fetching by bare pk handed one tenant's item list and prices to any staff
+    user who guessed an id.
+    """
     try:
-        template = get_object_or_404(QuotationTemplate, id=template_id)
+        template = get_object_or_404(_visible_templates(request), id=template_id)
         
         items = []
         for item in template.items.all():
             items.append({
                 'description': item.description,
+                # The heading this line sits under, so a sectioned template
+                # arrives on the quote as its own sections rather than as one
+                # block named after the template.
+                'section': item.section or '',
                 'quantity': float(item.quantity),
+                'quantity_text': item.quantity_text or '',
                 'unit_price': float(item.unit_price),
                 'category': item.category,
                 'is_optional': item.is_optional,
@@ -729,6 +817,13 @@ def template_items_api(request, template_id):
         
         return JsonResponse({
             'success': True,
+            'template': {
+                'id': template.id,
+                'name': template.name,
+                'project_type': template.project_type,
+                'default_labor_cost': float(template.default_labor_cost),
+                'default_transport_cost': float(template.default_transport_cost),
+            },
             'items': items
         })
         

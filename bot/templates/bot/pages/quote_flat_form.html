@@ -56,6 +56,14 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
 
 {% block content %}
 <div class="pbq-page" id="quoteFormPage">
+    {% comment %}
+    The two tabs, and behind the second one the plan and the customer's own
+    words. Switching hides this panel rather than leaving the page, so the sheet
+    comes back with every field, the item list and the caret where they were.
+    {% endcomment %}
+    {% include "bot/includes/quote_plan_tabs.html" %}
+
+    <div class="pbq-tabpanel" id="pbqQuotePanel" role="tabpanel">
 
     <div class="pbq-head pbq-no-print">
         <div>
@@ -290,6 +298,8 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
             <i class="fas fa-save"></i> Save
         </button>
     </div>
+
+    </div>{# /#pbqQuotePanel #}
 </div>
 
 {% if quote_mode != 'edit' %}

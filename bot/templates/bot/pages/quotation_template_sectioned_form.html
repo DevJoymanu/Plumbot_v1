@@ -1,0 +1,772 @@
+{% extends "bot/layouts/base.html" %}
+
+{% comment %}
+THE quotation-template builder for a tenant on the SECTIONED sheet, used by
+create AND edit.
+
+The rule is the one the flat builder already follows — building a template is
+building a quote, so the builder is the quote editor's layout — applied to a
+tenant whose quote editor is `quote_sectioned_form.html`. That means this
+screen IS their quote document: their own letterhead, the numbered sections
+each with a SUB-TOTAL, the QTY | DESCRIPTION | UNIT PRICE | TOTAL PRICE columns
+in the sheet's own order, the labour / transport / SUB-TOTAL / VAT / GRAND
+TOTAL block, and the banking and signature foot. Same tenant switch as every
+other quote screen (`is_sectioned`), which is tenant data and never a slug
+check, so this sheet can never render for a tenant it does not belong to.
+
+What differs is only what a template does not have:
+
+  * no client. The `.bq-meta` grid holds the TEMPLATE's own identity instead —
+    name, project type, description — in the same two-column shape a quote's
+    DATE / CLIENT / CONTACT / ADDRESS / EMAIL uses.
+  * no per-job figures. VAT, the deposit and the payment terms are the
+    business's own defaults from their Profile, shown where the quote will
+    carry them but not editable here; a discount is per job and the paper
+    document has no such row, so there is none.
+  * no send. A template is never delivered to anybody, so the bar closes on
+    Cancel / Add section / Save.
+
+The items are the same Django FORMSET the flat builder posts
+(`items-0-description` and so on) — only the markup around those inputs is the
+sheet's. Two fields carry the sections: `section` (hidden, written from the
+heading above each block) and `quantity_text` (the QTY cell, so "19 length"
+survives), with the numeric `quantity` derived from it and posted hidden.
+
+`template_mode` is 'new' or 'edit'.
+{% endcomment %}
+
+{% block title %}{% if template_mode == 'edit' %}Edit Template{% else %}New Template{% endif %}{% endblock %}
+
+{% block extra_css %}
+{% comment %}
+The shared quote layer first, the sheet's own styles second — the same order
+the sectioned quote editor uses, so where both name a box the document wins.
+{% endcomment %}
+{% include "bot/includes/quote_responsive_css.html" %}
+{% include "bot/includes/quote_sectioned_css.html" %}
+<style>
+    /* The toolbar carries the page's name on the left and the way out on the
+       right; the quote editor has no title because a quote names itself. */
+    .bq-toolbar {
+        max-width: 920px;
+        margin: 0 auto 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .bqt-title { font-family: var(--font-label); }
+    .bqt-title b { display: block; font-size: 18px; font-weight: 700; }
+    .bqt-title span { font-size: 12.5px; color: var(--color-muted); }
+
+    /* The template's own identity, in the client block's grid. Name and type
+       sit side by side; the description takes the full width under them. */
+    .bq-meta .f--wide { grid-column: 1 / -1; }
+    .bq-page .bq-meta select,
+    .bq-page .bq-meta textarea {
+        flex: 1;
+        border: none;
+        border-bottom: 1px dotted #bbb;
+        border-radius: 0;
+        padding: 3px 2px;
+        min-height: 0;
+        font: inherit;
+        color: var(--bq-ink);
+        background: transparent;
+        box-shadow: none;
+    }
+    .bq-page .bq-meta textarea { resize: vertical; }
+    .bq-page .bq-meta select:focus,
+    .bq-page .bq-meta textarea:focus {
+        outline: none;
+        box-shadow: none;
+        border-bottom: 1px solid var(--bq-green);
+    }
+
+    .bqt-ticks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        margin: 2px 0 16px;
+    }
+    .bqt-tick { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+    .bqt-tick input { width: 1.1em; height: 1.1em; flex: 0 0 auto; }
+    .bqt-tick label {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--bq-teal);
+        font-weight: 700;
+        font-family: inherit;
+        letter-spacing: 0;
+        text-transform: none;
+    }
+
+    /* Figures the sheet prints but the template does not hold: they come from
+       the Profile page and are set per quote. Shown where the quote carries
+       them, greyed so nobody types into them expecting them to stick. */
+    .bqt-static .bq-lbl, .bqt-static .bq-amt { opacity: .62; }
+    .bqt-note {
+        max-width: 920px;
+        margin: 10px auto 0;
+        font-size: 12px;
+        color: var(--color-muted);
+        line-height: 1.5;
+    }
+
+    /* The formset's widgets arrive with Bootstrap's .form-control; inside the
+       sheet they are cells and totals boxes, which the sheet's own rules
+       already draw. This only undoes the shadow Bootstrap adds. */
+    .bq-sheet .form-control, .bq-sheet .form-select { box-shadow: none; }
+
+    .bqt-hidden { display: none; }
+    .bqt-errors { color: var(--bq-red); font-size: 12px; font-weight: 600; }
+
+    @media print {
+        .bq-actions--bottom, .bq-toolbar, .bqt-note, .bqt-ticks { display: none !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bq-page pbq-page" id="bqtPage">
+
+    <div class="bq-toolbar bq-no-print">
+        <div class="bqt-title">
+            <b>{% if template_mode == 'edit' %}Edit Template{% else %}New Template{% endif %}</b>
+            <span>
+                {% if template_mode == 'edit' %}{{ object.name }}
+                {% else %}A set of items you can drop onto a quote, ready priced.{% endif %}
+            </span>
+        </div>
+        <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Templates
+        </a>
+    </div>
+
+    <div id="bqtAlert" class="bq-alert bq-no-print"></div>
+
+    {% if form.errors or formset.non_form_errors %}
+    <div class="bq-alert bq-no-print">
+        <div class="pb-alert pb-alert--error">
+            Please check the highlighted fields and try again.
+            {% for error in form.name.errors %}<div>{{ error }}</div>{% endfor %}
+            {% for error in formset.non_form_errors %}<div>{{ error }}</div>{% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" id="templateForm">
+        {% csrf_token %}
+        {{ formset.management_form }}
+
+        <div class="bq-sheet" id="bqtSheet">
+
+            {% include "bot/includes/quote_letterhead.html" %}
+
+            {% comment %}
+            Where a quote names its client, a template names itself. Same grid,
+            same dotted-underline fields, so the sheet reads the same.
+            {% endcomment %}
+            <div class="bq-meta">
+                <div class="f">
+                    <label for="{{ form.name.id_for_label }}">TEMPLATE:</label>
+                    {{ form.name }}
+                </div>
+                <div class="f">
+                    <label for="{{ form.project_type.id_for_label }}">JOB TYPE:</label>
+                    {{ form.project_type }}
+                </div>
+                <div class="f f--wide">
+                    <label for="{{ form.description.id_for_label }}">NOTES:</label>
+                    {{ form.description }}
+                </div>
+            </div>
+
+            {% if form.name.errors %}<p class="bqt-errors">{{ form.name.errors|striptags }}</p>{% endif %}
+
+            <div class="bqt-ticks bq-no-print">
+                <div class="bqt-tick">
+                    {{ form.is_active }}
+                    <label for="{{ form.is_active.id_for_label }}">Active (offered when building a quote)</label>
+                </div>
+                {% comment %}
+                Operator-only, and re-checked server-side in form_valid: hiding
+                a checkbox is presentation, not permission.
+                {% endcomment %}
+                {% if can_create_global %}
+                <div class="bqt-tick">
+                    <input class="form-check-input" type="checkbox" id="id_is_global" name="is_global"
+                           {% if object.is_global %}checked{% endif %}>
+                    <label for="id_is_global">Share with every client</label>
+                </div>
+                {% endif %}
+            </div>
+
+            {% comment %}
+            The sheet's own table: ONE table, section headings as rows inside
+            it, so the column header is drawn once — the same shape the PDF
+            renderer draws and the quote editor edits.
+            {% endcomment %}
+            <table class="bq-table">
+                <colgroup>
+                    <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                    <col class="bq-c-total"><col class="bq-c-act">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>QTY</th><th>DESCRIPTION</th><th>UNIT PRICE</th><th>TOTAL PRICE</th><th></th>
+                    </tr>
+                </thead>
+                <tbody id="bqtSections">
+                    {% for group in formset_sections %}
+                    <tr class="bqt-sec" data-section="{{ forloop.counter }}">
+                        <td colspan="5">
+                            <div class="bq-sec-wrap">
+                                <span class="bq-num">{{ forloop.counter }}.</span>
+                                <input class="bq-sec-title" type="text" placeholder="SECTION TITLE"
+                                       value="{{ group.title }}">
+                                <button type="button" class="bq-rm bq-no-print" title="Remove section"
+                                        data-remove-section="{{ forloop.counter }}">&times;</button>
+                            </div>
+                        </td>
+                    </tr>
+
+                    {% for item_form in group.forms %}
+                    <tr class="bqt-row" data-row-section="{{ forloop.parentloop.counter }}">
+                        <td>{{ item_form.quantity_text }}</td>
+                        <td>{{ item_form.description }}</td>
+                        <td>
+                            <div class="bq-money">
+                                <span class="bq-sym">$</span>{{ item_form.unit_price }}
+                            </div>
+                        </td>
+                        <td class="bq-total-cell"><span class="bqt-line">$0.00</span></td>
+                        <td class="bq-act bq-no-print">
+                            <button type="button" class="bq-rm" title="Remove item"
+                                    data-remove-row>&times;</button>
+                            {% comment %}
+                            Everything the row posts but nobody types: its own
+                            id, the heading written from the block above, the
+                            number derived from the QTY wording, and the
+                            formset's own bookkeeping.
+                            {% endcomment %}
+                            <span class="bqt-hidden">
+                                {{ item_form.id }}{{ item_form.section }}{{ item_form.quantity }}
+                                {{ item_form.category }}{{ item_form.is_optional }}
+                                {{ item_form.sort_order }}{{ item_form.DELETE }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+
+                    <tr class="bq-subtotal" data-sub-for="{{ forloop.counter }}">
+                        <td class="bq-lbl" colspan="3">SUB-TOTAL</td>
+                        <td class="bq-val" data-sec-total="{{ forloop.counter }}">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    <tr class="bq-add-item bq-no-print" data-add-for="{{ forloop.counter }}">
+                        <td colspan="5">
+                            <button type="button" class="bq-tiny"
+                                    data-add-item="{{ forloop.counter }}">+ Add item</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+
+                    <tr class="bq-add-section-row bq-no-print" id="bqtAddSectionRow">
+                        <td colspan="5">
+                            <button type="button" class="bq-add-section-btn" id="bqtAddSection">
+                                <span class="bq-plus">+</span> Add new section
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            {% comment %}
+            The totals block, in the paper document's order. Labour and
+            transport are the template's own default costs — what a quote
+            STARTS from, changed on the quote itself. The rest is arithmetic,
+            or the business's own defaults shown where the quote carries them.
+            {% endcomment %}
+            <table class="bq-totals">
+                <colgroup>
+                    <col class="bq-c-qty"><col class="bq-c-desc"><col class="bq-c-unit">
+                    <col class="bq-c-total"><col class="bq-c-act">
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td class="bq-lbl" colspan="3">MATERIALS SUB-TOTAL</td>
+                        <td class="bq-amt" id="t-materials">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="bq-lbl" colspan="3"><sup>ADD:</sup> Labour</td>
+                        <td class="bq-val">{{ form.default_labor_cost }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="bq-lbl" colspan="3">Transport</td>
+                        <td class="bq-val">{{ form.default_transport_cost }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="bq-lbl bq-strong" colspan="3">SUB-TOTAL</td>
+                        <td class="bq-amt" id="t-subtotal">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    <tr class="bqt-static">
+                        <td class="bq-lbl" colspan="3">VAT ({{ default_vat_percent }}%)</td>
+                        <td class="bq-amt" id="t-vat">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    <tr class="bq-grand">
+                        <td class="bq-lbl" colspan="3">GRAND TOTAL</td>
+                        <td class="bq-amt" id="t-grand">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    {% if default_deposit_percent %}
+                    <tr class="bqt-static">
+                        <td class="bq-lbl" colspan="3">DEPOSIT ({{ default_deposit_percent }}%)</td>
+                        <td class="bq-amt" id="t-deposit">{{ quote_currency }}0.00</td>
+                        <td></td>
+                    </tr>
+                    {% endif %}
+                    {% for term in default_terms %}
+                    <tr class="bq-terms bqt-static"><td colspan="5">{{ term }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% include "bot/includes/quote_footer.html" %}
+        </div>
+
+        <p class="bqt-note bq-no-print">
+            VAT, the deposit and the payment terms come from your Profile and
+            are set on each quote. Everything above them is what a quote built
+            from this template starts with.
+        </p>
+
+        {% comment %}
+        The bar that closes the page, in flow at the very end — never pinned to
+        the viewport (owner rule, 2026-09-08). Three actions, because a
+        template has nothing to email, WhatsApp or download.
+        {% endcomment %}
+        <div class="bq-actions bq-actions--bottom bq-no-print">
+            <a href="{% url 'quotation_templates_list' %}" class="btn btn-secondary">
+                <i class="fas fa-times"></i> Cancel
+            </a>
+            <button type="button" class="btn btn-outline-primary" id="bqtAddSectionFoot">
+                <i class="fas fa-plus"></i> Add Section
+            </button>
+            <button type="submit" class="btn btn-primary" id="saveBtn">
+                <i class="fas fa-save"></i> Save Template
+            </button>
+        </div>
+    </form>
+
+    {% comment %}
+    The prototype row, straight from the formset's own `empty_form`, so a row
+    added in the browser posts exactly the fields a server-rendered one does.
+    `__prefix__` becomes the new index.
+    {% endcomment %}
+    <template id="bqtRowProto">
+        <tr class="bqt-row">
+            <td>{{ formset.empty_form.quantity_text }}</td>
+            <td>{{ formset.empty_form.description }}</td>
+            <td>
+                <div class="bq-money">
+                    <span class="bq-sym">$</span>{{ formset.empty_form.unit_price }}
+                </div>
+            </td>
+            <td class="bq-total-cell"><span class="bqt-line">$0.00</span></td>
+            <td class="bq-act bq-no-print">
+                <button type="button" class="bq-rm" title="Remove item" data-remove-row>&times;</button>
+                <span class="bqt-hidden">
+                    {{ formset.empty_form.id }}{{ formset.empty_form.section }}{{ formset.empty_form.quantity }}
+                    {{ formset.empty_form.category }}{{ formset.empty_form.is_optional }}
+                    {{ formset.empty_form.sort_order }}{{ formset.empty_form.DELETE }}
+                </span>
+            </td>
+        </tr>
+    </template>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    // The tenant's own symbol, never a hardcoded "US$".
+    const CURRENCY = "{{ quote_currency|escapejs }}";
+    const VAT_PCT = parseFloat("{{ default_vat_percent|escapejs }}") || 0;
+    const DEPOSIT_PCT = parseFloat("{{ default_deposit_percent|escapejs }}") || 0;
+
+    const tbody = document.getElementById('bqtSections');
+    const anchor = document.getElementById('bqtAddSectionRow');
+    const proto = document.getElementById('bqtRowProto');
+    const totalForms = document.querySelector('#id_items-TOTAL_FORMS');
+
+    let formIdx = parseInt(totalForms.value, 10);
+    let sectionSeq = document.querySelectorAll('#bqtSections tr.bqt-sec').length;
+    let isSubmitting = false;
+
+    /* Line cells print a plain dollar figure and the running totals the
+       tenant's symbol — exactly as the quote sheet does, so the two read the
+       same at a glance. */
+    function money(n) {
+        return '$' + (isNaN(n) ? 0 : n).toFixed(2);
+    }
+
+    function currency(n) {
+        return CURRENCY + (isNaN(n) ? 0 : n).toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    /* Quantities are written the way the trade writes them — "19 length",
+       "20 ltrs", "3". Take the leading number; the words stay on the sheet. */
+    function qtyNum(value) {
+        const match = String(value === null || value === undefined ? '' : value)
+            .match(/-?\d*\.?\d+/);
+        return match ? parseFloat(match[0]) : 0;
+    }
+
+    function field(row, suffix) {
+        return row.querySelector('[id$="-' + suffix + '"]');
+    }
+
+    function value(row, suffix) {
+        const input = field(row, suffix);
+        return input ? input.value : '';
+    }
+
+    function liveRows(sid) {
+        const selector = sid === undefined
+            ? '#bqtSections tr.bqt-row'
+            : '#bqtSections tr.bqt-row[data-row-section="' + sid + '"]';
+        return Array.prototype.slice.call(document.querySelectorAll(selector))
+            .filter(function (row) { return !row.classList.contains('bqt-deleted'); });
+    }
+
+    function sections() {
+        return Array.prototype.slice.call(
+            document.querySelectorAll('#bqtSections tr.bqt-sec'));
+    }
+
+    // ── the single choke point for every figure on the sheet ────────────────
+    function recalc() {
+        let materials = 0;
+
+        sections().forEach(function (head) {
+            const sid = head.dataset.section;
+            let secTotal = 0;
+            liveRows(sid).forEach(function (row) {
+                const line = qtyNum(value(row, 'quantity_text'))
+                           * (parseFloat(value(row, 'unit_price')) || 0);
+                const cell = row.querySelector('.bqt-line');
+                if (cell) { cell.textContent = money(line); }
+                secTotal += line;
+            });
+            const cell = document.querySelector('[data-sec-total="' + sid + '"]');
+            if (cell) { cell.textContent = currency(secTotal); }
+            materials += secTotal;
+        });
+
+        const labour = parseFloat(
+            (document.querySelector('#id_default_labor_cost') || {}).value) || 0;
+        const transport = parseFloat(
+            (document.querySelector('#id_default_transport_cost') || {}).value) || 0;
+
+        const subtotal = materials + labour + transport;
+        const vat = subtotal * VAT_PCT / 100;
+        const grand = subtotal + vat;
+
+        document.getElementById('t-materials').textContent = currency(materials);
+        document.getElementById('t-subtotal').textContent = currency(subtotal);
+        document.getElementById('t-vat').textContent = currency(vat);
+        document.getElementById('t-grand').textContent = currency(grand);
+        const deposit = document.getElementById('t-deposit');
+        if (deposit) { deposit.textContent = currency(grand * DEPOSIT_PCT / 100); }
+    }
+
+    /* The heading is typed once and written onto every row beneath it: the
+       row is what reaches the server, and a section is only a section because
+       consecutive rows share a title. */
+    function syncSection(sid) {
+        const head = document.querySelector('#bqtSections tr.bqt-sec[data-section="' + sid + '"]');
+        if (!head) { return; }
+        const title = head.querySelector('.bq-sec-title').value.trim();
+        // Deleted rows are stamped too: they still post, marked DELETE, and a
+        // row that came back would otherwise carry a stale heading.
+        document.querySelectorAll(
+            '#bqtSections tr.bqt-row[data-row-section="' + sid + '"]'
+        ).forEach(function (row) {
+            const input = field(row, 'section');
+            if (input) { input.value = title; }
+        });
+    }
+
+    function addRow(sid, reveal) {
+        const subtotal = document.querySelector('[data-sub-for="' + sid + '"]');
+        if (!subtotal || !proto) { return null; }
+
+        const index = formIdx;
+        formIdx++;
+        totalForms.value = formIdx;
+
+        const markup = proto.innerHTML.replace(/__prefix__/g, index);
+        const holder = document.createElement('tbody');
+        holder.innerHTML = markup.trim();
+        const row = holder.querySelector('tr');
+        row.dataset.rowSection = sid;
+
+        const qty = field(row, 'quantity');
+        if (qty) { qty.value = '0'; }
+        const order = field(row, 'sort_order');
+        if (order) { order.value = index; }
+
+        subtotal.parentNode.insertBefore(row, subtotal);
+        syncSection(sid);
+        recalc();
+
+        if (reveal) {
+            // 'nearest' so the rows already entered stay where they are.
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const desc = field(row, 'description');
+            if (desc) { desc.focus({ preventScroll: true }); }
+        }
+        return row;
+    }
+
+    /* Keep one blank row waiting at the end of every section, the same rule
+       the quote sheet follows: a row counts once it has a description, and
+       rows without one are never saved. Silent — it fires while the plumber
+       is typing somewhere else, so it must not take the caret. */
+    function ensureBlankRow(sid) {
+        const rows = liveRows(sid);
+        if (rows.length && rows.every(function (row) {
+            return value(row, 'description').trim();
+        })) {
+            addRow(sid, false);
+        }
+    }
+
+    function addSection(title, reveal) {
+        const sid = ++sectionSeq;
+
+        const head = document.createElement('tr');
+        head.className = 'bqt-sec';
+        head.dataset.section = sid;
+        head.innerHTML = '<td colspan="5"><div class="bq-sec-wrap">'
+            + '<span class="bq-num">' + sid + '.</span>'
+            + '<input class="bq-sec-title" type="text" placeholder="SECTION TITLE" value="">'
+            + '<button type="button" class="bq-rm bq-no-print" title="Remove section" '
+            + 'data-remove-section="' + sid + '">&times;</button>'
+            + '</div></td>';
+        tbody.insertBefore(head, anchor);
+        if (title) { head.querySelector('.bq-sec-title').value = title; }
+
+        const sub = document.createElement('tr');
+        sub.className = 'bq-subtotal';
+        sub.dataset.subFor = sid;
+        sub.innerHTML = '<td class="bq-lbl" colspan="3">SUB-TOTAL</td>'
+            + '<td class="bq-val" data-sec-total="' + sid + '">' + currency(0) + '</td><td></td>';
+        tbody.insertBefore(sub, anchor);
+
+        const add = document.createElement('tr');
+        add.className = 'bq-add-item bq-no-print';
+        add.dataset.addFor = sid;
+        add.innerHTML = '<td colspan="5"><button type="button" class="bq-tiny" '
+            + 'data-add-item="' + sid + '">+ Add item</button></td>';
+        tbody.insertBefore(add, anchor);
+
+        // ONE blank row, the same rule the flat builder opens on: the next
+        // appears the moment this one is filled (`ensureBlankRow`), so there
+        // is always exactly one spare and never a screen of scaffolding.
+        addRow(sid, false);
+
+        if (reveal) {
+            const input = head.querySelector('.bq-sec-title');
+            input.focus({ preventScroll: true });
+            head.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        recalc();
+        return sid;
+    }
+
+    function renumberSections() {
+        let n = 0;
+        sections().forEach(function (head) {
+            n++;
+            head.querySelector('.bq-num').textContent = n + '.';
+        });
+    }
+
+    /* Removing a row ticks the formset's own DELETE box rather than dropping
+       it from the DOM: the row has to REACH the server marked for deletion, or
+       the formset simply keeps it. */
+    function removeRow(row) {
+        const flag = field(row, 'DELETE');
+        const saved = field(row, 'id');
+        if (flag && saved && saved.value) {
+            flag.checked = true;
+            row.classList.add('bqt-deleted');
+            row.style.display = 'none';
+        } else {
+            if (flag) { flag.checked = true; }
+            row.remove();
+        }
+    }
+
+    function removeSection(sid) {
+        if (!window.confirm('Remove this section and all of its items?')) { return; }
+        document.querySelectorAll(
+            '#bqtSections tr.bqt-row[data-row-section="' + sid + '"]'
+        ).forEach(removeRow);
+        ['tr.bqt-sec[data-section="', 'tr[data-sub-for="', 'tr[data-add-for="'].forEach(
+            function (prefix) {
+                const el = document.querySelector('#bqtSections ' + prefix + sid + '"]');
+                if (el) { el.remove(); }
+            });
+        // A sheet with no sections at all has no way back except Add Section,
+        // so it always keeps one.
+        if (!sections().length) { addSection('', false); }
+        renumberSections();
+        recalc();
+    }
+
+    // ── wiring ──────────────────────────────────────────────────────────────
+    // Delegated, so rows and sections added later keep working.
+    document.addEventListener('input', function (event) {
+        const target = event.target;
+
+        if (target.classList && target.classList.contains('bq-sec-title')) {
+            const head = target.closest('tr.bqt-sec');
+            if (head) { syncSection(head.dataset.section); }
+            return;
+        }
+
+        const row = target.closest ? target.closest('tr.bqt-row') : null;
+        if (row) {
+            const id = target.getAttribute('id') || '';
+            if (id.endsWith('-quantity_text')) {
+                // The number the line total is calculated from follows the
+                // wording; the wording is what prints.
+                const qty = field(row, 'quantity');
+                if (qty) { qty.value = qtyNum(target.value); }
+            }
+            if (id.endsWith('-quantity_text') || id.endsWith('-unit_price')
+                || id.endsWith('-description')) {
+                recalc();
+                ensureBlankRow(row.dataset.rowSection);
+            }
+            return;
+        }
+
+        if (target.id === 'id_default_labor_cost' || target.id === 'id_default_transport_cost') {
+            recalc();
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        const target = event.target;
+
+        const addItem = target.closest ? target.closest('[data-add-item]') : null;
+        if (addItem) {
+            event.preventDefault();
+            addRow(addItem.getAttribute('data-add-item'), true);
+            return;
+        }
+
+        const removeRowBtn = target.closest ? target.closest('[data-remove-row]') : null;
+        if (removeRowBtn) {
+            event.preventDefault();
+            const row = removeRowBtn.closest('tr.bqt-row');
+            const sid = row.dataset.rowSection;
+            removeRow(row);
+            // Only refill when that was the section's last row: refilling on
+            // every delete makes deleting the spare look like it failed.
+            if (!liveRows(sid).length) { addRow(sid, false); }
+            recalc();
+            return;
+        }
+
+        const removeSectionBtn = target.closest ? target.closest('[data-remove-section]') : null;
+        if (removeSectionBtn) {
+            event.preventDefault();
+            removeSection(removeSectionBtn.getAttribute('data-remove-section'));
+        }
+    });
+
+    ['bqtAddSection', 'bqtAddSectionFoot'].forEach(function (id) {
+        const button = document.getElementById(id);
+        if (button) {
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
+                addSection('', true);
+            });
+        }
+    });
+
+    /* Blank scaffolding rows are marked for deletion rather than posted: the
+       formset validates unit_price, and one untouched spare would fail the
+       whole save. */
+    function dropEmptyRows() {
+        liveRows().forEach(function (row) {
+            const described = value(row, 'description').trim();
+            const priced = parseFloat(value(row, 'unit_price')) || 0;
+            if (!described && !priced) { removeRow(row); }
+        });
+    }
+
+    /* The order the sheet is READ in is the order it has to be stored in:
+       sections group by consecutive rows sharing a heading, so a row added to
+       section 1 after section 2 exists must still sort before section 2's. */
+    function stampOrder() {
+        let n = 0;
+        liveRows().forEach(function (row) {
+            const order = field(row, 'sort_order');
+            if (order) { order.value = n; }
+            const qty = field(row, 'quantity');
+            if (qty) { qty.value = qtyNum(value(row, 'quantity_text')); }
+            n++;
+        });
+    }
+
+    document.getElementById('templateForm').addEventListener('submit', function (event) {
+        if (isSubmitting) { return true; }
+        event.preventDefault();
+
+        sections().forEach(function (head) { syncSection(head.dataset.section); });
+        dropEmptyRows();
+        stampOrder();
+        recalc();
+
+        const complete = liveRows().some(function (row) {
+            return value(row, 'description').trim() && value(row, 'unit_price') !== '';
+        });
+        if (!complete) {
+            document.getElementById('bqtAlert').innerHTML =
+                '<div class="pb-alert pb-alert--error">'
+                + 'Add at least one item with a description and a price.</div>';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return false;
+        }
+
+        isSubmitting = true;
+        this.submit();
+    });
+
+    // A brand new template opens on one section with room to type in it.
+    if (!sections().length) { addSection('', false); }
+    sections().forEach(function (head) {
+        syncSection(head.dataset.section);
+        ensureBlankRow(head.dataset.section);
+    });
+    recalc();
+});
+</script>
+{% endblock %}

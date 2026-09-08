@@ -3712,7 +3712,9 @@ class QuotationTemplate(models.Model):
             QuotationTemplateItem.objects.create(
                 template=new_template,
                 description=item.description,
+                section=item.section,
                 quantity=item.quantity,
+                quantity_text=item.quantity_text,
                 unit_price=item.unit_price,
                 category=item.category,
                 is_optional=item.is_optional,
@@ -3736,7 +3738,17 @@ class QuotationTemplateItem(models.Model):
     
     template = models.ForeignKey(QuotationTemplate, on_delete=models.CASCADE, related_name='items')
     description = models.CharField(max_length=300)
+    # The heading this line sits under on a sectioned template ("DRAINAGE PIPE
+    # & MATERIAL"), exactly as QuotationItem.section works: a template built on
+    # the sectioned sheet carries its own sections onto the quote it starts,
+    # instead of arriving as one undifferentiated block. Blank on a flat
+    # template, which is the default layout.
+    section = models.CharField(max_length=120, blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    # How the quantity is written on the paper sheet - "19 length", "20 ltrs".
+    # `quantity` keeps the number the line total is calculated from; this keeps
+    # the words. Blank falls back to rendering `quantity`.
+    quantity_text = models.CharField(max_length=40, blank=True, default='')
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='materials')
     is_optional = models.BooleanField(default=False, help_text="Mark if this item is optional")
@@ -3744,7 +3756,11 @@ class QuotationTemplateItem(models.Model):
     sort_order = models.IntegerField(default=0)
     
     class Meta:
-        ordering = ['sort_order', 'category', 'description']
+        # sort_order first, then insertion order. Consecutive rows sharing a
+        # section title form ONE section, so the order the lines were typed in
+        # is the grouping - falling back to category/description would shuffle
+        # a section's rows apart the moment two shared a sort_order.
+        ordering = ['sort_order', 'id']
     
     def __str__(self):
         return f"{self.description} - US${self.unit_price} x {self.quantity}"

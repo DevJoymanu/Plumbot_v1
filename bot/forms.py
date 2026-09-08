@@ -144,7 +144,9 @@ class QuotationTemplateItemForm(forms.ModelForm):
         model = QuotationTemplateItem
         fields = [
             'description',
-            'quantity', 
+            'section',
+            'quantity',
+            'quantity_text',
             'unit_price',
             'category',
             'is_optional',
@@ -152,17 +154,32 @@ class QuotationTemplateItemForm(forms.ModelForm):
             'sort_order'
         ]
         widgets = {
+            # bq-cell/bq-desc are the sectioned sheet's in-cell look; they
+            # are inert on the flat builder, which never loads that stylesheet.
             'description': forms.TextInput(attrs={
-                'class': 'form-control',
+                'class': 'form-control bq-cell bq-desc',
                 'placeholder': 'Item description'
             }),
+            # The section a row belongs to is never typed into the row: the
+            # sectioned builder writes it from the heading above, and the flat
+            # builder does not render it at all. Hidden on both, so neither
+            # screen grows a field the plumber has to keep in step by hand.
+            'section': forms.HiddenInput(),
             'quantity': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'step': '0.01'
             }),
+            # The trade's own wording ("19 length"). The sectioned builder
+            # shows this as the QTY cell and derives the number beside it.
+            'quantity_text': forms.TextInput(attrs={
+                'class': 'form-control bq-cell bq-qty',
+                'placeholder': '0',
+            }),
             'unit_price': forms.NumberInput(attrs={
-                'class': 'form-control',
-                'step': '0.01'
+                'class': 'form-control bq-cell bq-unit',
+                'step': '0.01',
+                'inputmode': 'decimal',
+                'placeholder': '0.00',
             }),
             'category': forms.Select(attrs={'class': 'form-control'}),
             'is_optional': forms.CheckboxInput(attrs={'class': 'form-check-input'}),

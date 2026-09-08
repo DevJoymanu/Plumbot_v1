@@ -8101,6 +8101,33 @@ class OneTemplateBuilderTests(StaffClientTestCase):
             self.assertGreater(card.index(field), card.index('qt-more'),
                                f'{field} is on the face of the card')
 
+    def test_the_flat_builder_posts_a_sectioned_templates_grouping_back(self):
+        """A global template built on the sectioned sheet can be opened here by
+        the operator. `section` has no place on this screen, but a field the
+        form did not render comes back BLANK and wipes the grouping, so it is
+        carried hidden."""
+        item = self.template.items.first()
+        item.section = 'CONTROL VALVES'
+        item.quantity_text = '19 length'
+        item.save(update_fields=['section', 'quantity_text'])
+
+        html = self._html(reverse('edit_quotation_template', args=[self.template.pk]))
+        self.assertIn('value="CONTROL VALVES"', html)
+
+        self.client.post(
+            reverse('edit_quotation_template', args=[self.template.pk]),
+            self._payload(**{
+                'name': 'Standard Bathroom',
+                'items-INITIAL_FORMS': '1', 'items-TOTAL_FORMS': '1',
+                'items-0-id': str(item.pk), 'items-0-description': 'Toilet suite',
+                'items-0-section': 'CONTROL VALVES',
+                'items-0-quantity': '1', 'items-0-quantity_text': '19 length',
+                'items-0-unit_price': '180', 'items-0-category': 'fixtures',
+                'items-0-sort_order': '0',
+            }))
+        item.refresh_from_db()
+        self.assertEqual(item.section, 'CONTROL VALVES')
+
     def test_the_list_opens_with_one_card_like_the_quote_editor(self):
         """The quote editor opens on ONE blank item and adds the next when
         that one is filled. Five blank forms were cheap as table rows and are
@@ -8315,3 +8342,482 @@ class QuoteDraftAutosaveTests(StaffClientTestCase):
             with self.subTest(screen=screen):
                 self.assertIn('onDraftEdit', html)
                 self.assertNotIn("addEventListener('input', scheduleDraftSave)", html)
+
+
+class QuotePlanTabTests(StaffClientTestCase):
+    """Two tabs stuck to the quote screen: QUOTE, and the plan behind it.
+
+    A quote is typed off a drawing, and the drawing was on the lead's page. The
+    loop was leave the quote, find the plan block, open the plan, read one
+    number, come back, find your place in the item list — twenty times a quote,
+    on a phone, on site. Both are on this screen now.
+
+    Switching tabs must never navigate: the quote panel is HIDDEN, not unloaded,
+    which is what keeps the fields, the item list and the caret exactly where
+    they were. That behaviour is exercised for real in jsdom against the
+    rendered pages; these cases pin the wiring on every editor of both layouts.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9670, customer_name='Plan Client',
+                              customer_area='Borrowdale',
+                              project_description='Two bathrooms and a guest toilet.')
+
+    @staticmethod
+    def _with_plan(lead):
+        lead.plan_file.save('house-plan.pdf',
+                            SimpleUploadedFile('house-plan.pdf', b'%PDF-1.4 x'),
+                            save=True)
+        return lead
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    def _flat_editors(self):
+        quote = Quotation.objects.create(appointment=self.lead)
+        return {
+            'flat create': reverse('create_quotation', args=[self.lead.pk]),
+            'flat edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _sectioned_editors(self):
+        tenant = Tenant.objects.create(name='Barmak Tabs', slug='barmak-tabs')
+        TenantProfile.objects.create(tenant=tenant, letterhead=SECTIONED_LETTERHEAD)
+        user = get_user_model().objects.create_user(
+            username='tabs-sectioned', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        self.client.force_login(user)
+        lead = self._with_plan(make_lead(9671, tenant=tenant, customer_name='Sect Plan',
+                                         project_description='Re-pipe the whole house.'))
+        quote = Quotation.objects.create(appointment=lead)
+        return lead, {
+            'sectioned create': reverse('create_quotation', args=[lead.pk]),
+            'sectioned edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _every_editor(self):
+        """Every screen a quote is typed on, in both layouts."""
+        self._with_plan(self.lead)
+        for name, url in self._flat_editors().items():
+            yield name, self.lead, self._html(url)
+        lead, urls = self._sectioned_editors()
+        for name, url in urls.items():
+            yield name, lead, self._html(url)
+
+    @staticmethod
+    def _open_tag(html, marker):
+        start = html.index(marker)
+        return html[start:html.index('>', start)]
+
+    # -- the bar itself ------------------------------------------------------
+
+    def test_both_layouts_carry_the_two_tabs(self):
+        for screen, _lead, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn('id="pbqTabs"', html)
+                self.assertIn('data-pbq-tab="quote"', html)
+                self.assertIn('data-pbq-tab="plan"', html)
+                self.assertIn('id="pbqQuotePanel"', html, 'the sheet is not a panel')
+                self.assertIn('id="pbqPlanPanel"', html)
+
+    def test_the_quote_is_what_you_land_on(self):
+        """The plan is the detour, not the destination."""
+        for screen, _lead, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn('hidden', self._open_tag(html, 'id="pbqPlanPanel"'),
+                              f'{screen} opens on the plan')
+                self.assertNotIn('hidden', self._open_tag(html, 'id="pbqQuotePanel"'),
+                                 f'{screen} opens with the sheet hidden')
+
+    def test_a_lead_with_nothing_behind_the_tab_gets_no_tab(self):
+        """A tab that opens on an empty page is a dead control."""
+        bare = make_lead(9672, customer_name='Bare Lead')
+        html = self._html(reverse('create_quotation', args=[bare.pk]))
+        self.assertNotIn('id="pbqTabs"', html)
+        self.assertIn('id="pbqQuotePanel"', html, 'the sheet still renders')
+
+    def test_a_quote_with_no_lead_gets_no_tabs(self):
+        html = self._html(reverse('standalone_quotation'))
+        self.assertNotIn('id="pbqTabs"', html)
+
+    def test_a_lead_with_only_words_still_gets_the_tab(self):
+        """The description alone is worth the trip: it is what they asked for in
+        their own words, and the quote is written off it."""
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('id="pbqTabs"', html)
+        self.assertIn('Two bathrooms and a guest toilet.', html)
+
+    # -- what is behind it ---------------------------------------------------
+
+    def test_the_customers_own_words_are_there_verbatim(self):
+        for screen, lead, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn(lead.project_description, html)
+
+    def test_the_files_are_served_by_index_not_by_storage_url(self):
+        """R2's presigned links expire and a mis-set backend hands back a bare
+        path that 404s, which is why the lead page streams them too."""
+        for screen, lead, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn(
+                    reverse('appointment_document_file', args=[lead.pk, 0]), html)
+
+    def test_the_plan_is_not_downloaded_until_it_is_opened(self):
+        """A plan is often several MB and this screen is used on mobile data.
+        Nobody pays for it on a quote where they never open the plan."""
+        for screen, _lead, html in self._every_editor():
+            with self.subTest(screen=screen):
+                self.assertIn('data-pbq-src=', html)
+                embed = self._open_tag(html, 'data-pbq-src=')
+                self.assertNotIn(' src=', embed,
+                                 f'{screen} fetches the plan at page load')
+
+    def test_the_lead_behind_the_tab_is_the_quotes_own_lead(self):
+        """Same rule as every other value on the sheet: it resolves through the
+        lead, never through whoever happens to be looking at the screen."""
+        other = make_lead(9673, customer_name='Someone Else',
+                          project_description='A different job entirely.')
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('Two bathrooms and a guest toilet.', html)
+        self.assertNotIn('A different job entirely.', html)
+        self.assertNotIn(f'/{other.pk}/documents/file/', html)
+
+    # -- printing ------------------------------------------------------------
+
+    def test_printing_from_the_plan_tab_still_prints_the_quote(self):
+        """Belt and braces: the JS switches back on beforeprint, and the print
+        stylesheet un-hides the sheet for a print the page never sees."""
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]))
+        self.assertIn('#pbqQuotePanel[hidden] { display: block !important; }', html)
+        self.assertIn("window.addEventListener('beforeprint'", html)
+
+
+class SectionedTemplateBuilderTests(TestCase):
+    """A tenant on the sectioned sheet builds their templates ON that sheet.
+
+    The rule the flat builder already follows — building a template is building
+    a quote, so the builder is the quote editor's layout — read through the
+    same per-tenant switch every quote screen uses. Barmak's builder is Barmak's
+    quote document: their letterhead, numbered sections with SUB-TOTALs, the
+    QTY | DESCRIPTION | UNIT PRICE | TOTAL PRICE columns in the sheet's own
+    order, the labour / transport / VAT / GRAND TOTAL block and the banking
+    foot. Homebase, on the flat layout, is untouched.
+    """
+
+    LETTERHEAD = {
+        'layout': 'sectioned',
+        'trading_name': 'ROYAL HARDWARE',
+        'phones': ['+263 77 387 1503', '+263 77 324 0167'],
+        'public_email': 'info@barmakplumbing.co.zw',
+        'website': 'www.barmakplumbing.co.zw',
+        'services_blurb': 'For all: supply & new installation water & sewer reticulation.',
+        'maintenance_blurb': 'Maintenance: water leaks, no water, low pressure & blockages.',
+        'tagline': 'Quality is our mission',
+        'signatory': 'Director K. Marange',
+        'bank': {'account_name': 'Barmak Plumbing Private Limited', 'bank_name': 'CABS',
+                 'branch': 'Park street', 'account_number': '1154714543'},
+        'terms': ['deposit 75%', 'Balance to be paid on completion of 1st stage'],
+        'default_deposit_percent': 75,
+    }
+
+    #: The document, top to bottom — the same blocks in the same order as the
+    #: paper quote this sheet was drawn from. "Identical layout" measured
+    #: rather than asserted.
+    SHEET_SKELETON = [
+        'bq-sheet',                                    # the sheet itself
+        'bq-head', 'bq-ta', 'bq-blurb', 'bq-qtitle',   # letterhead
+        'bq-meta',                                     # who/what it is for
+        'bq-table',                                    # one table, header once
+        '>QTY<', '>DESCRIPTION<', '>UNIT PRICE<', '>TOTAL PRICE<',
+        'bqt-sec', 'bq-sec-title',                     # a numbered heading
+        'bq-subtotal', 'SUB-TOTAL',                    # its own subtotal
+        'bq-add-section-btn',
+        'bq-totals', 'MATERIALS SUB-TOTAL', 'Labour', 'Transport',
+        'VAT', 'GRAND TOTAL',
+        'bq-foot', 'Banking Details', 'Client signature',
+        'bq-actions--bottom',                          # the bar that closes it
+    ]
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Barmak Plumbing', slug='barmak-plumbing')
+        TenantProfile.objects.create(tenant=self.tenant, letterhead=self.LETTERHEAD)
+        self.user = get_user_model().objects.create_user(
+            username='barmak-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=self.user, tenant=self.tenant, role='staff')
+        self.client.force_login(self.user)
+
+        self.template = QuotationTemplate.objects.create(
+            name='Standard drainage', project_type='general', tenant=self.tenant,
+            default_labor_cost=Decimal('625'), default_transport_cost=Decimal('70'))
+        for order, (section, qty_text, qty, description, price) in enumerate([
+                ('CONTROL VALVES', '5', 5, '20mm ball cork', '10'),
+                ('CONTROL VALVES', '1', 1, '20mm pressure control valve', '28'),
+                ('DRAINAGE PIPE & MATERIAL', '19 length', 19, '110mm pvc UG Pipe', '18'),
+        ]):
+            QuotationTemplateItem.objects.create(
+                template=self.template, section=section, description=description,
+                quantity=qty, quantity_text=qty_text, unit_price=Decimal(price),
+                sort_order=order)
+
+    def _builders(self):
+        return {
+            'create': reverse('create_quotation_template'),
+            'edit': reverse('edit_quotation_template', args=[self.template.pk]),
+        }
+
+    def _html(self, url):
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    @staticmethod
+    def _client_for(tenant, username):
+        from django.test import Client
+        user = get_user_model().objects.create_user(
+            username=username, password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        client = Client()
+        client.force_login(user)
+        return client
+
+    # -- which sheet each tenant gets ---------------------------------------
+
+    def test_a_sectioned_tenant_builds_on_the_sectioned_sheet(self):
+        for name, url in self._builders().items():
+            with self.subTest(screen=name):
+                response = self.client.get(url)
+                self.assertIn('bot/pages/quotation_template_sectioned_form.html',
+                              [t.name for t in response.templates])
+
+    def test_a_flat_tenant_keeps_the_flat_builder(self):
+        """The switch is the tenant's own layout, not a slug and not a
+        redesign for everybody."""
+        client = self._client_for(Tenant.objects.get(slug='homebase'), 'hb-staff')
+        response = client.get(reverse('create_quotation_template'))
+        self.assertIn('bot/pages/quotation_template_form.html',
+                      [t.name for t in response.templates])
+
+    # -- the layout is the document's ---------------------------------------
+
+    def test_the_builder_renders_the_documents_skeleton_in_order(self):
+        for name, url in self._builders().items():
+            html = self._html(url)
+            body = html[html.index('class="bq-page'):]
+            with self.subTest(screen=name):
+                at = -1
+                for marker in self.SHEET_SKELETON:
+                    found = body.find(marker, at + 1)
+                    self.assertGreater(found, at,
+                                       f'{name}: {marker} is missing or out of order')
+                    at = found
+
+    def test_the_column_header_is_the_sheets_own_order_drawn_once(self):
+        """QTY first and Item nowhere: the sheet leads with the quantity, and
+        one table means the header repeats only on a page break."""
+        html = self._html(reverse('create_quotation_template'))
+        table = html.split('<table class="bq-table"', 1)[1].split('</table>', 1)[0]
+        self.assertEqual(table.count('<th>QTY</th>'), 1)
+        order = [table.index(col) for col in
+                 ('>QTY<', '>DESCRIPTION<', '>UNIT PRICE<', '>TOTAL PRICE<')]
+        self.assertEqual(order, sorted(order))
+
+    def test_the_sheet_carries_the_tenants_own_letterhead_and_foot(self):
+        html = self._html(reverse('create_quotation_template'))
+        for fact in ('ROYAL HARDWARE', '+263 77 387 1503', 'info@barmakplumbing.co.zw',
+                     'Quality is our mission', 'CABS', '1154714543',
+                     'Director K. Marange'):
+            self.assertIn(fact, html, f'the sheet is missing {fact}')
+
+    def test_no_other_tenants_details_reach_the_sheet(self):
+        """Absent means omit, never borrow — the rule every quote screen
+        follows."""
+        bare = Tenant.objects.create(name='Bare Plumbing', slug='bare-plumbing')
+        TenantProfile.objects.create(tenant=bare, letterhead={'layout': 'sectioned'})
+        html = self._client_for(bare, 'bare-staff').get(
+            reverse('create_quotation_template')).content.decode()
+
+        self.assertIn('Bare Plumbing', html)
+        for borrowed in ('ROYAL HARDWARE', 'CABS', '1154714543', 'Director K. Marange',
+                         'barmakplumbing', 'HOMEBASE'):
+            self.assertNotIn(borrowed, html, f'{borrowed} leaked onto another tenant')
+        # No bank on file means no Banking Details block at all.
+        self.assertNotIn('Banking Details', html)
+
+    def test_the_per_job_figures_are_shown_but_not_editable(self):
+        """VAT, the deposit and the terms are the business's own defaults, set
+        on the Profile page and applied per quote. They belong on the sheet
+        where the quote will carry them, and nowhere near an input here."""
+        html = self._html(reverse('create_quotation_template'))
+        totals = html.split('<table class="bq-totals"', 1)[1].split('</table>', 1)[0]
+        self.assertIn('DEPOSIT (75%)', totals)
+        self.assertIn('deposit 75%', totals)
+        self.assertNotIn('<input', totals.split('VAT (', 1)[1])
+
+    def test_labour_and_transport_are_the_only_figures_typed_here(self):
+        html = self._html(reverse('create_quotation_template'))
+        totals = html.split('<table class="bq-totals"', 1)[1].split('</table>', 1)[0]
+        self.assertIn('id_default_labor_cost', totals)
+        self.assertIn('id_default_transport_cost', totals)
+
+    def test_every_figure_is_in_the_tenants_own_currency(self):
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                body = html[html.rindex('</style>'):]
+                self.assertIn('US$0.00', body)
+                self.assertNotIn('R 0.00', body)
+
+    def test_saving_is_the_last_thing_on_the_page(self):
+        for name, url in self._builders().items():
+            html = self._html(url)
+            with self.subTest(screen=name):
+                self.assertLess(html.index('bq-totals'), html.index('id="saveBtn"'))
+                self.assertLess(html.index('bq-foot'), html.index('id="saveBtn"'))
+
+    # -- the sections survive the round trip --------------------------------
+
+    def test_a_saved_template_comes_back_as_the_sections_it_was_typed_in(self):
+        groups = self.client.get(
+            reverse('edit_quotation_template', args=[self.template.pk])
+        ).context['formset_sections']
+        self.assertEqual([group['title'] for group in groups],
+                         ['CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+        self.assertEqual([len(group['forms']) for group in groups], [2, 1])
+
+    def test_the_trade_wording_of_a_quantity_survives(self):
+        """'19 length' is what prints; 19 is what the line total is worked
+        out from."""
+        html = self._html(reverse('edit_quotation_template', args=[self.template.pk]))
+        self.assertIn('value="19 length"', html)
+
+    def test_a_new_template_opens_on_one_section_with_one_blank_row(self):
+        """The same rule the flat builder opens on: one blank, and the next
+        the moment it is filled. The prototype row behind the Add buttons is
+        not counted - it lives in an inert <template> outside the form."""
+        response = self.client.get(reverse('create_quotation_template'))
+        self.assertEqual(len(response.context['formset_sections']), 1)
+        body = (response.content.decode()
+                .split('id="bqtSections"', 1)[1].split('id="bqtAddSectionRow"', 1)[0])
+        self.assertEqual(body.count('class="bqt-row"'), 1)
+
+    def _payload(self, **extra):
+        payload = {
+            'name': 'Drainage block', 'project_type': 'general',
+            'description': 'The usual drainage run',
+            'default_labor_cost': '625', 'default_transport_cost': '70',
+            'is_active': 'on',
+            'items-TOTAL_FORMS': '2', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-description': '20mm ball cork', 'items-0-section': 'CONTROL VALVES',
+            'items-0-quantity': '5', 'items-0-quantity_text': '5',
+            'items-0-unit_price': '10', 'items-0-category': 'materials',
+            'items-0-sort_order': '0',
+            'items-1-description': '110mm pvc UG Pipe',
+            'items-1-section': 'DRAINAGE PIPE & MATERIAL',
+            'items-1-quantity': '19', 'items-1-quantity_text': '19 length',
+            'items-1-unit_price': '18', 'items-1-category': 'materials',
+            'items-1-sort_order': '1',
+        }
+        payload.update(extra)
+        return payload
+
+    def test_saving_writes_the_sections_and_the_trade_quantities(self):
+        response = self.client.post(reverse('create_quotation_template'), self._payload())
+        self.assertEqual(response.status_code, 302)
+        created = QuotationTemplate.objects.get(name='Drainage block')
+        rows = list(created.items.all())
+        self.assertEqual([row.section for row in rows],
+                         ['CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+        self.assertEqual([row.quantity_text for row in rows], ['5', '19 length'])
+        self.assertEqual(rows[1].quantity, Decimal('19'))
+
+    def test_the_stored_order_is_the_order_the_sheet_reads_in(self):
+        """Sections group by CONSECUTIVE rows sharing a heading, so a row added
+        to the first section after the second exists must still sort before
+        it — which is what sort_order carries."""
+        self.client.post(reverse('create_quotation_template'), self._payload(**{
+            'items-TOTAL_FORMS': '3',
+            'items-2-description': '20mm pressure control valve',
+            'items-2-section': 'CONTROL VALVES',
+            'items-2-quantity': '1', 'items-2-quantity_text': '1',
+            'items-2-unit_price': '28', 'items-2-category': 'materials',
+            # Typed last, but it belongs in the FIRST section, so the sheet
+            # stamps it with the position it holds on screen.
+            'items-2-sort_order': '1',
+            'items-1-sort_order': '2',
+        }))
+        created = QuotationTemplate.objects.get(name='Drainage block')
+        from .forms import QuotationTemplateItemFormSet
+        from .views.quotation_templates import group_formset_by_section
+        groups = group_formset_by_section(QuotationTemplateItemFormSet(instance=created))
+        self.assertEqual([group['title'] for group in groups],
+                         ['CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+
+    def test_a_failed_save_hands_back_the_sections_as_typed(self):
+        """Grouping reads the POSTED section, not the saved instance: after a
+        rejected save the plumber's own headings are what they see, not the
+        ones the row was last stored under."""
+        response = self.client.post(reverse('create_quotation_template'),
+                                    self._payload(name=''))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [group['title'] for group in response.context['formset_sections']],
+            ['CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+        self.assertIn('CONTROL VALVES', response.content.decode())
+
+    def test_a_template_with_no_sections_is_one_untitled_group(self):
+        """Every template built on the flat builder, and every one that
+        existed before sections did."""
+        flat = QuotationTemplate.objects.create(
+            name='Flat set', project_type='general', tenant=self.tenant)
+        QuotationTemplateItem.objects.create(
+            template=flat, description='Basin mixer', quantity=1, unit_price=Decimal('40'))
+        groups = self.client.get(
+            reverse('edit_quotation_template', args=[flat.pk])).context['formset_sections']
+        self.assertEqual([group['title'] for group in groups], [''])
+
+    # -- and the sections reach the quote ------------------------------------
+
+    def test_the_items_api_hands_the_quote_editor_the_sections(self):
+        payload = self.client.get(
+            reverse('template_items_api', args=[self.template.pk])).json()
+        self.assertEqual([item['section'] for item in payload['items']],
+                         ['CONTROL VALVES', 'CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+        self.assertEqual(payload['items'][2]['quantity_text'], '19 length')
+        self.assertEqual(payload['template']['default_labor_cost'], 625.0)
+
+    def test_the_items_api_is_scoped_to_the_workspace(self):
+        """It fetched by bare pk, so any staff user who guessed an id got
+        another tenant's item list and their prices."""
+        other = Tenant.objects.create(name='Other Plumbing', slug='other-plumbing')
+        response = self._client_for(other, 'other-staff').get(
+            reverse('template_items_api', args=[self.template.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_asking_for_one_template_returns_that_template(self):
+        """The editors ask by id when the plumber taps a row. The filter was
+        never implemented, so the whole list came back and they read [0] — the
+        most-used template named the section and supplied the default costs."""
+        QuotationTemplate.objects.create(
+            name='More used', project_type='general', tenant=self.tenant, use_count=99)
+        payload = self.client.get(
+            reverse('quotation_templates_api'),
+            {'template_id': self.template.pk}).json()
+        self.assertEqual([row['name'] for row in payload['templates']],
+                         ['Standard drainage'])
+        self.assertEqual(payload['templates'][0]['default_labor_cost'], 625.0)
+
+    def test_using_a_template_copies_its_sections_onto_the_quote(self):
+        lead = Appointment.objects.create(
+            phone_number='whatsapp:+263771234599', customer_name='Section Lead',
+            tenant=self.tenant)
+        self.client.get(reverse('use_template_for_appointment',
+                                args=[self.template.pk, lead.pk]))
+        quotation = Quotation.objects.filter(appointment=lead).latest('id')
+        items = list(quotation.items.all())
+        self.assertEqual([item.section for item in items],
+                         ['CONTROL VALVES', 'CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
+        self.assertEqual(items[2].quantity_text, '19 length')

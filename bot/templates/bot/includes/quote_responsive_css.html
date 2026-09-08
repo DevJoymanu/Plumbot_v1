@@ -697,6 +697,160 @@ body.pbq-modal-lock { overflow: hidden; }
 
 .pbq-page .btn.loading { opacity: 0.7; pointer-events: none; }
 
+
+/* ============================================================
+   THE TWO TABS  ·  quote | plan
+   ------------------------------------------------------------
+   A quote is typed off a drawing, and the drawing lives on the
+   lead's page. Reaching it meant leaving the quote, so both are
+   on this screen and these tabs switch between them without
+   navigating: the quote panel is HIDDEN, never unloaded, so the
+   fields, the item list and the caret survive the trip.
+
+   The bar is the one thing in the quote layer that pins to the
+   viewport. The rule it bends ("nothing here is sticky", owner,
+   2026-09-08) was written about a permanent ACTION bar that sat
+   over a form nobody had filled in yet; this one is the only way
+   back from the plan, so it has to be reachable from wherever
+   the plumber has scrolled to. Deliberate carve-out, not drift.
+   ============================================================ */
+.pbq-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    gap: 6px;
+    padding: 10px 0;
+    margin-bottom: 4px;
+    background: var(--color-bg);
+    /* The shell's backdrop shows through a transparent bar as the
+       sheet scrolls under it. */
+    box-shadow: 0 1px 0 rgba(0, 101, 145, 0.08);
+}
+
+.pbq-tab {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid rgba(0, 101, 145, 0.12);
+    border-radius: var(--radius-md);
+    background: var(--glass-bg);
+    color: var(--color-muted);
+    font-family: var(--font-label);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.pbq-tab:hover { color: var(--color-primary); }
+
+.pbq-tab.is-active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+
+.pbq-tab__count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(0, 101, 145, 0.10);
+    color: inherit;
+    font-size: 11px;
+}
+
+.pbq-tab.is-active .pbq-tab__count { background: rgba(255, 255, 255, 0.22); }
+
+/* The inactive panel is out of the document, not merely invisible:
+   a hidden panel that still takes part in layout would leave the
+   scroll height of both. */
+.pbq-tabpanel[hidden] { display: none !important; }
+
+/* ── The plan panel ── */
+.pbq-plan { padding-top: 4px; }
+
+.pbq-plan__label {
+    font-family: var(--font-label);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    margin-bottom: 8px;
+}
+
+/* pre-wrap: they typed it as a WhatsApp message, so the line breaks
+   they used are part of what they said. */
+.pbq-plan__text {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--color-text);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.pbq-plan__empty { margin: 0; font-size: 14px; color: var(--color-muted); }
+
+.pbq-plan__meta {
+    margin-top: 12px;
+    font-size: 12.5px;
+    color: var(--color-muted);
+}
+
+.pbq-plan__filehead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.pbq-plan__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.pbq-plan__open {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 101, 145, 0.08);
+    color: var(--color-primary);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+/* Tall on purpose: a drawing read at thumbnail size is not read. */
+.pbq-plan__img,
+.pbq-plan__doc,
+.pbq-plan__video {
+    display: block;
+    width: 100%;
+    border: 1px solid rgba(0, 101, 145, 0.10);
+    border-radius: var(--radius-sm);
+    background: #fff;
+}
+
+.pbq-plan__img { height: auto; }
+.pbq-plan__doc { height: 68vh; }
+.pbq-plan__video { height: auto; }
+
 /* ============================================================
    MOBILE  ≤ 767px
    ============================================================ */
@@ -942,6 +1096,18 @@ body.pbq-modal-lock { overflow: hidden; }
     .pbq-actionbar { padding: 8px 0 0; gap: 6px; }
     .pbq-page .pbq-actionbar .btn { font-size: 11.5px; padding: 10px 4px; gap: 5px; }
     .pbq-page .pbq-total-input { flex-basis: 108px; width: 108px; }
+
+    /* The bar spans the padding the page takes off the screen edge, so it
+       covers the sheet completely as it scrolls underneath. */
+    .pbq-tabs {
+        margin: 0 -14px 4px;
+        padding: 8px 14px;
+    }
+
+    .pbq-tab { font-size: 12px; padding: 10px 8px; }
+
+    /* A plan is read at arm's length on a phone: give it the screen. */
+    .pbq-plan__doc { height: 72vh; }
 }
 
 /* ── Print: the quote document only ── */
@@ -978,5 +1144,11 @@ body.pbq-modal-lock { overflow: hidden; }
     .pbq-table--stack th { display: table-cell; }
     .pbq-table--stack td { display: table-cell; text-align: left; }
     .pbq-table--stack td::before { content: none; }
+
+    /* Printing from the plan tab prints the QUOTE. The JS switches back on
+       beforeprint; this is the belt to that braces, for a print started in a
+       way the page never sees. */
+    #pbqQuotePanel[hidden] { display: block !important; }
+    #pbqPlanPanel, .pbq-tabs { display: none !important; }
 }
 </style>

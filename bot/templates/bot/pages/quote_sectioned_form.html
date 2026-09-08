@@ -64,6 +64,14 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
 <div class="bq-page pbq-page" id="bqPage"
      data-quotation-id="{{ quotation.pk|default:'' }}"
      data-appointment-id="{{ appointment.pk|default:'' }}">
+    {% comment %}
+    The two tabs, and behind the second one the plan and the customer's own
+    words. Switching hides this panel rather than leaving the page, so the sheet
+    comes back with every field, the item list and the caret where they were.
+    {% endcomment %}
+    {% include "bot/includes/quote_plan_tabs.html" %}
+
+    <div class="pbq-tabpanel" id="pbqQuotePanel" role="tabpanel">
 
     <div id="bqAlert" class="bq-alert bq-no-print"></div>
 
@@ -256,6 +264,8 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             <i class="fas fa-print"></i> Print
         </button>
     </div>
+
+    </div>{# /#pbqQuotePanel #}
 </div>
 
 {% include "bot/includes/quote_template_modal.html" %}
@@ -907,10 +917,15 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
     }
 
     /* ── Templates ─────────────────────────────────────────────────────────
-       A template's items arrive as ONE new section named after the template,
-       under whatever is already on the sheet. Appending rather than replacing:
-       a plumber part way through a quote who reaches for a template wants the
-       standard block added, not their own work thrown away. */
+       A template's items arrive as new sections under whatever is already on
+       the sheet. Appending rather than replacing: a plumber part way through a
+       quote who reaches for a template wants the standard block added, not
+       their own work thrown away.
+
+       A template built on the sectioned builder carries its OWN section
+       headings, and those are what the sheet gets; one built on the flat
+       builder has none, so its items arrive as a single section named after
+       the template, which is what every template used to do. */
     async function openTemplateModal() {
         const modal = document.getElementById('templateModal');
         if (!modal) { return; }
@@ -973,19 +988,32 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
 
             const itemsResponse = await fetch('/api/quotation-templates/' + templateId + '/items/');
             const itemsData = await itemsResponse.json();
-            const items = (itemsData.items || []).map(function (item) {
-                return {
-                    description: item.description || '',
-                    qty: item.quantity_text || item.quantity || '1',
-                    unit: item.unit_price || 0,
-                };
-            });
+            const items = itemsData.items || [];
 
             if (!items.length) {
                 showAlert('That template has no items.', 'error');
                 return;
             }
-            addSection((template.name || 'TEMPLATE').toUpperCase(), items);
+
+            // Consecutive rows sharing a heading are one section - the same
+            // rule the sheet, the builder and the stored order all follow.
+            const fallback = (template.name || itemsData.template && itemsData.template.name
+                              || 'TEMPLATE').toUpperCase();
+            const groups = [];
+            items.forEach(function (item) {
+                const title = (item.section || '').trim();
+                if (!groups.length || groups[groups.length - 1].title !== title) {
+                    groups.push({ title: title, items: [] });
+                }
+                groups[groups.length - 1].items.push({
+                    description: item.description || '',
+                    qty: item.quantity_text || item.quantity || '1',
+                    unit: item.unit_price || 0,
+                });
+            });
+            groups.forEach(function (group) {
+                addSection(group.title || fallback, group.items);
+            });
 
             // The template's own labour and transport only fill EMPTY boxes:
             // a figure already typed for this job is the specific one.
@@ -997,7 +1025,9 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             recalc();
             scheduleDraftSave();
             closeTemplateModal();
-            showAlert('Template added as a new section.', 'success');
+            showAlert(groups.length === 1 ? 'Template added as a new section.'
+                                          : 'Template added as ' + groups.length + ' new sections.',
+                      'success');
         } catch (error) {
             showAlert('Could not load that template.', 'error');
         }
