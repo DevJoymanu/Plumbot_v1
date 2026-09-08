@@ -24,10 +24,13 @@ Design notes
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 PORTFOLIO_IMAGES_DIR = os.environ.get(
     'PREVIOUS_WORK_IMAGES_DIR',
@@ -615,3 +618,38 @@ def items_for_job(text: str, tenant=None, limit: int = PROOF_IMAGE_COUNT) -> lis
 def proof_images_for_job(text: str, tenant=None, limit: int = PROOF_IMAGE_COUNT) -> list:
     """Image paths for `items_for_job`. [] when nothing matches."""
     return [image_path_for(item) for item in items_for_job(text, tenant, limit)]
+
+
+def item_image_url(item: dict) -> str:
+    """A browsable URL for a catalogue photo, or '' when there is none.
+
+    Two kinds of file live in this catalogue and they resolve differently:
+    a wizard upload is a storage path (R2 in production), while a bundled
+    homebase photo is a bare filename on the app's own disk with no route in
+    front of it. The first gets a real URL; the second honestly gets nothing,
+    because a broken <img> is worse than no image.
+    """
+    filename = (item or {}).get('filename') or ''
+    if not filename:
+        return ''
+    if not _is_storage_path(filename):
+        return ''
+    try:
+        from django.core.files.storage import default_storage
+        return default_storage.url(filename)
+    except Exception:
+        logger.warning('No URL for portfolio file %r', filename[:80],
+                       exc_info=True)
+        return ''
+
+
+def image_url_for_title(title: str, tenant=None) -> str:
+    """The photo a sent-media description names, resolved back to a URL.
+
+    record_sent_media stores "Title - what vision saw" per image, and the title
+    is the only handle back to the row. Returns '' when the title no longer
+    matches anything, which happens when a tenant deletes a photo after
+    sending it.
+    """
+    item = get_item_by_title(title, tenant=tenant)
+    return item_image_url(item) if item else ''

@@ -560,3 +560,117 @@ class HalfMadeBookingTests(PhoneQuoteBase):
               'intent': 'ack', 'confidence': 'HIGH',
               'state_update': {'want_level': 'interested'}}
         self.assertEqual(decide_move(uc, self.lead), 'close_pleasantry')
+
+
+class SentImagesVisibleTests(PhoneQuoteBase):
+    """Which photos went out as proof, shown in the transcript."""
+
+    def _media_turn(self):
+        self.lead.conversation_history = [
+            {'role': 'user', 'content': 'plumbing work in Arlington East'},
+            {'role': 'assistant', 'content': '[MEDIA] Sent 2 previous work image(s)',
+             'media_index': {
+                 'wamid.A': 'Kitchen renovation - Kitchen sink installation. Chrome mixer.',
+                 'wamid.B': 'Freestanding tub - White tub on a tiled floor.',
+             }},
+        ]
+        self.lead.save(update_fields=['conversation_history'])
+
+    def test_the_titles_are_listed_on_the_media_turn(self):
+        from bot.views.appointments import _with_sent_images
+        self._media_turn()
+        rows = _with_sent_images(self.lead.conversation_history)
+        shown = rows[1]['sent_images']
+        self.assertEqual([i['title'] for i in shown],
+                         ['Kitchen renovation', 'Freestanding tub'])
+        self.assertIn('Chrome mixer', shown[0]['detail'])
+
+    def test_a_thumbnail_is_resolved_from_the_title(self):
+        from bot.views.appointments import _with_sent_images
+        self._media_turn()
+        with patch('bot.portfolio_catalog.image_url_for_title',
+                   return_value='/media/x.jpg'):
+            rows = _with_sent_images(self.lead.conversation_history,
+                                     tenant=self.tenant)
+        self.assertEqual(rows[1]['sent_images'][0]['url'], '/media/x.jpg')
+
+    def test_a_photo_since_deleted_shows_its_name_and_no_image(self):
+        # A broken <img> is worse than no image; the name still says what went.
+        from bot.views.appointments import _with_sent_images
+        self._media_turn()
+        with patch('bot.portfolio_catalog.image_url_for_title', return_value=''):
+            rows = _with_sent_images(self.lead.conversation_history,
+                                     tenant=self.tenant)
+        self.assertEqual(rows[1]['sent_images'][0]['url'], '')
+        self.assertEqual(rows[1]['sent_images'][0]['title'], 'Kitchen renovation')
+
+    def test_a_lookup_that_raises_never_breaks_the_transcript(self):
+        from bot.views.appointments import _with_sent_images
+        self._media_turn()
+        with patch('bot.portfolio_catalog.image_url_for_title',
+                   side_effect=Exception('storage down')):
+            rows = _with_sent_images(self.lead.conversation_history,
+                                     tenant=self.tenant)
+        self.assertEqual(rows[1]['sent_images'][0]['url'], '')
+
+    def test_ordinary_turns_are_untouched(self):
+        from bot.views.appointments import _with_sent_images
+        self._media_turn()
+        rows = _with_sent_images(self.lead.conversation_history)
+        self.assertNotIn('sent_images', rows[0])
+
+    def test_it_survives_a_malformed_entry(self):
+        # Runs on every transcript render, so it must never take the page down.
+        from bot.views.appointments import _with_sent_images
+        for junk in ([{'role': 'assistant', 'media_index': 'not-a-dict'}],
+                     [{'role': 'assistant', 'media_index': {}}],
+                     ['not a dict at all'], None, []):
+            _with_sent_images(junk)
+
+    def test_the_page_renders_them(self):
+        self._media_turn()
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])
+        ).content.decode()
+        self.assertIn('chat-sent-images', html)
+        self.assertIn('chat-sent-thumb', html)
+        self.assertIn('Kitchen renovation', html)
+        self.assertIn('Freestanding tub', html)
+
+
+class BannerIsAboveTheTabsTests(PhoneQuoteBase):
+    """Every next-step action must be visible from any tab."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.save(update_fields=['scheduled_datetime'])
+
+    def test_the_actions_are_not_buried_in_a_tab_pane(self):
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])
+        ).content.decode()
+        # The MARKUP, not the stylesheet rule of the same name.
+        first_pane = html.find('<div class="appt-tab-pane')
+        for label, needle in (
+            ('log the visit', reverse('site_visit_start', args=[self.lead.pk])),
+            ('quote on the phone', reverse('phone_quote_start', args=[self.lead.pk])),
+            ('message them', reverse('lead_whatsapp_handoff', args=[self.lead.pk])),
+            ('email the plumber',
+             reverse('notify_plumber_of_booking', args=[self.lead.pk])),
+        ):
+            at = html.find(needle)
+            self.assertNotEqual(at, -1, '%s missing entirely' % label)
+            self.assertLess(at, first_pane,
+                            '%s is inside a tab pane, so it is invisible from '
+                            'the Chat tab' % label)
+
+    def test_the_plumber_button_posts_to_its_own_form(self):
+        # Inside the Edit Details form it would submit every field on the page.
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])
+        ).content.decode()
+        url = reverse('notify_plumber_of_booking', args=[self.lead.pk])
+        chunk = html[html.find(url) - 400:html.find(url) + 400]
+        self.assertIn('method="post"', chunk)
+        self.assertIn('csrfmiddlewaretoken', chunk)

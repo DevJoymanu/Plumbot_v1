@@ -745,6 +745,55 @@ def update_priority_lead_card(request, pk):
     return redirect(next_url)
 
 
+def _with_sent_images(history, tenant=None):
+    """Turn each media turn's stored index into something the page can list.
+
+    "[MEDIA] Sent 1 previous work image(s)" says nothing about WHICH one, and
+    the answer decides whether the proof step is doing its job: a lead who
+    asked about "plumbing work in Arlington East" was shown a kitchen sink,
+    and the transcript gave no way to notice.
+
+    The data was already there. record_sent_media writes a media_index of
+    {wamid: description} as the batch goes out, and _describe_work_image builds
+    each description as "Title - what vision saw". So the title is the part
+    before the first dash, and the rest is the detail.
+
+    Read-only and defensive: this runs on every transcript render and a
+    malformed entry must never take the page down.
+    """
+    out = []
+    for entry in (history or []):
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        index = entry.get('media_index')
+        if not isinstance(index, dict) or not index:
+            out.append(entry)
+            continue
+        shown = []
+        for description in index.values():
+            text = str(description or '').strip()
+            if not text:
+                continue
+            title, _, detail = text.partition(' - ')
+            title = title.strip() or 'Untitled'
+            # The title is the only handle back to the row, so a photo the
+            # tenant has since deleted resolves to no URL and shows as a name
+            # alone. Better than a broken image.
+            try:
+                from ..portfolio_catalog import image_url_for_title
+                url = image_url_for_title(title, tenant)
+            except Exception:
+                logger.warning('Could not resolve a sent photo: %r', title[:60],
+                               exc_info=True)
+                url = ''
+            shown.append({'title': title, 'detail': detail.strip(), 'url': url})
+        row = dict(entry)
+        row['sent_images'] = shown
+        out.append(row)
+    return out
+
+
 @method_decorator(staff_required, name='dispatch')
 class AppointmentDetailView(DetailView):
     template_name = 'bot/pages/appointment_detail.html'
@@ -794,7 +843,8 @@ class AppointmentDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         appointment = self.get_object()
         computed_score, computed_status = calculate_lead_score(appointment)
-        conversation_history = appointment.conversation_history
+        conversation_history = _with_sent_images(
+            appointment.conversation_history, tenant=appointment.tenant)
         uploaded_files = appointment.get_all_uploaded_files()   # ← NEW
         detail_source = self.request.GET.get('source', 'appointments')
         valid_sources = {'appointments', 'conversations', 'dashboard', 'priority_leads', 'followups'}

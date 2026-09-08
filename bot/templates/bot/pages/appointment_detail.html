@@ -1065,6 +1065,50 @@
 
   .chat-bubble.user .chat-bubble-text { color: var(--color-text); }
 
+  /* Which photos went out with a media turn. Quiet: this is a record for
+     staff sitting inside the customer's own message, not a gallery. */
+  .chat-sent-images {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 8px 0 0;
+    border-top: 1px solid rgba(0, 101, 145, 0.12);
+    display: grid;
+    gap: 4px;
+  }
+  .chat-sent-images li {
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--color-muted);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    overflow-wrap: anywhere;
+  }
+  .chat-sent-name { min-width: 0; }
+
+  /* Small on purpose: this is a record of what went out, sitting inside the
+     conversation, not a gallery. Big enough to recognise the job at a glance,
+     and it opens full size in a new tab. */
+  .chat-sent-thumb {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface-mid, rgba(0, 101, 145, 0.08));
+    border: 1px solid rgba(0, 101, 145, 0.14);
+    transition: transform var(--transition, .2s ease);
+  }
+  a.chat-sent-thumb:hover { transform: scale(1.06); }
+  .chat-sent-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* A photo the tenant deleted after sending it. The name still tells you
+     what went; a broken <img> would not. */
+  .chat-sent-thumb--missing { color: var(--color-muted); opacity: .55; }
+  .chat-sent-thumb--missing i { font-size: 15px; }
+
   .chat-bubble-time {
     text-align: right;
     margin-top: 5px;
@@ -2088,6 +2132,100 @@
         {% endif %}
       </div>
 
+      {% comment %}
+      ABOVE THE TABS on purpose. This banner carries every action a lead
+      needs next (log the visit, quote on the phone, message them, tell the
+      plumber a visit is booked) and it used to sit INSIDE the Details
+      pane. Anybody reading the conversation on the Chat tab could see none
+      of it, which is how a booking sat with the plumber never told and no
+      obvious way to tell them (barmak 1144). A control that cannot be
+      found is the same as one that does not exist.
+      {% endcomment %}
+      {% comment %}
+      Site visit. Pinned above every other detail, because logging it is
+      what triggers the quote and the whole post-visit follow-up sequence.
+      This is the ONLY way to log a visit - it replaced the "Complete Site
+      Visit" button that used to be buried in the Scheduling card - so it is
+      always here, never conditional on the row looking tidy, and it opens
+      the same tokenized form the plumber gets by email 35 minutes after the
+      visit. Once logged it flips to the resolved state rather than
+      disappearing, so the banner is never a dead control and the plumber
+      can always see what the answer set running.
+      {% endcomment %}
+      {% if site_visit_banner.state == 'resolved' %}
+      {% with report=site_visit_banner.report %}
+      <div class="visit-prompt visit-prompt--done">
+        <div style="min-width:0;">
+          <span class="visit-prompt-kicker"><i class="fas fa-circle-check"></i> Site visit logged</span>
+          <p class="visit-prompt-q">{{ report.get_outcome_display }}</p>
+          <p class="visit-prompt-sub">
+            Logged {{ report.submitted_at|date:"j M, H:i" }}{% if report.submitted_by %} by {{ report.submitted_by.get_username }}{% endif %}.
+            {% if report.sequence == 'confirm' and report.expected_date %}
+              Customer expects the job on {{ report.expected_date|date:"l j F" }}; we confirm two days before.
+            {% elif report.sequence == 'asks' %}
+              Chasing a firmer date by email{% if report.ask_count %} - {{ report.ask_count }} of 3 sent{% endif %}.
+            {% elif report.sequence == 'cold' %}
+              No reply after three follow-ups; this one is yours to close.
+            {% elif report.sequence == 'stopped' %}
+              No quote and no follow-ups will go out.
+            {% else %}
+              Nothing further scheduled.
+            {% endif %}
+          </p>
+        </div>
+        {% if report.outcome == 'went_ahead' %}
+        <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
+          <i class="fas fa-file-invoice-dollar"></i> Create quote
+        </a>
+        {% endif %}
+      </div>
+      {% endwith %}
+      {% else %}
+      <div class="visit-prompt">
+        <div style="min-width:0;">
+          <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
+          <p class="visit-prompt-q">Is the site visit complete?</p>
+          <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
+        </div>
+        <div class="visit-prompt-actions">
+          <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
+            <i class="fas fa-pen-to-square"></i> Log the visit
+          </a>
+          <a href="{% url 'phone_quote_start' appointment.pk %}"
+             class="visit-prompt-btn visit-prompt-btn--ghost">
+            <i class="fas fa-phone"></i> Quote on the phone
+          </a>
+          <a href="{% url 'lead_whatsapp_handoff' appointment.pk %}"
+             class="visit-prompt-btn visit-prompt-btn--ghost">
+            <i class="fab fa-whatsapp"></i> Message them
+          </a>
+          {% comment %}
+          Telling the plumber a visit is booked belongs HERE, in the banner
+          that is on screen whichever tab you are reading. It first went in
+          at the bottom of the Edit Details form, which is a different tab
+          from the conversation you are looking at when you notice the
+          plumber was never told, so in practice it could not be found.
+
+          Its own form: the surrounding markup here is not one, and the
+          Edit Details form would post every field on the page with it.
+          {% endcomment %}
+          {% if appointment.scheduled_datetime %}
+          <form method="post"
+                action="{% url 'notify_plumber_of_booking' appointment.pk %}?{{ request.GET.urlencode }}"
+                style="display:inline;">
+            {% csrf_token %}
+            <button type="submit"
+                    class="visit-prompt-btn{% if appointment.plumber_contacted_at %} visit-prompt-btn--ghost{% endif %}"
+                    title="{% if appointment.plumber_contacted_at %}Sent {{ appointment.plumber_contacted_at|date:'j M, H:i' }}. Sends again.{% else %}The plumber has not been told about this booking.{% endif %}">
+              <i class="fas fa-envelope"></i>
+              {% if appointment.plumber_contacted_at %}Resend to plumber{% else %}Email the plumber{% endif %}
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
       <div class="appt-tabbar">
         {# Details is the default pane — a plumber opens the record to see the job, not the transcript. Deep links (?tab=) still override. #}
         <button class="appt-tab-btn is-active" type="button" data-tab="details"><i class="far fa-file-alt"></i> Details</button>
@@ -2108,6 +2246,31 @@
                   {% if message.role == 'user' %}Customer{% else %}Plumbot{% endif %}
                 </div>
                 <div class="chat-bubble-text">{{ message.content|default:"(no message content)" }}</div>
+                {% comment %}
+                Which photos actually went. "[MEDIA] Sent 1 previous work
+                image(s)" does not say, and the answer is the only way to tell
+                whether the proof step matched their job or sent something
+                unrelated.
+                {% endcomment %}
+                {% if message.sent_images %}
+                <ul class="chat-sent-images">
+                  {% for img in message.sent_images %}
+                  <li title="{{ img.detail }}">
+                    {% if img.url %}
+                    <a href="{{ img.url }}" target="_blank" rel="noopener"
+                       class="chat-sent-thumb">
+                      <img src="{{ img.url }}" alt="{{ img.title }}" loading="lazy">
+                    </a>
+                    {% else %}
+                    <span class="chat-sent-thumb chat-sent-thumb--missing">
+                      <i class="fas fa-image"></i>
+                    </span>
+                    {% endif %}
+                    <span class="chat-sent-name">{{ img.title }}</span>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
                 {% if message.timestamp %}
                 <div class="chat-bubble-time" data-ts="{{ message.timestamp|date:'c' }}">{{ message.timestamp|date:"j M Y, H:i" }}</div>
                 {% endif %}
@@ -2175,67 +2338,6 @@
       <div class="appt-tab-pane is-active" id="tab-details">
         <div class="appt-detail-content">
 
-          {% comment %}
-          Site visit. Pinned above every other detail, because logging it is
-          what triggers the quote and the whole post-visit follow-up sequence.
-          This is the ONLY way to log a visit - it replaced the "Complete Site
-          Visit" button that used to be buried in the Scheduling card - so it is
-          always here, never conditional on the row looking tidy, and it opens
-          the same tokenized form the plumber gets by email 35 minutes after the
-          visit. Once logged it flips to the resolved state rather than
-          disappearing, so the banner is never a dead control and the plumber
-          can always see what the answer set running.
-          {% endcomment %}
-          {% if site_visit_banner.state == 'resolved' %}
-          {% with report=site_visit_banner.report %}
-          <div class="visit-prompt visit-prompt--done">
-            <div style="min-width:0;">
-              <span class="visit-prompt-kicker"><i class="fas fa-circle-check"></i> Site visit logged</span>
-              <p class="visit-prompt-q">{{ report.get_outcome_display }}</p>
-              <p class="visit-prompt-sub">
-                Logged {{ report.submitted_at|date:"j M, H:i" }}{% if report.submitted_by %} by {{ report.submitted_by.get_username }}{% endif %}.
-                {% if report.sequence == 'confirm' and report.expected_date %}
-                  Customer expects the job on {{ report.expected_date|date:"l j F" }}; we confirm two days before.
-                {% elif report.sequence == 'asks' %}
-                  Chasing a firmer date by email{% if report.ask_count %} - {{ report.ask_count }} of 3 sent{% endif %}.
-                {% elif report.sequence == 'cold' %}
-                  No reply after three follow-ups; this one is yours to close.
-                {% elif report.sequence == 'stopped' %}
-                  No quote and no follow-ups will go out.
-                {% else %}
-                  Nothing further scheduled.
-                {% endif %}
-              </p>
-            </div>
-            {% if report.outcome == 'went_ahead' %}
-            <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
-              <i class="fas fa-file-invoice-dollar"></i> Create quote
-            </a>
-            {% endif %}
-          </div>
-          {% endwith %}
-          {% else %}
-          <div class="visit-prompt">
-            <div style="min-width:0;">
-              <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
-              <p class="visit-prompt-q">Is the site visit complete?</p>
-              <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
-            </div>
-            <div class="visit-prompt-actions">
-              <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
-                <i class="fas fa-pen-to-square"></i> Log the visit
-              </a>
-              <a href="{% url 'phone_quote_start' appointment.pk %}"
-                 class="visit-prompt-btn visit-prompt-btn--ghost">
-                <i class="fas fa-phone"></i> Quote on the phone
-              </a>
-              <a href="{% url 'lead_whatsapp_handoff' appointment.pk %}"
-                 class="visit-prompt-btn visit-prompt-btn--ghost">
-                <i class="fab fa-whatsapp"></i> Message them
-              </a>
-            </div>
-          </div>
-          {% endif %}
 
           {# ── Job at a glance: when / where / what / who, readable in five seconds ── #}
           <div class="glance-card">
