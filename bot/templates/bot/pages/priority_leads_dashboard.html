@@ -550,6 +550,29 @@
         color: var(--dark);
     }
 
+    /* What this lead is short of. Amber rather than the alert's blue: it is
+       the reason the card is on this board, not a notification about it. */
+    .lead-gaps {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        background: #fef3c7;
+        color: #92400e;
+        border-left: 4px solid #f59e0b;
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: clamp(0.8rem, 3.2vw, 0.88rem);
+        margin: 12px 0 0;
+    }
+
+    .lead-gaps i {
+        margin-top: 2px;
+    }
+
+    .lead-gaps strong {
+        color: #7c2d12;
+    }
+
     /* Card actions - matching base actions */
     .card-actions {
         display: flex;
@@ -840,6 +863,12 @@
                 <div><i class="fas fa-map-marker-alt"></i> <strong>Area:</strong> {{ lead.customer_area|default:"No area" }}</div>
                 <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
+            {% if lead.missing_info %}
+            <div class="lead-gaps">
+                <i class="fas fa-circle-question" aria-hidden="true"></i>
+                <span><strong>Still needed:</strong> {{ lead.missing_info|join:", " }}</span>
+            </div>
+            {% endif %}
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
                 <i class="fas fa-bell"></i>
@@ -852,9 +881,17 @@
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
                 </a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-sm btn-wa"
-                    target="_blank" rel="noopener noreferrer">
-                    <i class="fab fa-whatsapp"></i> WhatsApp
+                {% comment %}
+                The WhatsApp control on this board goes through the ONE drafted
+                handoff, the same rule every quote-send control follows. A bare
+                wa.me link opened an empty chat on the one screen whose entire
+                purpose is leads with information missing, so the plumber had
+                to read back through the transcript to work out what to ask.
+                The handoff page opens with the message already written from
+                what this lead is actually short of.
+                {% endcomment %}
+                <a href="{% url 'lead_whatsapp_handoff' lead.pk %}" class="btn btn-sm btn-wa">
+                    <i class="fab fa-whatsapp"></i> Message
                 </a>
             </div>
             <details class="card-menu">
@@ -904,6 +941,12 @@
                     area" }}</div>
                 <div><i class="fas fa-clock"></i> <strong>Recent:</strong> {{ lead.recent_activity|date:"M d, Y H:i"|default:"No activity" }}</div>
             </div>
+            {% if lead.missing_info %}
+            <div class="lead-gaps">
+                <i class="fas fa-circle-question" aria-hidden="true"></i>
+                <span><strong>Still needed:</strong> {{ lead.missing_info|join:", " }}</span>
+            </div>
+            {% endif %}
             {% if lead.last_priority_alert_summary %}
             <div class="alert">
                 <i class="fas fa-bell"></i>
@@ -916,9 +959,17 @@
                     rel="noopener noreferrer">
                     <i class="fas fa-phone"></i> Call
                 </a>
-                <a href="https://wa.me/{{ lead.phone_number|cut:'whatsapp:'|cut:'+' }}" class="btn btn-sm btn-wa"
-                    target="_blank" rel="noopener noreferrer">
-                    <i class="fab fa-whatsapp"></i> WhatsApp
+                {% comment %}
+                The WhatsApp control on this board goes through the ONE drafted
+                handoff, the same rule every quote-send control follows. A bare
+                wa.me link opened an empty chat on the one screen whose entire
+                purpose is leads with information missing, so the plumber had
+                to read back through the transcript to work out what to ask.
+                The handoff page opens with the message already written from
+                what this lead is actually short of.
+                {% endcomment %}
+                <a href="{% url 'lead_whatsapp_handoff' lead.pk %}" class="btn btn-sm btn-wa">
+                    <i class="fab fa-whatsapp"></i> Message
                 </a>
             </div>
             <details class="card-menu">

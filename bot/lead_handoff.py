@@ -14,9 +14,11 @@ The message has two halves and they do different jobs:
 * The RECAP says back everything we hold — the job, the area, the timeline, and
   the plan if one arrived. That is proof we read them, and it is why the
   customer does not have to repeat themselves to a second person.
-* The ASK is ONE question, the next gap in the flow's own order, carrying the
-  reason it is being asked. People answer the last question they are given, so
-  a message asking three things collects one answer and wastes two.
+* The ASK is everything still outstanding, in the flow's own order, each item
+  carrying the reason it is being asked (see the owner decision at ``NEEDS``).
+* With nothing outstanding there is nothing to ask, so the message CLOSES
+  instead: a day already pencilled in gets confirmed, otherwise two days to
+  pick from. A qualified lead who is never asked for a day never books.
 
 The order is the flow's own: what the job is, then the area, then the timeline,
 then the email. Email comes last on purpose. Asked cold it reads as data
@@ -208,10 +210,80 @@ def build_ask(appointment) -> str:
 
 
 def missing(appointment) -> list:
-    """[(label, need clause), ...] still outstanding, in the order we ask."""
-    return [(label, NEEDS[field][0])
-            for field, label in LEAD_FIELDS
-            if not _value(appointment, field) and field in NEEDS]
+    """[(label, need clause), ...] the draft is actually going to ask for.
+
+    Derived from ``_gaps``, never recomputed from the fields. Asked separately
+    the two drifted, and every screen that shows "still missing" showed a
+    different list from the message underneath it: a lead whose plan is on
+    file was listed as still owing us a description that ``_gaps``
+    deliberately does not ask for, and the name was listed on every card while
+    ``_gaps`` drops it whenever anything else is outstanding. A panel headed
+    "still missing" that names things nobody is going to ask for is worse than
+    no panel, because the plumber then chases them by hand.
+    """
+    labels = dict(LEAD_FIELDS)
+    return [(labels[field], NEEDS[field][0]) for field in _gaps(appointment)]
+
+
+# ── The close ────────────────────────────────────────────────────────────────
+
+def _when(slot) -> str:
+    """A slot as the customer should read it: their clock, not the database's.
+
+    Stored aware and in UTC, so ``strftime`` straight off the field tells a
+    Harare customer to expect us two hours before we turn up.
+    """
+    try:
+        from django.utils import timezone
+        slot = timezone.localtime(slot)
+    except Exception:
+        logger.warning("Could not localise the visit slot", exc_info=True)
+    return slot.strftime('%A %d %B at %H:%M')
+
+
+def booking_close(appointment) -> str:
+    """Nothing left to find out, so the only thing left is the day.
+
+    Two shapes, and which one runs is decided by whether a day is already on
+    the row:
+
+    * A slot pencilled in gets CONFIRMED. Offering fresh days to somebody who
+      already has one re-pitches a visit they have effectively agreed to,
+      which is the repeat-pitch bug in a new channel. The priority board only
+      excludes ``confirmed`` leads, so a pending lead holding a slot is
+      exactly the lead this draft gets opened on.
+    * Otherwise, two days to pick from. Not "shall I book you in?": a yes/no
+      hands a lead who is already qualified a way to say no to a question they
+      were never really being asked, and the Close stage has one shape, which
+      is to offer a choice. The days come from ``visit_slots`` against the
+      lead's OWN tenant, so we never name a day that tenant is shut.
+
+    The look is described casually, and it carries NO price. What a visit
+    costs is the tenant's own business and some of them charge for it, so a
+    draft that called it free would be making that promise on their behalf.
+    """
+    slot = getattr(appointment, 'scheduled_datetime', None)
+    if slot:
+        # Deliberately NOT "I've got you down for ...": that is the recap's
+        # own opening, and a message that used it twice read as though two
+        # people had written it.
+        return (f"Just confirming we're coming out on {_when(slot)}. "
+                f'Does that still work for you?')
+
+    from .tenant_config import get_config
+    from .visit_slots import slot_offer
+
+    try:
+        offer = slot_offer(get_config(getattr(appointment, 'tenant', None)))
+    except Exception:
+        logger.warning("Could not work out which days to offer", exc_info=True)
+        offer = ''
+
+    look = 'I can come out and take a quick look at the space.'
+    # No working day to offer means we do not invent one. An open question is
+    # the honest version of the same message, and it is still a question about
+    # WHEN rather than whether.
+    return f'{look} {offer}' if offer else f'{look} When suits you best?'
 
 
 # ── The recap ────────────────────────────────────────────────────────────────
@@ -371,14 +443,14 @@ def build_message(appointment) -> str:
     signature = _signature(appointment)
     sign_off = _BREAK + signature if signature else ''
 
-    slot = getattr(appointment, 'scheduled_datetime', None)
-    if getattr(appointment, 'status', '') == 'confirmed' and slot:
+    booked = (getattr(appointment, 'status', '') == 'confirmed'
+              and getattr(appointment, 'scheduled_datetime', None))
+    if booked:
         # Booked. Re-qualifying somebody who has already agreed a time is the
-        # repeat-pitch bug in a new channel.
-        when = slot.strftime('%A %d %B at %H:%M')
-        body = (f"Just confirming we're coming out on {when}. "
-                f'Does that still work for you?')
-        return _clean(greeting + _BREAK + body + sign_off)
+        # repeat-pitch bug in a new channel, so this one skips the recap and
+        # the ask entirely and says the only thing left worth saying.
+        return _clean(greeting + _BREAK + booking_close(appointment)
+                      + sign_off)
 
     # The greeting keeps its own line. Joined with a comma the next word keeps
     # its capital ("Hi there, What exactly...") and lowercasing it is not safe,
@@ -389,8 +461,7 @@ def build_message(appointment) -> str:
     if recap:
         blocks.append(' '.join(recap))
 
-    blocks.append(build_ask(appointment)
-                  or 'Shall I get you booked in for a visit?')
+    blocks.append(build_ask(appointment) or booking_close(appointment))
 
     return _clean(_BREAK.join(blocks) + sign_off)
 

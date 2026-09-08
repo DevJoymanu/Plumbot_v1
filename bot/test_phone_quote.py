@@ -767,3 +767,133 @@ class PlumberAlertIsOwnerOnlyTests(PhoneQuoteBase):
         from django.template.loader import get_template
         src = get_template('bot/pages/appointment_detail.html').template.source
         self.assertEqual(src.count('notify_plumber_of_booking'), 1)
+
+
+class LeadMessageBookingCloseTests(PhoneQuoteBase):
+    """With nothing left to ask, the draft asks for the DAY.
+
+    A lead sits on the priority board precisely because they have not booked,
+    so a draft that recaps a fully qualified lead and then stops is the one
+    shape that cannot convert.
+    """
+
+    def _qualified(self, **kw):
+        self.lead.project_type = 'geyser_repair'
+        self.lead.project_description = 'geyser swap'
+        self.lead.customer_area = 'Ruwa'
+        self.lead.timeline = 'next week'
+        self.lead.customer_email = 'lead@example.com'
+        for field, value in kw.items():
+            setattr(self.lead, field, value)
+        self.lead.save()
+        return build_message_of(self.lead)
+
+    def test_a_qualified_lead_is_offered_two_days_not_a_yes_no(self):
+        msg = self._qualified()
+        # The Close stage has one shape: pick one of two, never "shall I?".
+        self.assertNotIn('Shall I', msg)
+        self.assertIn('?', msg)
+        from bot.visit_slots import next_two_slots
+        from bot.tenant_config import get_config
+        labels = [s.label for s in next_two_slots(get_config(self.tenant))]
+        self.assertTrue(labels, 'the tenant should have working days')
+        self.assertIn(labels[0].lower(), msg.lower())
+
+    def test_the_close_never_prices_the_visit(self):
+        # Some tenants charge for it. A draft that called it free would be
+        # making that promise on the tenant's behalf.
+        msg = self._qualified().lower()
+        for banned in ('free', 'no cost', 'no charge', 'us$'):
+            self.assertNotIn(banned, msg)
+
+    def test_a_pencilled_day_is_confirmed_not_re_pitched(self):
+        # The board only excludes CONFIRMED leads, so a pending lead holding a
+        # slot is exactly the lead this draft gets opened on. Offering fresh
+        # days re-pitches a visit they have effectively agreed to.
+        msg = self._qualified(
+            scheduled_datetime=timezone.now() + timedelta(days=2))
+        self.assertIn('confirming', msg.lower())
+        self.assertNotIn('take a quick look', msg)
+        # And the recap's own opener is not used twice in one message.
+        self.assertEqual(msg.count("I've got you down for"), 1)
+
+    def test_the_slot_is_shown_in_the_customers_own_clock(self):
+        # Stored aware and in UTC. strftime straight off the field told a
+        # Harare customer to expect us two hours before we turn up.
+        from django.utils import timezone as tz
+        when = tz.now() + timedelta(days=2)
+        msg = self._qualified(scheduled_datetime=when)
+        self.assertIn(tz.localtime(when).strftime('%H:%M'), msg)
+
+    def test_a_gap_still_beats_the_close(self):
+        # Nothing to book until we know what the job is.
+        self.lead.customer_area = 'Ruwa'
+        self.lead.save()
+        msg = build_message_of(self.lead)
+        self.assertIn('what exactly you want done', msg.lower())
+        self.assertNotIn('take a quick look', msg)
+
+
+class LeadMissingMatchesTheAskTests(PhoneQuoteBase):
+    """What a screen calls missing is what the draft actually asks for."""
+
+    def test_a_plan_on_file_is_not_still_missing_a_description(self):
+        from bot.lead_handoff import missing
+        self.lead.plan_status = 'plan_uploaded'
+        self.lead.save()
+        labels = [label for label, _need in missing(self.lead)]
+        self.assertNotIn('The job', labels)
+        self.assertNotIn('what exactly you want done',
+                         build_message_of(self.lead).lower())
+
+    def test_the_name_is_not_listed_while_anything_else_is_outstanding(self):
+        from bot.lead_handoff import missing
+        self.lead.customer_name = ''
+        self.lead.save()
+        labels = [label for label, _need in missing(self.lead)]
+        self.assertIn('Area', labels)
+        self.assertNotIn('Name', labels)
+
+    def test_a_name_alone_is_listed_because_it_is_what_gets_asked(self):
+        from bot.lead_handoff import missing
+        self.lead.customer_name = ''
+        self.lead.project_description = 'geyser swap'
+        self.lead.customer_area = 'Ruwa'
+        self.lead.timeline = 'next week'
+        self.lead.customer_email = 'lead@example.com'
+        self.lead.save()
+        self.assertEqual([label for label, _n in missing(self.lead)], ['Name'])
+        self.assertIn('what name', build_message_of(self.lead).lower())
+
+
+class PriorityBoardMessageTests(PhoneQuoteBase):
+    """The board's WhatsApp control opens the DRAFT, not an empty chat."""
+
+    def _board(self):
+        return self.client.get(
+            reverse('priority_leads') + '?response_age=all').content.decode()
+
+    def test_the_board_routes_whatsapp_through_the_one_handoff(self):
+        html = self._board()
+        self.assertIn(
+            reverse('lead_whatsapp_handoff', args=[self.lead.pk]), html)
+        # No bare chat link on a board whose whole point is missing detail.
+        self.assertNotIn('wa.me/263771234567"', html)
+
+    def test_the_card_says_what_the_draft_is_going_to_ask_for(self):
+        from bot.lead_handoff import missing
+        html = self._board()
+        self.assertIn('Still needed:', html)
+        for label, _need in missing(self.lead):
+            self.assertIn(label, html)
+
+    def test_a_lead_with_no_gaps_shows_no_still_needed_line(self):
+        self.lead.project_description = 'geyser swap'
+        self.lead.customer_area = 'Ruwa'
+        self.lead.timeline = 'next week'
+        self.lead.customer_email = 'lead@example.com'
+        self.lead.save()
+        html = self._board()
+        # Assert the card is actually on the page, or "no line" is vacuous.
+        self.assertIn('Tendai', html)
+        self.assertNotIn('Still needed:', html)

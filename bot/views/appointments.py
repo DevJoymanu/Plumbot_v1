@@ -567,9 +567,26 @@ class PriorityLeadsView(TemplateView):
         return "Move to nurture sequence or close as cold lead."
 
     def _enrich_leads(self, leads_qs):
+        """Each card carries the recommended action AND the actual gaps.
+
+        The gaps come from ``lead_handoff.missing`` — the same resolver the
+        drafted WhatsApp message asks from — so the card and the message it
+        opens can never describe a different lead. Computing them here rather
+        than in the template keeps the one source of truth: the board's score
+        says a lead is incomplete, and this says what is incomplete about them.
+        """
+        from ..lead_handoff import missing
+
         leads = list(leads_qs)
         for lead in leads:
             lead.recommended_action = self._recommended_action(lead)
+            try:
+                lead.missing_info = [label for label, _need in missing(lead)]
+            except Exception:
+                # A card that cannot list the gaps is still a usable card.
+                logger.warning('Could not work out the gaps for lead %s',
+                               lead.pk, exc_info=True)
+                lead.missing_info = []
         return leads
 
     def get_context_data(self, **kwargs):
