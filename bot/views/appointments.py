@@ -1108,7 +1108,7 @@ def confirm_appointment(request, pk):
             # module level, so this line NameError'd and the bare except below
             # silently ate it — the Confirm button never sent the confirmation.
             from .plumbot.base import Plumbot
-            plumbot = Plumbot(appointment.phone_number)
+            plumbot = Plumbot.for_appointment(appointment)
             appointment_details = plumbot.extract_appointment_details()
             plumbot.send_confirmation_message(appointment_details, appointment.scheduled_datetime)
     except Exception as exc:
@@ -1117,7 +1117,7 @@ def confirm_appointment(request, pk):
     return _detail_redirect(request, appointment.pk)
 
 
-@staff_required
+@owner_required
 @require_POST
 def notify_plumber_of_booking(request, pk):
     """Send the plumber the booking alert for this appointment, on demand.
@@ -1137,6 +1137,12 @@ def notify_plumber_of_booking(request, pk):
     rather than gating on plumber_contacted_at: the plumber pressing it a
     second time means the first did not arrive, and refusing them is worse
     than a duplicate email.
+
+    OWNER ONLY (owner decision, 2026-09-08). Every other control on this page
+    changes what the CRM knows; this one puts a message in somebody's inbox,
+    and it can be pressed repeatedly. Staff-wide that is a way to mail the
+    plumber the same booking ten times. Gated on the VIEW as well as the
+    template, because hiding a button is presentation and not permission.
     """
     appointment = get_object_or_404(
         Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)),
@@ -1152,7 +1158,7 @@ def notify_plumber_of_booking(request, pk):
 
     try:
         from .plumbot.base import Plumbot
-        plumbot = Plumbot(appointment.phone_number)
+        plumbot = Plumbot.for_appointment(appointment)
         details = plumbot.extract_appointment_details()
         plumbot.notify_team(details, when)
         appointment.plumber_contacted_at = timezone.now()

@@ -1003,3 +1003,50 @@ def send_visit_handoff_email(row, *, number=1, dry_run=False):
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run, html_message=html,
         tenant=getattr(apt, 'tenant', None))
+
+
+# ── Cross-tenant guard ───────────────────────────────────────────────────────
+# The last line of defence before an internal alert reaches an inbox.
+#
+# On 2026-09-08 a Barmak booking was emailed to HOMEBASE's plumber. The cause
+# was upstream — Plumbot(phone) with no tenant resolves to the homebase seed,
+# so the object doing the sending genuinely believed it was a homebase lead —
+# and every rule in the codebase was obeyed on the way down. Nothing between
+# the mistake and the inbox ever compared the lead in hand with the tenant
+# whose recipients were about to be used.
+#
+# This does that one comparison. It cannot repair a caller that has already
+# lost the tenant, but it can stop the message going out and say so loudly,
+# which is the difference between a bug someone notices and a bug that quietly
+# tells one client about another client's customer.
+
+class CrossTenantSend(Exception):
+    """An alert was about to go to a tenant that does not own the lead."""
+
+
+def assert_same_tenant(appointment, tenant, what='notification'):
+    """Refuse to send when the lead and the recipients disagree.
+
+    Raises CrossTenantSend rather than logging and continuing: a wrong
+    recipient is a data leak, and the safe failure is no email at all.
+    """
+    if appointment is None:
+        return
+    lead_tenant_id = getattr(appointment, 'tenant_id', None)
+    if lead_tenant_id is None:
+        return
+    send_tenant_id = getattr(tenant, 'pk', tenant)
+    if send_tenant_id is None:
+        return
+    if lead_tenant_id != send_tenant_id:
+        lead_slug = getattr(getattr(appointment, 'tenant', None), 'slug', '?')
+        send_slug = getattr(tenant, 'slug', send_tenant_id)
+        logger.error(
+            'BLOCKED cross-tenant %s: lead %s belongs to %r but the '
+            'recipients are %r',
+            what, getattr(appointment, 'pk', '?'), lead_slug, send_slug,
+        )
+        raise CrossTenantSend(
+            'Lead %s belongs to %s, not %s' % (
+                getattr(appointment, 'pk', '?'), lead_slug, send_slug)
+        )

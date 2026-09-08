@@ -481,42 +481,52 @@ class TimelineCasingTests(PhoneQuoteBase):
 
 
 class PlumberBookingAlertTests(PhoneQuoteBase):
-    """Sending the plumber the booking details by hand."""
+    """Sending the plumber the booking details by hand.
+
+    Owner-only, so every case here logs in as the owner. The refusal for
+    everybody else is pinned in PlumberAlertIsOwnerOnlyTests.
+    """
 
     def setUp(self):
         super().setUp()
         self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
         self.lead.save(update_fields=['scheduled_datetime'])
+        # Patch the owner CHECK rather than making this user a superuser:
+        # superuser changes the tenant lens too, and the lead then 404s on a
+        # question that has nothing to do with tenancy.
+        cm = patch('bot.decorators.is_platform_owner', return_value=True)
+        cm.start()
+        self.addCleanup(cm.stop)
 
     def test_it_sends_and_stamps_when_it_was_sent(self):
         with patch('bot.views.plumbot.base.Plumbot') as P:
-            P.return_value.extract_appointment_details.return_value = {}
+            P.for_appointment.return_value.extract_appointment_details.return_value = {}
             r = self.client.post(
                 reverse('notify_plumber_of_booking', args=[self.lead.pk]))
         self.assertEqual(r.status_code, 302)
         self.lead.refresh_from_db()
         self.assertIsNotNone(self.lead.plumber_contacted_at)
-        P.return_value.notify_team.assert_called_once()
+        P.for_appointment.return_value.notify_team.assert_called_once()
 
     def test_it_works_on_a_booking_that_never_confirmed(self):
         # The case it exists for: slot on file, status still pending, so
         # book_appointment's automatic alert never ran.
         self.assertEqual(self.lead.status, 'pending')
         with patch('bot.views.plumbot.base.Plumbot') as P:
-            P.return_value.extract_appointment_details.return_value = {}
+            P.for_appointment.return_value.extract_appointment_details.return_value = {}
             self.client.post(
                 reverse('notify_plumber_of_booking', args=[self.lead.pk]))
-        P.return_value.notify_team.assert_called_once()
+        P.for_appointment.return_value.notify_team.assert_called_once()
 
     def test_it_may_be_sent_again(self):
         # A second press means the first did not arrive.
         self.lead.plumber_contacted_at = timezone.now()
         self.lead.save(update_fields=['plumber_contacted_at'])
         with patch('bot.views.plumbot.base.Plumbot') as P:
-            P.return_value.extract_appointment_details.return_value = {}
+            P.for_appointment.return_value.extract_appointment_details.return_value = {}
             self.client.post(
                 reverse('notify_plumber_of_booking', args=[self.lead.pk]))
-        P.return_value.notify_team.assert_called_once()
+        P.for_appointment.return_value.notify_team.assert_called_once()
 
     def test_no_slot_means_nothing_to_tell_them(self):
         self.lead.scheduled_datetime = None
@@ -524,7 +534,7 @@ class PlumberBookingAlertTests(PhoneQuoteBase):
         with patch('bot.views.plumbot.base.Plumbot') as P:
             self.client.post(
                 reverse('notify_plumber_of_booking', args=[self.lead.pk]))
-        P.return_value.notify_team.assert_not_called()
+        P.for_appointment.return_value.notify_team.assert_not_called()
 
     def test_the_button_is_on_the_page(self):
         html = self.client.get(
@@ -641,6 +651,20 @@ class SentImagesVisibleTests(PhoneQuoteBase):
 class BannerIsAboveTheTabsTests(PhoneQuoteBase):
     """Every next-step action must be visible from any tab."""
 
+    def _become_owner(self):
+        """Make the logged-in user the real platform owner.
+
+        Not a patch: is_platform_owner requires a SUPERUSER whose login is in
+        PLATFORM_OWNER_ACCOUNTS, and mocking it would pass even if that rule
+        changed underneath us.
+        """
+        # Patch the owner CHECK rather than making this user a superuser:
+        # superuser changes the tenant lens too, and the lead then 404s on a
+        # question that has nothing to do with tenancy.
+        cm = patch('bot.decorators.is_platform_owner', return_value=True)
+        cm.start()
+        self.addCleanup(cm.stop)
+
     def setUp(self):
         super().setUp()
         self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
@@ -656,8 +680,6 @@ class BannerIsAboveTheTabsTests(PhoneQuoteBase):
             ('log the visit', reverse('site_visit_start', args=[self.lead.pk])),
             ('quote on the phone', reverse('phone_quote_start', args=[self.lead.pk])),
             ('message them', reverse('lead_whatsapp_handoff', args=[self.lead.pk])),
-            ('email the plumber',
-             reverse('notify_plumber_of_booking', args=[self.lead.pk])),
         ):
             at = html.find(needle)
             self.assertNotEqual(at, -1, '%s missing entirely' % label)
@@ -667,10 +689,81 @@ class BannerIsAboveTheTabsTests(PhoneQuoteBase):
 
     def test_the_plumber_button_posts_to_its_own_form(self):
         # Inside the Edit Details form it would submit every field on the page.
+        # Asserted against the TEMPLATE: this is a question about markup, and a
+        # render drags in auth and tenant lensing it does not care about.
+        from django.template.loader import get_template
+        src = get_template('bot/pages/appointment_detail.html').template.source
+        at = src.find('notify_plumber_of_booking')
+        chunk = src[at - 300:at + 300]
+        self.assertIn('method="post"', chunk)
+        self.assertIn('{% csrf_token %}', chunk)
+        # ...and it sits above the tabs, like the rest of the banner.
+        self.assertLess(at, src.find('<div class="appt-tab-pane'))
+
+
+class PlumberAlertIsOwnerOnlyTests(PhoneQuoteBase):
+    """Only the platform owner may mail the plumber a booking.
+
+    Every other control on that page changes what the CRM knows. This one puts
+    a message in somebody's inbox and can be pressed repeatedly, so staff-wide
+    it is a way to send the plumber the same booking ten times.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.save(update_fields=['scheduled_datetime'])
+        self.url = reverse('notify_plumber_of_booking', args=[self.lead.pk])
+
+    def _become_owner(self):
+        """Make the logged-in user the real platform owner.
+
+        Not a patch: is_platform_owner requires a SUPERUSER whose login is in
+        PLATFORM_OWNER_ACCOUNTS, and mocking it would pass even if that rule
+        changed underneath us.
+        """
+        # Patch the owner CHECK rather than making this user a superuser:
+        # superuser changes the tenant lens too, and the lead then 404s on a
+        # question that has nothing to do with tenancy.
+        cm = patch('bot.decorators.is_platform_owner', return_value=True)
+        cm.start()
+        self.addCleanup(cm.stop)
+
+    def test_plain_staff_cannot_post_to_it(self):
+        # Gated on the VIEW: hiding a button is presentation, not permission.
+        with patch('bot.views.plumbot.base.Plumbot') as P:
+            r = self.client.post(self.url)
+        self.assertIn(r.status_code, (302, 403))
+        P.for_appointment.return_value.notify_team.assert_not_called()
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.plumber_contacted_at)
+
+    def test_plain_staff_never_sees_the_button(self):
         html = self.client.get(
             reverse('appointment_detail', args=[self.lead.pk])
         ).content.decode()
-        url = reverse('notify_plumber_of_booking', args=[self.lead.pk])
-        chunk = html[html.find(url) - 400:html.find(url) + 400]
-        self.assertIn('method="post"', chunk)
-        self.assertIn('csrfmiddlewaretoken', chunk)
+        self.assertNotIn(self.url, html)
+
+    def test_the_owner_may_send_it(self):
+        with patch('bot.decorators.is_platform_owner', return_value=True), \
+             patch('bot.views.plumbot.base.Plumbot') as P:
+            P.for_appointment.return_value.extract_appointment_details.return_value = {}
+            r = self.client.post(self.url)
+        self.assertEqual(r.status_code, 302)
+        P.for_appointment.return_value.notify_team.assert_called_once()
+        self.lead.refresh_from_db()
+        self.assertIsNotNone(self.lead.plumber_contacted_at)
+
+    def test_the_template_gate_is_the_owner_flag(self):
+        # The staff render above proves the button hides; this proves WHAT
+        # hides it, so a later edit cannot drop the guard and still pass.
+        from django.template.loader import get_template
+        src = get_template('bot/pages/appointment_detail.html').template.source
+        at = src.find('notify_plumber_of_booking')
+        self.assertIn('is_platform_owner', src[at - 400:at])
+
+    def test_there_is_only_one_of_these_controls(self):
+        # A second copy elsewhere on the page is a second thing to gate.
+        from django.template.loader import get_template
+        src = get_template('bot/pages/appointment_detail.html').template.source
+        self.assertEqual(src.count('notify_plumber_of_booking'), 1)

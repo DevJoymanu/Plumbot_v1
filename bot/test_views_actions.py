@@ -385,7 +385,10 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertEqual(response.status_code, 302)
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.status, 'confirmed')
-        mock_plumbot.return_value.send_confirmation_message.assert_called_once()
+        # Built through Plumbot.for_appointment now, so the tenant cannot
+        # be dropped: the bare constructor resolved to the homebase seed
+        # and confirmed another tenant's lead from the wrong company.
+        mock_plumbot.for_appointment.return_value.send_confirmation_message.assert_called_once()
 
     @patch('bot.views.plumbot.base.Plumbot')
     def test_confirm_without_datetime_sends_nothing(self, mock_plumbot):

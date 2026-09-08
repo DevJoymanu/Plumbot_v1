@@ -2209,7 +2209,7 @@
           Its own form: the surrounding markup here is not one, and the
           Edit Details form would post every field on the page with it.
           {% endcomment %}
-          {% if appointment.scheduled_datetime %}
+          {% if appointment.scheduled_datetime and is_platform_owner %}
           <form method="post"
                 action="{% url 'notify_plumber_of_booking' appointment.pk %}?{{ request.GET.urlencode }}"
                 style="display:inline;">
@@ -2531,22 +2531,6 @@
                     {% endif %}
                     {% if appointment.status == 'confirmed' %}
                     <a href="{% url 'unbook_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn ghost" onclick="return confirm('Unbook this appointment? It goes back to pending and the chatbot keeps talking to this lead.');"><i class="fas fa-rotate-left"></i> Unbook</a>
-                    {% endif %}
-                    {% comment %}
-                    Send the plumber the booking details by hand. Shown whenever
-                    a slot exists, not only once confirmed: the case this is for
-                    is a booking that never completed, where scheduled_datetime
-                    is set and the status never moved off pending, so the
-                    automatic alert inside book_appointment never ran.
-                    {% endcomment %}
-                    {% if appointment.scheduled_datetime %}
-                    <button type="submit" class="action-btn ghost"
-                            formaction="{% url 'notify_plumber_of_booking' appointment.pk %}"
-                            formnovalidate
-                            title="{% if appointment.plumber_contacted_at %}Already sent {{ appointment.plumber_contacted_at|date:'j M, H:i' }}. Sends again.{% else %}The plumber has not been told about this booking yet.{% endif %}">
-                      <i class="fas fa-envelope"></i>
-                      {% if appointment.plumber_contacted_at %}Resend to plumber{% else %}Email the plumber{% endif %}
-                    </button>
                     {% endif %}
                     {% if appointment.status != 'completed' %}
                     <button type="submit"
