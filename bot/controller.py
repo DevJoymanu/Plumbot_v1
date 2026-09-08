@@ -612,6 +612,13 @@ def should_show_work(appointment) -> bool:
             and not work_already_shown(appointment))
 
 
+def _booking_half_made(appointment) -> bool:
+    """A slot is on file but the booking never completed."""
+    slot = getattr(appointment, 'scheduled_datetime', None)
+    status = str(getattr(appointment, 'status', '') or '')
+    return bool(slot) and status != 'confirmed'
+
+
 def _asks_us_something(uclass) -> bool:
     """Did this turn carry a question for us?
 
@@ -703,6 +710,20 @@ def decide_move(uclass, appointment):
     # model concluded.
     if move == 'close_pleasantry' and _asks_us_something(uclass):
         logger.info('close_pleasantry held back: the customer asked something')
+        return None
+
+    # ...and never while a booking is half-made. A slot can be captured by the
+    # extraction flow (scheduled_datetime set) while the booking itself never
+    # completes (status still 'pending'), and in that state the conversation is
+    # the only thing still driving it forward: the confirmation, the plumber
+    # alert and the name and email asks all hang off the booking completing.
+    #
+    # Barmak lead 1144 is the case. "Thursday afternoon, 3pm?" stored the slot
+    # and left the status pending; the lead said "Thank you"; this move closed
+    # the conversation; and the plumber was never told, the name and email were
+    # never asked for, and the visit sat in the diary as an unconfirmed row.
+    if move == 'close_pleasantry' and _booking_half_made(appointment):
+        logger.info('close_pleasantry held back: a booking is still open')
         return None
     # The proof is worth sending once, and only once we know what to match it
     # against. A model that asks for it twice, or before the job is known, is

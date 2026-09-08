@@ -51,6 +51,7 @@ from .appointments import (
     serve_document,
     update_appointment,
     confirm_appointment,
+    notify_plumber_of_booking,
     complete_lead_appointment,
     cancel_appointment,
     unbook_appointment,

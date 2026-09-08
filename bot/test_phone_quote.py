@@ -478,3 +478,85 @@ class TimelineCasingTests(PhoneQuoteBase):
         from bot.lead_handoff import _timeline_phrase
         self.assertEqual(_timeline_phrase('In two weeks'),
                          'looking to get it done in two weeks')
+
+
+class PlumberBookingAlertTests(PhoneQuoteBase):
+    """Sending the plumber the booking details by hand."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.save(update_fields=['scheduled_datetime'])
+
+    def test_it_sends_and_stamps_when_it_was_sent(self):
+        with patch('bot.views.plumbot.base.Plumbot') as P:
+            P.return_value.extract_appointment_details.return_value = {}
+            r = self.client.post(
+                reverse('notify_plumber_of_booking', args=[self.lead.pk]))
+        self.assertEqual(r.status_code, 302)
+        self.lead.refresh_from_db()
+        self.assertIsNotNone(self.lead.plumber_contacted_at)
+        P.return_value.notify_team.assert_called_once()
+
+    def test_it_works_on_a_booking_that_never_confirmed(self):
+        # The case it exists for: slot on file, status still pending, so
+        # book_appointment's automatic alert never ran.
+        self.assertEqual(self.lead.status, 'pending')
+        with patch('bot.views.plumbot.base.Plumbot') as P:
+            P.return_value.extract_appointment_details.return_value = {}
+            self.client.post(
+                reverse('notify_plumber_of_booking', args=[self.lead.pk]))
+        P.return_value.notify_team.assert_called_once()
+
+    def test_it_may_be_sent_again(self):
+        # A second press means the first did not arrive.
+        self.lead.plumber_contacted_at = timezone.now()
+        self.lead.save(update_fields=['plumber_contacted_at'])
+        with patch('bot.views.plumbot.base.Plumbot') as P:
+            P.return_value.extract_appointment_details.return_value = {}
+            self.client.post(
+                reverse('notify_plumber_of_booking', args=[self.lead.pk]))
+        P.return_value.notify_team.assert_called_once()
+
+    def test_no_slot_means_nothing_to_tell_them(self):
+        self.lead.scheduled_datetime = None
+        self.lead.save(update_fields=['scheduled_datetime'])
+        with patch('bot.views.plumbot.base.Plumbot') as P:
+            self.client.post(
+                reverse('notify_plumber_of_booking', args=[self.lead.pk]))
+        P.return_value.notify_team.assert_not_called()
+
+    def test_the_button_is_on_the_page(self):
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])
+        ).content.decode()
+        self.assertIn(reverse('notify_plumber_of_booking', args=[self.lead.pk]),
+                      html)
+
+
+class HalfMadeBookingTests(PhoneQuoteBase):
+    """close_pleasantry must not end a conversation mid-booking."""
+
+    def test_it_is_held_back_while_a_slot_is_unconfirmed(self):
+        from bot.controller import decide_move
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.project_description = 'refit'
+        self.lead.previous_work_photos_sent_at = timezone.now()
+        self.lead.save()
+        uc = {'next_move': 'close_pleasantry', 'move_confidence': 0.9,
+              'intent': 'ack', 'confidence': 'HIGH',
+              'state_update': {'want_level': 'interested'}}
+        self.assertEqual(self.lead.status, 'pending')
+        self.assertIsNone(decide_move(uc, self.lead))
+
+    def test_it_is_allowed_once_the_booking_is_confirmed(self):
+        from bot.controller import decide_move
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.status = 'confirmed'
+        self.lead.project_description = 'refit'
+        self.lead.previous_work_photos_sent_at = timezone.now()
+        self.lead.save()
+        uc = {'next_move': 'close_pleasantry', 'move_confidence': 0.9,
+              'intent': 'ack', 'confidence': 'HIGH',
+              'state_update': {'want_level': 'interested'}}
+        self.assertEqual(decide_move(uc, self.lead), 'close_pleasantry')

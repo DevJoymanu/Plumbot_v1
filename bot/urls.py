@@ -13,6 +13,7 @@ from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
     update_appointment, send_followup, confirm_appointment,
+    notify_plumber_of_booking,
     complete_lead_appointment,
     cancel_appointment, unbook_appointment, test_whatsapp, export_appointments, CalendarView,
     # Import the new document views
@@ -79,6 +80,9 @@ urlpatterns = [
     path('appointments/<int:pk>/', AppointmentDetailView.as_view(), name='appointment_detail'),
     path('appointments/<int:pk>/update/', update_appointment, name='update_appointment'),
     path('appointments/<int:pk>/confirm/', confirm_appointment, name='confirm_appointment'),
+    # Send the plumber the booking details on demand: the automatic alert
+    # only fires inside book_appointment's success path.
+    path('appointments/<int:pk>/notify-plumber/', notify_plumber_of_booking, name='notify_plumber_of_booking'),
     path('appointments/<int:pk>/complete-lead/', complete_lead_appointment, name='complete_lead_appointment'),
     path('appointments/<int:pk>/cancel/', cancel_appointment, name='cancel_appointment'),
     path('appointments/<int:pk>/unbook/', unbook_appointment, name='unbook_appointment'),

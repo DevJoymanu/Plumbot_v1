@@ -1069,6 +1069,59 @@ def confirm_appointment(request, pk):
 
 @staff_required
 @require_POST
+def notify_plumber_of_booking(request, pk):
+    """Send the plumber the booking alert for this appointment, on demand.
+
+    The automatic alert only fires inside book_appointment's success path. A
+    booking that arrives any other way never triggers it, and there was no way
+    to send it afterwards:
+
+      * the dashboard Confirm button sets status and sends the CUSTOMER
+        confirmation, but has never called notify_team;
+      * a slot captured by the extraction flow can leave scheduled_datetime set
+        with status still 'pending', so the booking path is never reached at
+        all (barmak lead 1144: "Thursday 3pm works", slot stored, status
+        pending, plumber_contacted_at None).
+
+    So this is the manual equivalent of that one call. It re-sends freely
+    rather than gating on plumber_contacted_at: the plumber pressing it a
+    second time means the first did not arrive, and refusing them is worse
+    than a duplicate email.
+    """
+    appointment = get_object_or_404(
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)),
+        pk=pk)
+
+    when = appointment.scheduled_datetime
+    if not when:
+        messages.error(
+            request,
+            'No date and time on this appointment yet, so there is nothing to '
+            'tell the plumber. Set the slot first.')
+        return _detail_redirect(request, appointment.pk)
+
+    try:
+        from .plumbot.base import Plumbot
+        plumbot = Plumbot(appointment.phone_number)
+        details = plumbot.extract_appointment_details()
+        plumbot.notify_team(details, when)
+        appointment.plumber_contacted_at = timezone.now()
+        appointment.save(update_fields=['plumber_contacted_at'])
+        messages.success(request, 'Booking details sent to the plumber.')
+        logger.info('Booking alert re-sent for appointment %s by %s',
+                    appointment.pk, getattr(request.user, 'username', '?'))
+    except Exception as exc:
+        # Said out loud rather than swallowed: this button exists because the
+        # automatic send failed once already.
+        logger.exception('Manual plumber booking alert failed for apt %s',
+                         appointment.pk)
+        messages.error(request, f'Could not send it: {exc}')
+
+    return _detail_redirect(request, appointment.pk)
+
+
+@staff_required
+@require_POST
 def complete_lead_appointment(request, pk):
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.status = 'completed'
