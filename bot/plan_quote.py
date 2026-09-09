@@ -116,6 +116,72 @@ def in_contact_window(when):
                for oh, om, ch, cm in CONTACT_WINDOWS)
 
 
+def projected_emails(appointment):
+    """Every email the PLAN path will send or has sent for this lead.
+
+    The plumber-facing half of this is what the dashboard was missing entirely:
+    the plan alert, and the chases that ask whether they have quoted the lead
+    yet. Same reason it lives here as in post_visit -- PLUMBER_NOTIFY_DELAY_HOURS
+    and PLUMBER_REMINDER_OFFSET_HOURS are this module's constants.
+    """
+    row_source = getattr(appointment, 'plan_quote_request', None)
+    if row_source is None:
+        return []
+
+    request = row_source
+    now = timezone.now()
+    rows = []
+
+    def _row(label, when, sent_at, note, to='customer'):
+        moment = sent_at or when
+        if moment is None:
+            return
+        rows.append({
+            'label': label,
+            'scheduled_for': moment,
+            'status': 'sent' if sent_at else ('pending' if when >= now else 'overdue'),
+            'note': note,
+            'source': 'plan_quote',
+            'to': to,
+        })
+
+    anchor_at = request.plan_received_at or request.created_at
+    _row('Plan sent to the plumber',
+         anchor_at + timedelta(hours=PLUMBER_NOTIFY_DELAY_HOURS)
+         if anchor_at else None,
+         request.plumber_email_sent_at,
+         'The job and the drawing, so they can quote off it without a visit.',
+         to='plumber')
+
+    # The chases: "have you quoted this lead yet?", until they answer the form.
+    alert_at = request.plumber_email_sent_at
+    if alert_at and (request.reminders_sent
+                     or not request.plumber_form_completed_at):
+        for number, offset in enumerate(PLUMBER_REMINDER_OFFSET_HOURS, 1):
+            _row(f'Chase the plumber {number} of {len(PLUMBER_REMINDER_OFFSET_HOURS)}',
+                 alert_at + timedelta(hours=offset),
+                 alert_at + timedelta(hours=offset)
+                 if request.reminders_sent >= number else None,
+                 'Asks whether they have quoted this lead yet.', to='plumber')
+
+    # The lead's own follow-up: an hour after the plumber confirms (Branch A),
+    # or at +12h assuming the quote went out (Branch B).
+    if request.plumber_form_completed_at:
+        due = request.plumber_form_completed_at + timedelta(
+            hours=LEAD_FOLLOWUP_AFTER_FORM_HOURS)
+        note = 'Asks the customer about the quote the plumber confirmed sending.'
+    elif alert_at:
+        due = alert_at + timedelta(hours=ASSUME_QUOTE_SENT_AFTER_HOURS)
+        note = ('The plumber never answered, so this assumes the quote went out '
+                'and asks the customer anyway.')
+    else:
+        due, note = None, ''
+    _row('Quote follow-up to the customer', due,
+         request.lead_followup_sent_at, note)
+
+    return rows
+
+
 def lead_is_done(appointment) -> bool:
     """True when this lead must not be chased about a quote any more.
 

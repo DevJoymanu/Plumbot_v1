@@ -7,6 +7,10 @@ import json
 import re
 import uuid
 from decimal import Decimal, InvalidOperation
+import importlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LeadQuerySet(models.QuerySet):
@@ -2426,6 +2430,33 @@ class Appointment(models.Model):
                     'source': 'reminder',
                 })
 
+        # ── The three post-visit / plan / proposal flows ──────────────────
+        # This card claims to be every email on the lead, and for a long time it
+        # showed two sequences out of five: the quote follow-ups, the plan-path
+        # chases and the visit check-ins were invisible here, INCLUDING the two
+        # emails to the plumber that the rest of the system waits on ("how did
+        # the visit go?" and "have you quoted this lead yet?"). A screen that
+        # names itself after a set and shows a third of it is worse than no
+        # screen, because it gets believed.
+        #
+        # Each flow projects its OWN rows (`projected_emails`), next to the
+        # offsets it schedules with, rather than this method growing a second
+        # copy of three cadences it does not own. Each is wrapped: a lead whose
+        # report is half-written must still show the rows we CAN describe.
+        for module in ('post_visit', 'plan_quote', 'visit_proposal'):
+            try:
+                flow = importlib.import_module(f'bot.{module}')
+                items.extend(flow.projected_emails(self) or [])
+            except Exception:
+                logger.warning('Could not project %s emails for lead %s',
+                               module, self.pk, exc_info=True)
+
+        # Every row says who it is for. The flows set it; the two sequences above
+        # are the customer's by definition.
+        for item in items:
+            item.setdefault('to', 'customer')
+            item.setdefault('source', 'other')
+
         # Limit overdue items to the last 7 days — drop ones that have been
         # missed for longer so stale follow-ups don't pile up indefinitely.
         overdue_floor = now - timedelta(days=7)
@@ -2435,7 +2466,15 @@ class Appointment(models.Model):
         ]
 
         items.sort(key=lambda x: x['scheduled_for'])
-        return {'has_email': bool(self.customer_email), 'items': items}
+        # has_email is about the CUSTOMER's address, so it must not be read as
+        # "nothing can be sent": the plumber's rows go to their own inbox and are
+        # unaffected by a lead with no address.
+        return {
+            'has_email': bool(self.customer_email),
+            'items': items,
+            'pending': sum(1 for it in items if it['status'] == 'pending'),
+            'sent': sum(1 for it in items if it['status'] == 'sent'),
+        }
 
     @property
     def last_followup_event(self):

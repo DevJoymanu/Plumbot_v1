@@ -305,6 +305,90 @@ def _next_ask_due(report):
     return None
 
 
+# -- What this flow has scheduled, for the dashboard -------------------------
+
+def projected_emails(appointment):
+    """Every email this flow will send or has sent for this lead.
+
+    Lives HERE, next to the cadence it describes, rather than in the dashboard.
+    The offsets are this module's own (FALLBACK_EMAIL_DELAY_MINUTES,
+    CONFIRM_DAYS_BEFORE, the two ask gaps) and the moments come from the same
+    helpers the cron schedules with (`next_day_noon`, `_at_local_hour`), so the
+    screen cannot describe a cadence the cron does not run.
+    `Appointment.get_upcoming_emails` merges what the three flows return.
+
+    Rows take the shape that method already emits, plus `to`: a plumber's email
+    belongs on the same list as the customer's, because the question the screen
+    answers is "what is going out on this lead", not "what is going out to one
+    particular person".
+    """
+    report = getattr(appointment, 'site_visit_report', None)
+    now = timezone.now()
+    rows = []
+
+    def _row(label, when, sent_at, note, to='customer'):
+        moment = sent_at or when
+        if moment is None:
+            return
+        rows.append({
+            'label': label,
+            'scheduled_for': moment,
+            'status': 'sent' if sent_at else ('pending' if when >= now else 'overdue'),
+            'note': note,
+            'source': 'post_visit',
+            'to': to,
+        })
+
+    # The debrief form goes to the PLUMBER, 35 minutes after the visit ends, and
+    # the whole flow hangs off it: no form, no quote, no asks.
+    end = visit_end(appointment)
+    if report is not None or end is not None:
+        due = (end + timedelta(minutes=FALLBACK_EMAIL_DELAY_MINUTES)) if end else None
+        _row('Site visit debrief form', due,
+             getattr(report, 'fallback_email_sent_at', None),
+             'Asks the plumber how the visit went. Nothing else in this '
+             'sequence runs until it is answered.', to='plumber')
+
+    if report is None:
+        return rows
+
+    if report.sequence == 'confirm' and report.expected_date:
+        _row('Job confirmation',
+             _at_local_hour(report.expected_date - timedelta(days=CONFIRM_DAYS_BEFORE),
+                            CONFIRM_HOUR),
+             report.confirmation_sent_at,
+             'The customer is asked to confirm two days before the day they '
+             'gave us.')
+
+    if report.sequence in ('asks', 'cold'):
+        # All three asks are derivable from the form's own submission: next day
+        # at noon, then +3 days, then +7. ask_count says which have gone out.
+        due = next_day_noon(report.submitted_at or report.created_at)
+        for number in range(1, MAX_ASKS + 1):
+            sent = report.ask_count >= number
+            # Only the LATEST send carries a real timestamp; the earlier ones are
+            # dated off the cadence, which is deterministic.
+            stamp = (report.last_ask_at
+                     if sent and number == report.ask_count else None)
+            _row(f'Quote follow-up {number} of {MAX_ASKS}', due,
+                 (stamp or due) if sent else None,
+                 'Asks the customer when they want the work done.')
+            due = due + timedelta(
+                days=ASK_2_AFTER_DAYS if number == 1 else ASK_3_AFTER_DAYS)
+
+    if report.cold_notified_at:
+        _row('Handed back to the plumber', None, report.cold_notified_at,
+             'Three follow-ups with no reply, so closing this one is theirs.',
+             to='plumber')
+
+    if report.no_email_notified_at:
+        _row('No email on file', None, report.no_email_notified_at,
+             'The plumber was told we cannot reach this lead ourselves.',
+             to='plumber')
+
+    return rows
+
+
 # -- The lead giving a date later (Case B -> Case A) -------------------------
 
 _MONTHS = {

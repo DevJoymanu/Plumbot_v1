@@ -7120,6 +7120,209 @@ class QuoteHandoffTests(StaffClientTestCase):
             405)
 
 
+class EmailFollowupSectionTests(StaffClientTestCase):
+    """The Email tab lists EVERY email sequence on the lead, not two of five.
+
+    It showed the delay re-engagement and the appointment reminders only, so the
+    post-visit quote follow-ups, the plan-path chases and the visit check-ins
+    were invisible on the one screen named after them - including the two emails
+    the rest of the system waits on the PLUMBER for ("how did the visit go?" and
+    "have you quoted this lead yet?"). A screen that names itself after a set and
+    shows a third of it is worse than no screen, because it gets believed.
+
+    Each flow projects its own rows next to the offsets it schedules with, so the
+    screen cannot describe a cadence the cron does not run.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tenant = Tenant.objects.get(slug='homebase')
+        self.lead = make_lead(9900, customer_name='Rudo Moyo',
+                              customer_email='rudo@example.com',
+                              project_type='bathroom_renovation',
+                              status='confirmed',
+                              scheduled_datetime=timezone.now() - timedelta(hours=3))
+
+    def _rows(self, lead=None):
+        return (lead or self.lead).get_upcoming_emails()['items']
+
+    def _labels(self, lead=None):
+        return [r['label'] for r in self._rows(lead)]
+
+    def _page(self, lead=None):
+        response = self.client.get(
+            reverse('appointment_detail', args=[(lead or self.lead).pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    # -- the post-visit flow ----------------------------------------------
+
+    def test_the_debrief_email_to_the_plumber_is_listed(self):
+        """"How did the visit go?" - the email the whole post-visit sequence
+        hangs off, and it was on no screen."""
+        from bot.post_visit import ensure_report
+        ensure_report(self.lead)
+        rows = self._rows()
+        debrief = [r for r in rows if 'debrief' in r['label'].lower()]
+        self.assertEqual(len(debrief), 1, self._labels())
+        self.assertEqual(debrief[0]['to'], 'plumber')
+
+    def test_the_quote_follow_ups_are_listed_with_their_progress(self):
+        from bot.post_visit import apply_submission, ensure_report
+        report = ensure_report(self.lead)
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='rudo@example.com')
+        labels = self._labels()
+        for number in (1, 2, 3):
+            self.assertIn(f'Quote follow-up {number} of 3', labels)
+        # None sent yet, so all three are still ahead of the lead.
+        asks = [r for r in self._rows() if r['label'].startswith('Quote follow-up')]
+        self.assertEqual([r['status'] for r in asks], ['pending'] * 3)
+        self.assertEqual({r['to'] for r in asks}, {'customer'})
+
+    def test_a_sent_ask_reads_as_sent(self):
+        from bot.post_visit import apply_submission, ensure_report
+        report = ensure_report(self.lead)
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='rudo@example.com')
+        report.ask_count = 1
+        report.last_ask_at = timezone.now() - timedelta(hours=2)
+        report.save()
+        asks = [r for r in self._rows() if r['label'].startswith('Quote follow-up')]
+        self.assertEqual([r['status'] for r in asks],
+                         ['sent', 'pending', 'pending'])
+
+    def test_a_named_date_lists_the_confirmation_instead_of_the_asks(self):
+        from bot.post_visit import apply_submission, ensure_report
+        report = ensure_report(self.lead)
+        apply_submission(report, outcome='went_ahead', expectation='specific_date',
+                         expected_date=timezone.localdate() + timedelta(days=9),
+                         email='rudo@example.com')
+        labels = self._labels()
+        self.assertIn('Job confirmation', labels)
+        self.assertNotIn('Quote follow-up 1 of 3', labels)
+
+    # -- the plan path: the chases the user actually asked about -----------
+
+    def test_the_chases_asking_if_the_plumber_quoted_are_listed(self):
+        """"Have you quoted this lead yet?" - three of them, to the plumber."""
+        from bot.models import PlanQuoteRequest
+        PlanQuoteRequest.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            plan_received_at=timezone.now() - timedelta(hours=6),
+            plumber_email_sent_at=timezone.now() - timedelta(hours=5),
+            reminders_sent=1)
+        rows = self._rows()
+        chases = [r for r in rows if r['label'].startswith('Chase the plumber')]
+        self.assertEqual(len(chases), 3, self._labels())
+        self.assertEqual({r['to'] for r in chases}, {'plumber'})
+        self.assertEqual([r['status'] for r in chases][0], 'sent')
+        self.assertIn('Plan sent to the plumber', self._labels())
+
+    def test_the_plan_path_also_lists_the_customers_own_follow_up(self):
+        from bot.models import PlanQuoteRequest
+        PlanQuoteRequest.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            plan_received_at=timezone.now() - timedelta(hours=2),
+            plumber_email_sent_at=timezone.now() - timedelta(hours=1))
+        customer = [r for r in self._rows()
+                    if r['label'] == 'Quote follow-up to the customer']
+        self.assertEqual(len(customer), 1, self._labels())
+        self.assertEqual(customer[0]['to'], 'customer')
+
+    # -- the visit check-ins ----------------------------------------------
+
+    def test_the_visit_check_ins_are_listed(self):
+        from bot.models import VisitProposal
+        VisitProposal.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            target_date=timezone.localdate() + timedelta(days=20),
+            proposed_date=timezone.localdate() + timedelta(days=20))
+        labels = self._labels()
+        self.assertIn('Visit check-in 1 of 2', labels)
+        self.assertIn('Visit check-in 2 of 2', labels)
+
+    def test_a_lead_with_no_email_has_its_check_ins_sent_to_the_plumber(self):
+        """The sender's own rule: with no address we cannot reach them at all, so
+        those two go to the plumber with a wa.me link instead."""
+        from bot.models import VisitProposal
+        lead = make_lead(9901, customer_name='No Address')
+        VisitProposal.objects.create(
+            appointment=lead, tenant=self.tenant,
+            target_date=timezone.localdate() + timedelta(days=20))
+        rows = [r for r in self._rows(lead) if r['label'].startswith('Visit check-in')]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r['to'] for r in rows}, {'plumber'})
+
+    # -- the list as a whole ----------------------------------------------
+
+    def test_every_row_says_who_it_is_for(self):
+        from bot.models import PlanQuoteRequest
+        from bot.post_visit import ensure_report
+        ensure_report(self.lead)
+        PlanQuoteRequest.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            plan_received_at=timezone.now() - timedelta(hours=2))
+        for row in self._rows():
+            self.assertIn(row['to'], ('customer', 'plumber'), row['label'])
+            self.assertIn(row['status'], ('sent', 'pending', 'overdue'), row['label'])
+            self.assertIsNotNone(row['scheduled_for'], row['label'])
+
+    def test_the_rows_are_in_time_order(self):
+        from bot.models import PlanQuoteRequest
+        from bot.post_visit import ensure_report
+        ensure_report(self.lead)
+        PlanQuoteRequest.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            plan_received_at=timezone.now() - timedelta(hours=2),
+            plumber_email_sent_at=timezone.now() - timedelta(hours=1))
+        moments = [r['scheduled_for'] for r in self._rows()]
+        self.assertEqual(moments, sorted(moments))
+
+    def test_the_counts_describe_the_same_rows_as_the_list(self):
+        from bot.post_visit import apply_submission, ensure_report
+        report = ensure_report(self.lead)
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='rudo@example.com')
+        data = self.lead.get_upcoming_emails()
+        self.assertEqual(data['pending'],
+                         sum(1 for r in data['items'] if r['status'] == 'pending'))
+        self.assertEqual(data['sent'],
+                         sum(1 for r in data['items'] if r['status'] == 'sent'))
+
+    def test_one_broken_flow_never_blanks_the_whole_card(self):
+        from unittest.mock import patch
+        from bot.post_visit import ensure_report
+        ensure_report(self.lead)
+        with patch('bot.plan_quote.projected_emails',
+                   side_effect=RuntimeError('flow down')):
+            labels = self._labels()
+        self.assertTrue(any('debrief' in label.lower() for label in labels), labels)
+
+    def test_the_page_renders_the_rows_and_the_recipient(self):
+        from bot.models import PlanQuoteRequest
+        PlanQuoteRequest.objects.create(
+            appointment=self.lead, tenant=self.tenant,
+            plan_received_at=timezone.now() - timedelta(hours=6),
+            plumber_email_sent_at=timezone.now() - timedelta(hours=5))
+        page = self._page()
+        self.assertIn('Email Follow-ups', page)
+        self.assertIn('Chase the plumber 1 of 3', page)
+        self.assertIn('to the plumber', page)
+        self.assertIn('to the customer', page)
+        # Font Awesome 6 FREE is what this project loads: a Pro-only icon would
+        # render as a blank box.
+        self.assertNotIn('fa-user-helmet-safety', page)
+
+    def test_no_second_tab_was_added_for_the_plumber(self):
+        """The tab bar splits by CHANNEL. A tab for a recipient inside a channel
+        would be two axes in one bar, and a sixth column squeezes the labels past
+        legibility on a phone (owner decision, 2026-09-10)."""
+        page = self._page()
+        self.assertIn('repeat(5, minmax(0, 1fr))', page)
+        self.assertEqual(page.count('class="appt-tab-btn'), 5)
+
+
 class QuoteMessageIsTheCloseTests(StaffClientTestCase):
     """The message the quote travels with is the CLOSE, not a covering note.
 

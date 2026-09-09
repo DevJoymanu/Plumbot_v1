@@ -980,6 +980,17 @@
   .em-cat-label { font-size: 14px; font-weight: 600; color: var(--color-text); }
   .em-cat-desc  { font-size: 12px; color: var(--color-muted); margin-top: 2px; }
   .em-cat-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  /* Who a row is for. A chip rather than a tab: the tab bar splits by channel,
+     and splitting by recipient inside that would be two axes in one bar. */
+  .em-to {
+    display: inline-flex; align-items: center; gap: 5px;
+    margin-left: 8px; padding: 2px 8px; border-radius: var(--radius-pill);
+    font-family: var(--font-label); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .03em; white-space: nowrap;
+  }
+  .em-to--customer { background: var(--color-surface-high); color: var(--color-text-2); }
+  .em-to--plumber  { background: rgba(14, 165, 233, 0.14); color: #075985; }
   .em-cat-when {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     margin: 10px 0 4px 28px; padding: 8px 12px;
@@ -3240,24 +3251,47 @@
             </div>
           </div>
 
-          {# ── Upcoming / scheduled emails ── #}
+          {% comment %}
+          EVERY email sequence on this lead, pending and sent, in one list: the
+          delay re-engagement, the appointment reminders, the post-visit quote
+          follow-ups, the plan-path chases and the visit check-ins. It used to
+          show the first two only, so the quote follow-ups and both of the
+          emails the system waits on the PLUMBER for ("how did the visit go?",
+          "have you quoted this lead yet?") were invisible on the one screen
+          named after them.
+
+          Deliberately NOT split into a second tab for the plumber's emails:
+          the tab bar already splits by CHANNEL (WhatsApp / Email), and a tab
+          for a recipient inside a channel would be two different axes in one
+          bar. Who a row is for is a property of the row, so it is a chip on
+          the row (owner decision, 2026-09-10).
+          {% endcomment %}
+          {% with emails=appointment.get_upcoming_emails %}
           <div class="detail-card">
             <div class="detail-card-header">
-              <span>Upcoming Emails</span>
-              {% if not appointment.get_upcoming_emails.has_email %}
-              <span class="fu-count" style="color:#b45309;">No email on file</span>
-              {% endif %}
+              <span>Email Follow-ups</span>
+              <span class="fu-count">
+                {{ emails.pending }} pending · {{ emails.sent }} sent
+                {% if not emails.has_email %}<span style="color:#b45309;">· no customer email</span>{% endif %}
+              </span>
             </div>
             <div class="detail-card-body">
-              {% if not appointment.get_upcoming_emails.has_email %}
+              {% if not emails.has_email %}
               <div class="fu-hint" style="margin-bottom:10px;">
-                Add a customer email in the Customer Email box above so these emails can be sent.
+                No customer email on file, so the rows marked "to the customer"
+                cannot be sent. Add one in the Customer Email box above. The
+                plumber's own emails are unaffected.
               </div>
               {% endif %}
-              {% for em in appointment.get_upcoming_emails.items %}
+              {% for em in emails.items %}
               <div class="fu-sched">
                 <div class="fu-sched-main">
-                  <div class="fu-sched-label">{{ em.label }}</div>
+                  <div class="fu-sched-label">
+                    {{ em.label }}
+                    <span class="em-to em-to--{{ em.to }}">
+                      {% if em.to == 'plumber' %}<i class="fas fa-wrench"></i> to the plumber{% else %}<i class="far fa-user"></i> to the customer{% endif %}
+                    </span>
+                  </div>
                   <div class="fu-sched-time">
                     <i class="far fa-clock"></i> {{ em.scheduled_for|date:"D j M Y, H:i" }}
                   </div>
@@ -3268,12 +3302,14 @@
               {% empty %}
               <div class="empty-block">
                 <i class="far fa-calendar" style="font-size:30px; opacity:.25; display:block; margin-bottom:10px;"></i>
-                No upcoming emails scheduled. They appear once a re-contact date
-                or appointment is set.
+                No email sequences running yet. They start once a visit is
+                logged, a plan arrives, a re-contact date is agreed or an
+                appointment is booked.
               </div>
               {% endfor %}
             </div>
           </div>
+          {% endwith %}
 
           {# ── Email follow-up history ── #}
           <div class="detail-card">

@@ -247,6 +247,51 @@ def _send_plumber_checkin(row, number, now, dry_run, emit, stats):
         emit('[check-in {}] handed to the plumber (apt {})'.format(number, apt.pk))
 
 
+def projected_emails(appointment):
+    """The two check-ins on a future-dated visit, and who each one goes to.
+
+    CHECKIN_OFFSET_DAYS is this module's constant, so the projection lives with
+    it. Recipient follows the same rule the sender uses: a lead with no email
+    cannot be reached by us at all, so their check-ins go to the PLUMBER with a
+    wa.me link instead.
+    """
+    from datetime import datetime, time
+
+    from bot.management.commands.send_followups import SA_TIMEZONE
+
+    proposal = getattr(appointment, 'visit_proposal', None)
+    if proposal is None or not proposal.target_date:
+        return []
+
+    now = timezone.now()
+    to = 'customer' if (appointment.customer_email or '').strip() else 'plumber'
+    stamps = (proposal.checkin_1_sent_at, proposal.checkin_2_sent_at)
+    rows = []
+
+    for number, (offset, sent_at) in enumerate(
+            zip(CHECKIN_OFFSET_DAYS, stamps), 1):
+        # The DAY is what the cadence is written in (CHECKIN_OFFSET_DAYS); the
+        # hour is only firm on the plumber's side, so the note says so rather
+        # than the row promising a minute it does not control.
+        when = SA_TIMEZONE.localize(datetime.combine(
+            proposal.target_date - timedelta(days=offset),
+            time(PLUMBER_CHECKIN_HOUR, 0)))
+        moment = sent_at or when
+        rows.append({
+            'label': f'Visit check-in {number} of {len(CHECKIN_OFFSET_DAYS)}',
+            'scheduled_for': moment,
+            'status': 'sent' if sent_at else (
+                'pending' if when >= now else 'overdue'),
+            'note': (f'{offset} days before the day they are penciled in for.'
+                     + (' Goes out during that day.' if to == 'customer' else
+                        ' No email on file, so the plumber is asked to message '
+                        'them, in the morning.')),
+            'source': 'visit_proposal',
+            'to': to,
+        })
+    return rows
+
+
 def apply_lead_answer(row, *, confirmed: bool, now=None):
     """The lead answered the check-in email. This is the only place a
     future-dated visit becomes a real booking.
