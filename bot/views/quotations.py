@@ -170,6 +170,11 @@ def quote_lead_panel(lead):
     }
 
 
+def _quote_message_body(appointment):
+    from ..lead_handoff import quote_message_body
+    return quote_message_body(appointment)
+
+
 def _sectioned_form_context(request, appointment=None, quotation=None):
     """Shared context for the sectioned quote editor.
 
@@ -192,6 +197,8 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
         # Where the action bar hands them back to once the quote has gone.
         'quote_return_url': quote_return_url(
             request, appointment=appointment, quotation=quotation),
+        # The email draft's copy, from the same builder as the WhatsApp handoff.
+        'quote_blurb_body': _quote_message_body(appointment),
         # The plan and the customer's own words, on this screen rather than one
         # Back press away. Same resolver as the flat editor's.
         **quote_lead_panel(appointment),
@@ -584,6 +591,13 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     context.update(quote_lead_panel(lead))
     context['lead_display_name'] = (
         (getattr(lead, 'customer_name', '') or '').strip() if lead else '')
+    # The email draft's own copy, from the SAME builder the WhatsApp handoff
+    # uses: the quote is the offer, so the message it travels with closes on a
+    # day rather than handing over a document with no next step. The body only,
+    # because this page knows a name the server does not (a standalone quote's
+    # client is typed on the sheet, not on any row).
+    from ..lead_handoff import quote_message_body
+    context['quote_blurb_body'] = quote_message_body(lead)
 
     # A new quote starts at the business's own default deposit; an existing one
     # comes back on whatever was agreed for that job.
@@ -1022,18 +1036,14 @@ def quotation_whatsapp_handoff(request, pk):
     tenant = tenant_of(request, quotation=quotation)
 
     lead_name = (getattr(appointment, 'customer_name', '') or '').strip()
-    service = ''
-    if appointment is not None and appointment.project_type:
-        try:
-            service = appointment.get_project_type_display().lower()
-        except Exception:
-            service = (appointment.project_type or '').replace('_', ' ').lower()
 
-    # Short, and it does not claim the PDF is attached — the plumber attaches it
-    # themselves, and copy that promises otherwise reads as a lie when they
-    # forget. No dashes: nobody types one on a phone (CLAUDE.md).
-    greeting = f'Hi {lead_name},' if lead_name else 'Hi there,'
-    message = f'{greeting} here is your quote for {service or "the work"}.'
+    # One builder for this copy, shared with the editors' own email draft: the
+    # quote is the OFFER, so the message it travels with is the close, and it
+    # asks for a day rather than handing over a document with no next step.
+    from ..lead_handoff import build_quote_message
+    # A standalone quote's placeholder lead carries the client details typed on
+    # the sheet, so the appointment is the name source on every route.
+    message = build_quote_message(appointment)
 
     return render(request, 'bot/pages/quote_whatsapp_handoff.html', {
         'quotation': quotation,

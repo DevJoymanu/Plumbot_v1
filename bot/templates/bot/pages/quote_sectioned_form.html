@@ -823,9 +823,15 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         }, 60000);
     }
 
+    // Same copy as the flat editor and the WhatsApp handoff, from the server's
+    // one builder (lead_handoff.quote_message_body). Only the greeting is built
+    // here: a standalone quote's client is typed on the sheet, not on any row.
+    const QUOTE_BLURB_BODY = "{{ quote_blurb_body|escapejs }}";
+
     function quoteBlurb() {
         const name = bqLeadName || fieldValue('m-client');
-        return (name ? 'Hi ' + name + ',' : 'Hi there,') + ' here is your quote.';
+        const hi = name ? 'Hi ' + name + ',' : 'Hi there,';
+        return hi + '\n\n' + QUOTE_BLURB_BODY;
     }
 
     // Tell the server the quote left on this channel, so the quotes list can

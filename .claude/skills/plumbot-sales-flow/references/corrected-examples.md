@@ -550,3 +550,70 @@ reason we never ask a lead to settle scope: the visit prices whatever is there.
 **The general rule.** Every question the bot asks needs an answer for "no",
 and "ask it again" is never that answer. When adding a question, add its "no"
 branch and a TEST 0 case with it.
+
+
+---
+
+## A prefilled message has to advance the sale, not just deliver a document
+
+These are the drafts the PLUMBER sends from their own WhatsApp (the quote
+handoff, and the "Message them" draft on a lead). They are not bot replies, so
+none of the pricing gates touch them, and both had drifted into covering notes.
+
+**The quote handoff.** One line, and it asked for nothing.
+
+> **Bad:** "Hi Rudo, here is your quote for bathroom renovation."
+>
+> **Good:** "Hi Rudo,
+>
+> Here is your quote for the bathroom renovation. The full breakdown is in there
+> so you can see exactly what you are getting.
+>
+> If you are happy with it I can get you booked in. Which suits you better,
+> earlier in the week or later on?"
+
+Why: a quote IS the offer, which makes this message the Close, and a close asks
+for a DAY. The bad version's best possible outcome is a lead who reads the PDF
+and does nothing, because nothing was put to them. The good version says why the
+document is worth opening (value), then asks *when* rather than *whether* — a
+yes/no hands somebody a way to say no to a question they were never really
+being asked. It carries no figure (the total is in the PDF, and a chat line that
+later disagrees with the document is worse than no number) and no claim about
+what the price covers: "fixed", "all in" and "no extras on the day" are one
+tenant's USPs and this text goes to another tenant's customers.
+
+**The lead draft's ask.** A list of requests with no destination.
+
+> **Bad:** "Thanks for that.
+>
+> To give you an accurate quote, I'll need a few more things:
+> 1. What area you're in, so I know if we cover you
+> 2. When you were hoping to get it done, so I can check we're free"
+>
+> **Good:** "Thanks for that. Let me know if I have anything wrong.
+>
+> So I can get this priced properly for you, I just need two things:
+> 1. What area you're in, so I know if we cover you
+> 2. When you were hoping to get it done, so I can check we're free
+>
+> Once I have those we can come and see the place and get you an exact price."
+
+Why, three changes:
+
+1. **The ask is their outcome, not our paperwork.** "To give you an accurate
+   quote, I'll need" makes the list a favour to us. The same request framed as
+   the price they are waiting on is a step towards something they already want.
+2. **The number is said out loud.** "A few more things" could be three or seven,
+   and a lead who cannot see the end of a request puts it off. "Two things" is a
+   job you can finish on the spot.
+3. **The list is given a destination.** Without the closing line the best case
+   is a lead who answers and then waits. It is a STATEMENT, not a question: a
+   question after a list is the question they answer instead of the list. And
+   the payoff is honest per path - a plan on file means the price itself, no
+   plan means the look first, and neither version names a cost, because some
+   tenants charge for the visit.
+
+The acknowledgement also stopped being a receipt. "Let me know if I have
+anything wrong" invites the cheapest possible agreement, and a lead who has just
+agreed with us once answers the ask underneath more readily than one who has
+only had their own details read back at them.

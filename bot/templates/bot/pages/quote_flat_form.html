@@ -893,12 +893,19 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
         }, 60000);
     }
 
+    // The quote is the OFFER, so the message it travels with is the close: say
+    // what they are getting, then ask for a day. The copy is the SERVER's
+    // (lead_handoff.quote_message_body), the same one the WhatsApp handoff
+    // sends, so there is one wording of this message in the product rather than
+    // one per screen. Only the greeting is built here, because this page knows a
+    // name the server does not: a standalone quote's client is typed on the
+    // sheet, not stored on any row.
+    const QUOTE_BLURB_BODY = "{{ quote_blurb_body|escapejs }}";
+
     function quoteBlurb() {
-        const type = document.getElementById('projectType');
-        const service = type && type.selectedIndex > 0
-            ? type.options[type.selectedIndex].text.toLowerCase() : 'the work';
-        const hi = leadName ? 'Hi ' + leadName + ',' : 'Hi there,';
-        return hi + ' here is your quote for ' + service + '.';
+        const name = leadName || val('clientName');
+        const hi = name ? 'Hi ' + name + ',' : 'Hi there,';
+        return hi + '\n\n' + QUOTE_BLURB_BODY;
     }
 
     // Tell the server the quote left on this channel, so the quotes list can

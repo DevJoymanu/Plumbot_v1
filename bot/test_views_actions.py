@@ -7120,6 +7120,111 @@ class QuoteHandoffTests(StaffClientTestCase):
             405)
 
 
+class QuoteMessageIsTheCloseTests(StaffClientTestCase):
+    """The message the quote travels with is the CLOSE, not a covering note.
+
+    It used to be "here is your quote for the bathroom renovation." and nothing
+    else: a document handed over with no next step, so the best outcome was a
+    lead who read it and did nothing. A quote IS the offer, and the offer has to
+    be followed by an ask - for a DAY, never for a decision. A yes/no hands
+    somebody a way to say no to a question they were never really being asked.
+
+    One builder (`lead_handoff.build_quote_message` / `quote_message_body`) feeds
+    the WhatsApp handoff and both editors' email drafts, because the same message
+    written three times becomes three messages.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9810, customer_name='Rudo',
+                              customer_email='rudo@example.com',
+                              project_type='bathroom_renovation')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+
+    def _message(self):
+        response = self.client.get(
+            reverse('quotation_whatsapp_handoff', args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.context['prefilled_message']
+
+    def test_it_names_the_job_and_the_customer(self):
+        message = self._message()
+        self.assertIn('Hi Rudo,', message)
+        self.assertIn('the bathroom renovation', message)
+
+    def test_it_closes_on_when_and_never_on_whether(self):
+        message = self._message()
+        self.assertIn('I can get you booked in', message)
+        # A choice between two, which is answered by picking one.
+        self.assertIn('Which suits you better', message)
+        for dead_end in ('let me know if', 'any questions', 'hope this helps',
+                         'look forward to hearing'):
+            self.assertNotIn(dead_end, message.lower())
+        # ONE question: two and only the last gets answered.
+        self.assertEqual(message.count('?'), 1)
+
+    def test_it_carries_no_figure(self):
+        """The total is in the PDF, and a number typed into a chat line that
+        later disagrees with the document is worse than no number."""
+        self.quote.total_amount = Decimal('2450')
+        self.quote.save()
+        message = self._message()
+        self.assertNotIn('2450', message)
+        self.assertNotIn('2,450', message)
+        self.assertNotIn('US$', message)
+
+    def test_it_makes_no_claim_that_belongs_to_one_tenant(self):
+        """"Fixed", "all in" and "no extras on the day" are one business's USPs,
+        and this text goes to another tenant's customer."""
+        message = self._message().lower()
+        for claim in ('fixed price', 'all in', 'all-in', 'no extras', 'free',
+                      'guarantee', 'deposit'):
+            self.assertNotIn(claim, message)
+
+    def test_it_never_claims_the_pdf_is_attached(self):
+        """The plumber attaches it themselves in their own app, and copy that
+        promises otherwise reads as a lie when they forget."""
+        message = self._message().lower()
+        self.assertNotIn('attached', message)
+        self.assertNotIn('find enclosed', message)
+
+    def test_it_obeys_the_copy_rules(self):
+        message = self._message()
+        self.assertNotIn(chr(8212), message)   # em dash
+        self.assertNotIn(chr(8211), message)   # en dash
+        self.assertTrue(all(ord(c) < 0x1F300 for c in message))
+
+    def test_a_nameless_lead_is_greeted_without_a_placeholder(self):
+        bare = make_lead(9811)
+        quote = Quotation.objects.create(appointment=bare)
+        message = self.client.get(
+            reverse('quotation_whatsapp_handoff', args=[quote.pk])
+        ).context['prefilled_message']
+        self.assertIn('Hi there,', message)
+        self.assertIn('the work', message)
+        for placeholder in ('None', 'the customer', 'N/A', 'Not given'):
+            self.assertNotIn(placeholder, message)
+
+    def test_both_editors_draft_the_same_message(self):
+        """Not a copy of the copy: the editors take the body from the server and
+        build only the greeting, because they know a name it does not."""
+        from bot.lead_handoff import quote_message_body
+        body = quote_message_body(self.lead)
+        for url in (reverse('create_quotation', args=[self.lead.pk]),
+                    reverse('edit_quotation', args=[self.quote.pk])):
+            with self.subTest(url=url):
+                response = self.client.get(url)
+                self.assertEqual(response.context['quote_blurb_body'], body)
+                page = response.content.decode()
+                self.assertIn('QUOTE_BLURB_BODY', page)
+                self.assertNotIn('here is your quote', page)
+                # The join has to be an ESCAPED newline. Written as a real one
+                # it closes the JS string literal and kills the whole handler on
+                # a page still returning 200, which no Django assertion can see.
+                self.assertIn(chr(92) + 'n' + chr(92) + 'n' + "' + QUOTE_BLURB_BODY",
+                              page)
+
+
 class QuoteDocumentParityTests(StaffClientTestCase):
     """The editor's preview and the client copy are the SAME document.
 

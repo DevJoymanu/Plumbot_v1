@@ -173,40 +173,85 @@ def _gaps(appointment) -> list:
     return out
 
 
+# How many things we are asking for, said out loud. Naming the number is the
+# cheapest thing in the message and it does the most work: "a few more things"
+# could be three or seven, and a lead who cannot see the end of a request puts
+# it off. "Two things" is a job you can finish on the spot.
+_COUNTS = {2: 'two things', 3: 'three things', 4: 'four things'}
+
+
+def _count_phrase(n: int) -> str:
+    return _COUNTS.get(n, 'a few things')
+
+
+def _ask_payoff(appointment, single: bool = False) -> str:
+    """What happens once they answer.
+
+    A list of requests with no destination is extraction: the best case is a
+    lead who answers and then waits. This is the line that makes the list worth
+    working through, and it is the honest next step for the path they are on,
+    never a promise on top of it.
+
+    A plan on file means the drawing carries the measurements, so the answers
+    are the last thing between them and a price. With no plan there is nothing
+    to price off yet, so the next step is the look, described the way the owner
+    describes it. It carries NO cost either way: what a visit costs is the
+    tenant's own business and some of them charge for it.
+    """
+    # "one more thing" followed by "once I have those" reads as though nobody
+    # proof-read it.
+    it = 'that' if single else 'those'
+    if has_plan(appointment):
+        return f'Once I have {it} I can get the price over to you.'
+    return (f'Once I have {it} we can come and see the place and get you '
+            f'an exact price.')
+
+
 def build_ask(appointment) -> str:
-    """Everything outstanding, numbered, each with the reason we want it.
+    """Everything outstanding, numbered, each with the reason we want it, and
+    the thing that happens once they answer.
 
     A numbered list because these are things to go and find out, and a list
     someone can work down and tick off gets answered; a paragraph of four
     requests gets one answer and a vague apology. One item is not a list
     though, so a single gap stays a sentence.
+
+    THE LIST IS THE ONLY ASK. The payoff line that closes it is a statement on
+    purpose: a question after a list is the question they answer instead of the
+    list.
     """
     gaps = _gaps(appointment)
     if not gaps:
         return ''
 
-    # A name prices nothing, so "to give you an accurate quote" is the wrong
+    # A name prices nothing, so "so I can get this priced properly" is the wrong
     # reason to give for it. On its own it is the booking question the owner
     # actually asks, in the words they ask it in.
     if gaps == ['customer_name']:
         return 'One last thing, what name should I put it under?'
 
     items = [_need(appointment, f) for f in gaps]
-    # The plan is what makes a real price possible without a visit, so it is
-    # the opener worth giving: they already did the hard part.
+    # The opener names THEIR outcome, not our paperwork. "To give you an
+    # accurate quote, I'll need" makes the list a favour to us; the same
+    # request framed as the price they are waiting on is a step towards
+    # something they already want. The plan is the better opener still, because
+    # it says they have already done the hard part.
     opener = ('I can price it off the plan you sent. I just need'
               if has_plan(appointment)
-              else "To give you an accurate quote, I'll need")
+              else 'So I can get this priced properly for you, I just need')
+
+    payoff = _BREAK + _ask_payoff(appointment, single=len(items) == 1)
 
     if len(items) == 1:
-        return f'{opener} one more thing: {items[0]}.'
+        return f'{opener} one more thing: {items[0]}.{payoff}'
 
     # Each line starts as a sentence would. A numbered list whose items are
     # lowercase reads as a fragment of something else.
     numbered = chr(10).join(
         f'{n}. {item[0].upper()}{item[1:]}'
         for n, item in enumerate(items, 1))
-    return f'{opener} a few more things:{chr(10)}{chr(10)}{numbered}'
+    return (f'{opener} {_count_phrase(len(items))}:'
+            f'{chr(10)}{chr(10)}{numbered}{payoff}')
 
 
 def missing(appointment) -> list:
@@ -405,6 +450,18 @@ def _recap(appointment) -> list:
     elif lines:
         lines.append('Thanks for that.')
 
+    # An acknowledgement that asks for nothing is a receipt. This invites the
+    # cheapest possible agreement - "yeah that's right" - and a lead who has
+    # just agreed with us once answers the ask underneath it more readily than
+    # one who has only been read a list of their own details back.
+    #
+    # A STATEMENT, not a question: the ask below is the message's one question,
+    # and two of them means only the last gets answered. It also earns its place
+    # honestly, because the job in the recap is often the customer's own words
+    # and we may well have read them wrong.
+    if head or timeline:
+        lines.append('Let me know if I have anything wrong.')
+
     return lines
 
 
@@ -464,6 +521,59 @@ def build_message(appointment) -> str:
     blocks.append(build_ask(appointment) or booking_close(appointment))
 
     return _clean(_BREAK.join(blocks) + sign_off)
+
+
+# ── The quote ───────────────────────────────────────────────────────────────
+
+def build_quote_message(appointment, name: str = '') -> str:
+    """The message the QUOTE goes out with, from the plumber's own WhatsApp.
+
+    It used to be "here is your quote for the bathroom renovation." and nothing
+    more: a document handed over with no next step, so the best outcome was a
+    lead who read it and did nothing. A quote IS the offer, which makes this
+    message the CLOSE, and a close has a shape. Say what they are getting, then
+    ask WHEN rather than WHETHER: a yes/no hands somebody a way to say no to a
+    question they were never really being asked, while a choice between two days
+    is answered by picking one.
+
+    Deliberately carries NO figure. The total is in the document, and a number
+    typed into a chat line that later disagrees with the PDF is worse than no
+    number at all. Deliberately makes NO claim about what the price covers
+    beyond what the document itself shows: "fixed", "all in" and "no extras on
+    the day" are one tenant's USPs, and this text goes to another tenant's
+    customer.
+
+    `name` is the fallback for a standalone quote, whose lead is a stub with no
+    customer name on it but whose sheet has one typed on it.
+    """
+    who = (_value(appointment, 'customer_name') if appointment is not None
+           else '') or (name or '').strip()
+    greeting = f'Hi {who},' if who else 'Hi there,'
+    return _clean(greeting + _BREAK + quote_message_body(appointment))
+
+
+def quote_message_body(appointment) -> str:
+    """The quote message WITHOUT the greeting.
+
+    Split out for the editors, which draft the same message in the browser and
+    know a name the server does not: a standalone quote is typed on a blank
+    sheet, so the client's name is in a form field rather than on any row. The
+    server owns the copy, the page owns the greeting, and there is one wording
+    of this message in the product rather than one per screen.
+    """
+    service = service_label(appointment).lower() if appointment is not None else ''
+
+    return _clean(_BREAK.join([
+        # Not "please find attached": the plumber attaches the PDF themselves in
+        # their own app, and copy that promises otherwise reads as a lie when
+        # they forget. What it does say is why the document is worth opening.
+        f'Here is your quote for {"the " + service if service else "the work"}. '
+        f'The full breakdown is in there so you can see exactly what you are '
+        f'getting.',
+        # The close. One question, and it is about the diary.
+        'If you are happy with it I can get you booked in. Which suits you '
+        'better, earlier in the week or later on?',
+    ]))
 
 
 def _clean(text: str) -> str:

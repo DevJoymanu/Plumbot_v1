@@ -370,16 +370,57 @@ class LeadMessageRecapTests(PhoneQuoteBase):
         self.assertIn("what area you're in", msg.lower())
         self.assertIn('email', msg.lower())
 
-    def test_the_ask_says_why_it_is_being_asked(self):
+    def test_the_ask_is_framed_as_their_outcome_not_our_paperwork(self):
+        """"To give you an accurate quote, I'll need" makes the list a favour to
+        us. The same request framed as the price they are waiting on is a step
+        towards something they already want."""
         msg = self._msg(project_description='geyser swap',
                         customer_area='Borrowdale', timeline='next month')
-        self.assertIn('accurate quote', msg)
+        self.assertIn('So I can get this priced properly for you', msg)
+
+    def test_the_ask_says_what_happens_once_they_answer(self):
+        """A list of requests with no destination is extraction: the best case is
+        a lead who answers and then waits."""
+        msg = self._msg(project_description='geyser swap',
+                        customer_area='Borrowdale', timeline='next month')
+        self.assertIn('we can come and see the place', msg)
+        # A plan on file means there is nothing to measure up, so the payoff is
+        # the price itself and the visit is never pitched.
+        plan = self._msg(project_description='geyser swap', plan_status='plan_uploaded',
+                         customer_area='Borrowdale', timeline='next month')
+        self.assertIn('get the price over to you', plan)
+        self.assertNotIn('come and see the place', plan)
+
+    def test_the_payoff_agrees_with_how_much_was_asked_for(self):
+        one = self._msg(project_description='geyser swap', customer_area='Ruwa',
+                        timeline='next month')
+        self.assertIn('one more thing', one)
+        self.assertIn('Once I have that ', one)
+        many = self._msg(project_description='geyser swap', customer_area='',
+                         timeline='', customer_email='')
+        self.assertIn('Once I have those ', many)
+
+    def test_the_ask_names_how_many_things_it_wants(self):
+        """"A few more things" could be three or seven, and a lead who cannot see
+        the end of a request puts it off."""
+        msg = self._msg(project_description='geyser swap', customer_area='',
+                        timeline='', customer_email='')
+        self.assertIn('three things:', msg)
+
+    def test_the_recap_invites_the_cheapest_possible_yes(self):
+        """A lead who has just agreed with us once answers the ask underneath
+        more readily. A STATEMENT, not a second question: two question marks and
+        only the last one gets answered."""
+        msg = self._msg(project_description='geyser swap', customer_area='Ruwa',
+                        timeline='next month')
+        self.assertIn('Let me know if I have anything wrong.', msg)
+        self.assertEqual(msg.count('?'), 0)
 
     def test_the_gaps_are_numbered_and_each_says_why(self):
         blank = Appointment.objects.create(
             phone_number='whatsapp:+263779999999', tenant=self.tenant)
         msg = build_message_of(blank)
-        self.assertIn("I'll need a few more things:", msg)
+        self.assertIn('four things:', msg)
         for n in ('1. ', '2. ', '3. ', '4. '):
             self.assertIn(n, msg)
         # The reason is the point of the format: a field name is a form, a
@@ -415,7 +456,7 @@ class LeadMessageRecapTests(PhoneQuoteBase):
         msg = self._msg(project_description='geyser swap',
                         customer_area='Borrowdale')
         self.assertIn('when you were hoping to get it done', msg.lower())
-        self.assertIn('accurate quote', msg)
+        self.assertIn("so I can check we're free", msg)
 
     def test_it_never_asks_what_it_just_said_it_knows(self):
         # Service known but no description: the ask must build on the recap,
