@@ -876,6 +876,25 @@ class Appointment(models.Model):
 
         return self
 
+    def active_slot_field(self) -> str:
+        """WHICH datetime column is "the" appointment on this row.
+
+        One row can hold two: `schedule_job_appointment` flips
+        `appointment_type` and fills `job_scheduled_datetime`, leaving the
+        completed site visit in `scheduled_datetime`. Every path that reads or
+        MOVES an appointment has to agree which one it means - the bot's
+        reschedule flow (`_reschedule_slot`), the dashboard's own edit form, the
+        jobs board and `send_job_reminders` - and when they disagreed a job
+        customer's move was quoted against, and written to, the visit they had
+        already had.
+
+        A job row with no job datetime yet still points at `scheduled_datetime`:
+        there is nothing else for it to mean.
+        """
+        if self.appointment_type == 'job_appointment' and self.job_scheduled_datetime:
+            return 'job_scheduled_datetime'
+        return 'scheduled_datetime'
+
     def get_job_appointments(self):
         """Get all job appointments for this site visit"""
         return self.job_appointments.all()

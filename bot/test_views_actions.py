@@ -334,6 +334,104 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertEqual(self.lead.customer_email, 'lead@example.com')
         self.assertEqual(self.lead.follow_up_status, 'in_progress')
 
+    def test_detail_post_accepts_a_date_and_time(self):
+        response = self.client.post(self.detail_url(), {
+            'customer_name': 'Action Lead',
+            'scheduled_datetime': '2026-10-14T09:30',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.lead.refresh_from_db()
+        local = timezone.localtime(self.lead.scheduled_datetime)
+        self.assertEqual(local.strftime('%Y-%m-%d %H:%M'), '2026-10-14 09:30')
+
+    def test_a_moved_visit_gets_a_new_end_time(self):
+        """save() fills end_datetime only while it is EMPTY, so a moved visit
+        kept the end of the slot it used to hold. A move to an EARLIER time is
+        the one that bites: the stale end is still later than the new start, so
+        it passes every staleness guard and reads as an hours-long visit."""
+        self.client.post(self.detail_url(),
+                         {'scheduled_datetime': '2026-10-14T15:00'})
+        self.client.post(self.detail_url(),
+                         {'scheduled_datetime': '2026-10-14T09:00'})
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.end_datetime,
+                         self.lead.scheduled_datetime + self.lead.duration)
+
+    def test_an_emptied_box_clears_the_date_and_time(self):
+        """`if raw:` could not tell a field the plumber had emptied from one they
+        had never touched, so a date could be set here but never taken off."""
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
+        self.lead.save()
+        self.client.post(self.detail_url(), {'scheduled_datetime': ''})
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.scheduled_datetime)
+        self.assertIsNone(self.lead.end_datetime)
+
+    def test_an_emptied_box_clears_the_next_follow_up(self):
+        self.lead.next_follow_up_at = timezone.now() + timedelta(days=1)
+        self.lead.save()
+        self.client.post(self.detail_url(), {'next_follow_up_at': ''})
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.next_follow_up_at)
+
+    def test_a_form_that_never_posted_the_box_leaves_the_date_alone(self):
+        """The plan-upload form and the banner's forms post to this same view. A
+        MISSING key means "not on this form", never "clear it"."""
+        when = timezone.now() + timedelta(days=3)
+        self.lead.scheduled_datetime = when
+        self.lead.next_follow_up_at = when
+        self.lead.save()
+        self.client.post(self.detail_url(), {'customer_name': 'Still Here'})
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.customer_name, 'Still Here')
+        self.assertIsNotNone(self.lead.scheduled_datetime)
+        self.assertIsNotNone(self.lead.next_follow_up_at)
+
+    def test_a_job_row_edits_the_JOB_datetime_not_the_finished_visit(self):
+        """One row holds both: the completed site visit stays in
+        scheduled_datetime while the job lives in job_scheduled_datetime. The
+        handler branched on the type and then read a `job_scheduled_datetime`
+        POST key this form has never rendered, so on a job row the date and time
+        the plumber typed was thrown away silently, under "Appointment updated
+        successfully!"."""
+        visit = timezone.now() - timedelta(days=4)
+        job = make_lead(2, customer_name='Job Lead',
+                        appointment_type='job_appointment',
+                        scheduled_datetime=visit,
+                        job_scheduled_datetime=timezone.now() + timedelta(days=1))
+        self.client.post(reverse('appointment_detail', args=[job.pk]),
+                         {'scheduled_datetime': '2026-11-03T11:00'})
+        job.refresh_from_db()
+        self.assertEqual(
+            timezone.localtime(job.job_scheduled_datetime).strftime('%Y-%m-%d %H:%M'),
+            '2026-11-03 11:00')
+        # the visit they have already had must not move
+        self.assertEqual(job.scheduled_datetime.date(), visit.date())
+
+    def test_the_box_shows_the_slot_it_edits(self):
+        """A job row that rendered its finished site-visit date into this box
+        would write that date over the job's own datetime on save."""
+        job = make_lead(3, appointment_type='job_appointment',
+                        scheduled_datetime=timezone.now() - timedelta(days=4),
+                        job_scheduled_datetime=timezone.now() + timedelta(days=1))
+        response = self.client.get(reverse('appointment_detail', args=[job.pk]))
+        self.assertEqual(response.context['slot_label'], 'Job scheduled')
+        self.assertEqual(response.context['slot_datetime'], job.job_scheduled_datetime)
+        plain = self.client.get(self.detail_url())
+        self.assertEqual(plain.context['slot_label'], 'Scheduled')
+
+    def test_the_bot_and_the_form_agree_on_which_slot_moves(self):
+        """Two answers to "which appointment moves" is how a job customer's
+        reschedule was written to the visit they had already had."""
+        job = make_lead(4, appointment_type='job_appointment',
+                        scheduled_datetime=timezone.now() - timedelta(days=4),
+                        job_scheduled_datetime=timezone.now() + timedelta(days=1))
+        self.assertEqual(job.active_slot_field(), 'job_scheduled_datetime')
+        # a job row with no job datetime yet has nothing else to mean
+        pending = make_lead(5, appointment_type='job_appointment',
+                            scheduled_datetime=timezone.now())
+        self.assertEqual(pending.active_slot_field(), 'scheduled_datetime')
+
     def test_plan_upload_sets_plan_state(self):
         """The glance-card plan form: upload sets the file + plan flags and
         must not touch any other field."""

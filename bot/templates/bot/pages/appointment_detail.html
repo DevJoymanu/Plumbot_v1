@@ -2533,8 +2533,18 @@
                       <input type="text" id="customer_area" name="customer_area" value="{{ appointment.customer_area|default:'' }}">
                     </div>
                     <div class="detail-field">
-                      <label for="scheduled_datetime">Scheduled</label>
-                      <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime" value="{{ appointment.scheduled_datetime|date:'Y-m-d\\TH:i' }}">
+                      {% comment %}
+                      One box, and it edits whichever datetime this row's
+                      appointment lives in - a lead's site visit, or the JOB
+                      once one is booked (the row holds both). The label and
+                      the value come from the view
+                      (Appointment.active_slot_field), never re-derived here:
+                      rendering the finished visit's date into this box on a
+                      job row would write it over the job's own datetime on
+                      save. Empty the box to clear the slot.
+                      {% endcomment %}
+                      <label for="scheduled_datetime">{{ slot_label }}</label>
+                      <input type="datetime-local" id="scheduled_datetime" name="scheduled_datetime" value="{{ slot_datetime|date:'Y-m-d\\TH:i' }}">
                     </div>
                     <div class="detail-field">
                       <label for="property_type">Property Type</label>

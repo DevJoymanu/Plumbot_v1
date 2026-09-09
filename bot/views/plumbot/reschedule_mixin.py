@@ -48,11 +48,17 @@ class RescheduleMixin:
         # written to scheduled_datetime, while the jobs board and
         # send_job_reminders went on reading job_scheduled_datetime.
         def _reschedule_slot(self):
-            """(field_name, current_datetime) for the appointment in play."""
+            """(field_name, current_datetime) for the appointment in play.
+
+            The rule itself lives on the model (`active_slot_field`) so the
+            dashboard's edit form cannot answer this question differently from
+            the bot: one row can hold both a finished site visit and a booked
+            job, and a move written to the wrong column moves nothing anybody
+            reads.
+            """
             apt = self.appointment
-            if apt.appointment_type == 'job_appointment' and apt.job_scheduled_datetime:
-                return 'job_scheduled_datetime', apt.job_scheduled_datetime
-            return 'scheduled_datetime', apt.scheduled_datetime
+            field = apt.active_slot_field()
+            return field, getattr(apt, field)
 
         def _slot_display(self, dt):
             """The slot as the customer reads it, in SAST."""

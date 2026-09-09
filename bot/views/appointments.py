@@ -27,7 +27,6 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import mimetypes
 import requests
-import pytz
 import os
 import json
 import re
@@ -913,11 +912,20 @@ class AppointmentDetailView(DetailView):
             reverse('appointment_detail', kwargs={'pk': appointment.pk}),
             quotes_tab_params.urlencode())
 
+        # The edit form's one date-and-time box edits whichever column this
+        # row's appointment lives in. Resolved HERE, never re-derived in the
+        # markup: a job row that rendered its finished site-visit date into that
+        # box would write that date over the job's own datetime on save.
+        slot_field = appointment.active_slot_field()
+
         context.update({
             'active_nav': active_nav,
             'is_frame': is_frame,
             'base_template': base_template,
             'quotes_tab_url': quotes_tab_url,
+            'slot_datetime': getattr(appointment, slot_field),
+            'slot_label': ('Job scheduled' if slot_field == 'job_scheduled_datetime'
+                           else 'Scheduled'),
             'sidebar_filter': sidebar_filter,
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),
@@ -976,31 +984,40 @@ class AppointmentDetailView(DetailView):
             appointment.follow_up_status = request.POST.get('follow_up_status', appointment.follow_up_status)
             appointment.admin_notes = request.POST.get('admin_notes', appointment.admin_notes)
 
-            next_follow_up_raw = request.POST.get('next_follow_up_at')
-            if next_follow_up_raw:
-                next_dt = datetime.fromisoformat(next_follow_up_raw)
-                sa_timezone = pytz.timezone('Africa/Johannesburg')
-                if next_dt.tzinfo is None:
-                    next_dt = sa_timezone.localize(next_dt)
-                appointment.next_follow_up_at = next_dt
+            # Only fields the form actually posted are touched, here and below:
+            # the plan-upload form and the banner's own forms post to this same
+            # view, and a missing key must mean "not on this form", never "clear
+            # it". An EMPTY key is the plumber emptying the box.
+            if 'next_follow_up_at' in request.POST:
+                appointment.next_follow_up_at = _parse_local_datetime(
+                    request.POST.get('next_follow_up_at'))
 
-            # Handle datetime fields based on appointment type
-            if appointment.appointment_type == 'job_appointment':
-                job_datetime = request.POST.get('job_scheduled_datetime')
-                if job_datetime:
-                    # Parse string into datetime object
-                    dt = datetime.strptime(job_datetime, "%Y-%m-%d %H:%M")
-                    # Make timezone aware
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    appointment.job_scheduled_datetime = sa_timezone.localize(dt)
-            else:
-                scheduled_datetime = request.POST.get('scheduled_datetime')
-                if scheduled_datetime:
-                    dt = datetime.fromisoformat(scheduled_datetime)
-                    sa_timezone = pytz.timezone('Africa/Johannesburg')
-                    if dt.tzinfo is None:
-                        dt = sa_timezone.localize(dt)
-                    appointment.scheduled_datetime = dt
+            # ── The date and time ────────────────────────────────────────────
+            # The form has ONE box for this, and it edits whichever column this
+            # row's appointment actually lives in (`active_slot_field`, the rule
+            # the bot's reschedule flow reads too). It used to branch on the type
+            # and then read `job_scheduled_datetime` - a field this form has
+            # never rendered - so on a job row the date and time the plumber
+            # typed came from a key that was not in the POST and was thrown
+            # away silently, under "Appointment updated successfully!".
+            #
+            # An explicit `job_scheduled_datetime` still wins where a caller
+            # sends one: that key names the column outright.
+            if 'job_scheduled_datetime' in request.POST:
+                appointment.job_scheduled_datetime = _parse_local_datetime(
+                    request.POST.get('job_scheduled_datetime'))
+            if 'scheduled_datetime' in request.POST:
+                slot_field = appointment.active_slot_field()
+                slot_dt = _parse_local_datetime(request.POST.get('scheduled_datetime'))
+                setattr(appointment, slot_field, slot_dt)
+                if slot_field == 'scheduled_datetime':
+                    # save() fills end_datetime only while it is EMPTY, so a
+                    # moved visit otherwise keeps the end of the slot it used to
+                    # hold. A move to an earlier time is the one that bites: the
+                    # stale end is still later than the new start, so it passes
+                    # every staleness guard and reads as an hours-long visit.
+                    appointment.end_datetime = (
+                        slot_dt + appointment.duration if slot_dt else None)
 
             appointment.save()
             refresh_lead_score(appointment)
@@ -1116,6 +1133,29 @@ def update_appointment(request, pk):
         'document_count': document_count,
         'conversation_history': conversation_history,
     })
+
+
+def _parse_local_datetime(raw):
+    """A date and time typed into a form field, as an aware local datetime.
+
+    Accepts what a browser sends from `<input type="datetime-local">`
+    ("2026-09-10T14:30", with seconds on some browsers) as well as the
+    space-separated spelling other callers post - the old handler used
+    `strptime(..., "%Y-%m-%d %H:%M")` on one of those paths, which raises on
+    every value this form actually produces.
+
+    BLANK RETURNS None, and None is a real answer: it is how a slot is cleared.
+    The old `if raw:` guard could not tell a field the plumber had emptied from
+    one they had not touched, so a date could be set here but never taken off.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    parsed = datetime.fromisoformat(raw)
+    if timezone.is_naive(parsed):
+        # The form is filled in in the business's own time, never UTC.
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
 
 
 def _detail_redirect(request, pk):

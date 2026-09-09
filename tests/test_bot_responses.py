@@ -6821,6 +6821,14 @@ try:
         def plumber_contact(self):
             return self.contact
 
+        def active_slot_field(self):
+            """The real model's rule, mirrored: _reschedule_slot delegates to it
+            so the dashboard's edit form and the bot cannot disagree about WHICH
+            datetime a row's appointment lives in."""
+            if self.appointment_type == 'job_appointment' and self.job_scheduled_datetime:
+                return 'job_scheduled_datetime'
+            return 'scheduled_datetime'
+
     class _FakeResched(_RSM):
         """Fake self for the reschedule resolvers — carries every attribute the
         copy builders reach for (language, SAST formatting, tenant hours)."""
