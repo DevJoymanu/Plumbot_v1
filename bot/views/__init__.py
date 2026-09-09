@@ -63,6 +63,8 @@ from .settings_views import (
     settings_view,
     calendar_settings_view,
     ai_settings_view,
+    email_settings_view,
+    email_health_test,
     test_whatsapp,
 )
 

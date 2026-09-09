@@ -39,6 +39,7 @@ from ..forms import (
 )
 from ..decorators import (
     staff_required, superuser_required, anonymous_required, StaffRequiredMixin,
+    owner_required,
 )
 from ..whatsapp_cloud_api import whatsapp_api
 from ..services.clients import (
@@ -116,6 +117,62 @@ def ai_settings_view(request):
         'form': form,
         'active_tab': 'ai'
     })
+
+
+@superuser_required
+def email_settings_view(request):
+    """Whether the bot can send, read and answer email -- and prove it.
+
+    READ-ONLY for everybody who can reach this page; the TEST buttons are the
+    platform owner's alone (`is_platform_owner`, i.e. adminJ), because each one
+    performs a real action: sending mail, logging into the operator's own inbox,
+    and spending a DeepSeek call. Seeing the state costs nothing and is what
+    everybody needs; performing it is not.
+
+    Note the page itself is superuser-only, like the rest of Settings -- it is
+    platform config, not a tenant control. So "everybody else" here means the
+    other superusers.
+    """
+    from ..email_health import email_capabilities
+
+    tenant = getattr(request, 'tenant', None)
+    return render(request, 'bot/pages/settings.html', {
+        'active_tab': 'email',
+        'email_capabilities': email_capabilities(tenant),
+        'email_test_address': _email_test_address(request),
+    })
+
+
+def _email_test_address(request):
+    """Where a test email goes: the operator's OWN address.
+
+    Deliberately not a free-text field. A settings page with a "send an email to
+    anything you type" button is a relay for whoever holds the account, and the
+    question being answered here is only ever "does sending work at all", which
+    the operator's own inbox answers.
+    """
+    own = (getattr(request.user, 'email', '') or '').strip()
+    if own:
+        return own
+    return (getattr(settings, 'PLATFORM_NOTIFICATION_EMAIL', '') or '').strip()
+
+
+@owner_required
+@require_POST
+def email_health_test(request, capability):
+    """Run one email test. Owner-only, and re-checked here rather than trusted to
+    the template: hiding a button is presentation, not permission."""
+    from ..email_health import capability_keys, run_test
+
+    if capability not in capability_keys():
+        messages.error(request, f'Unknown email test: {capability}')
+        return redirect('email_settings')
+
+    result = run_test(capability, to=_email_test_address(request),
+                      tenant=getattr(request, 'tenant', None))
+    body = result['summary'] + ((' ' + result['detail']) if result['detail'] else '')
+    (messages.success if result['ok'] else messages.error)(request, body)
+    return redirect('email_settings')
 
 
 @staff_required

@@ -12,6 +12,7 @@ from .views import visit_proposal as visit_proposal_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
+    email_settings_view, email_health_test,
     update_appointment, send_followup, confirm_appointment,
     notify_plumber_of_booking,
     complete_lead_appointment,
@@ -188,6 +189,10 @@ urlpatterns = [
     path('settings/', settings_view, name='settings'),
     path('settings/calendar/', calendar_settings_view, name='calendar_settings'),
     path('settings/ai/', ai_settings_view, name='ai_settings'),
+    path('settings/email/', email_settings_view, name='email_settings'),
+    # Owner-only, POST-only: each test performs a real action.
+    path('settings/email/test/<str:capability>/', email_health_test,
+         name='email_health_test'),
     
     # Tools
     path('test-whatsapp/', test_whatsapp, name='test_whatsapp'),

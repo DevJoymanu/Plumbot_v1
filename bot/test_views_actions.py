@@ -7176,6 +7176,236 @@ class QuoteHandoffTests(StaffClientTestCase):
             405)
 
 
+class EmailHealthPanelTests(TestCase):
+    """Settings > Email: everybody who can reach it SEES, only adminJ TESTS.
+
+    Each test performs a real action - it sends mail, signs in to the operator's
+    own inbox, or spends a DeepSeek call - so seeing the state and proving it are
+    separated. The gate is re-checked in the view, not left to the template:
+    hiding a button is presentation, not permission.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+        # The owner account, per settings.PLATFORM_OWNER_ACCOUNTS.
+        self.owner = User.objects.create_user(
+            username='adminJ', password='pass12345',
+            is_staff=True, is_superuser=True, email='owner@example.com')
+        # Another superuser: can reach Settings, must not be able to test.
+        self.other_admin = User.objects.create_user(
+            username='second-admin', password='pass12345',
+            is_staff=True, is_superuser=True, email='second@example.com')
+        # Plain staff: Settings is platform config and stays superuser-only.
+        self.staff = User.objects.create_user(
+            username='plain-staff', password='pass12345', is_staff=True)
+        self.url = reverse('email_settings')
+
+    def _as(self, user):
+        self.client.force_login(user)
+        return self.client
+
+    # -- who sees what ------------------------------------------------------
+
+    def test_the_owner_sees_the_panel_and_the_test_buttons(self):
+        body = self._as(self.owner).get(self.url).content.decode()
+        self.assertIn('Sending email', body)
+        self.assertIn('Receiving email', body)
+        self.assertIn('Answering email', body)
+        for capability in ('send', 'receive', 'respond'):
+            self.assertIn(reverse('email_health_test', args=[capability]), body)
+
+    def test_another_superuser_sees_the_panel_but_no_test_buttons(self):
+        body = self._as(self.other_admin).get(self.url).content.decode()
+        self.assertIn('Sending email', body)
+        self.assertIn('Receiving email', body)
+        self.assertIn('Answering email', body)
+        self.assertNotIn(reverse('email_health_test', args=['send']), body)
+        self.assertIn('restricted to the platform owner', body)
+
+    def test_settings_stays_superuser_only(self):
+        """It is platform config, not a tenant control, so plain staff never had
+        it and this page does not change that."""
+        response = self._as(self.staff).get(self.url)
+        self.assertNotEqual(response.status_code, 200)
+
+    def test_the_tab_is_on_the_settings_bar(self):
+        body = self._as(self.owner).get(reverse('settings')).content.decode()
+        self.assertIn(reverse('email_settings'), body)
+
+    # -- the gate on the tests themselves ----------------------------------
+
+    def test_a_non_owner_superuser_cannot_run_a_test(self):
+        with patch('bot.email_health.run_test') as runner:
+            response = self._as(self.other_admin).post(
+                reverse('email_health_test', args=['send']))
+        runner.assert_not_called()
+        self.assertNotEqual(response.status_code, 200)
+
+    def test_a_test_cannot_be_triggered_by_a_get(self):
+        """A link that sends email on page load is a link somebody's browser
+        prefetches."""
+        with patch('bot.email_health.run_test') as runner:
+            response = self._as(self.owner).get(
+                reverse('email_health_test', args=['send']))
+        runner.assert_not_called()
+        self.assertEqual(response.status_code, 405)
+
+    def test_an_unknown_capability_is_refused(self):
+        with patch('bot.email_health.run_test') as runner:
+            self._as(self.owner).post(
+                reverse('email_health_test', args=['everything']))
+        runner.assert_not_called()
+
+    # -- what a test actually does ----------------------------------------
+
+    def test_the_send_test_goes_to_the_owners_own_address(self):
+        """Not a free-text field: a settings page that emails anything you type
+        is a relay for whoever holds the account."""
+        with patch('bot.email_health.run_test',
+                   return_value={'ok': True, 'summary': 'sent', 'detail': ''}) as runner:
+            self._as(self.owner).post(reverse('email_health_test', args=['send']))
+        self.assertEqual(runner.call_args.kwargs['to'], 'owner@example.com')
+
+    def test_the_result_is_reported_back_on_the_page(self):
+        with patch('bot.email_health.run_test',
+                   return_value={'ok': False, 'summary': 'Transport refused it.',
+                                 'detail': 'Check the log.'}):
+            response = self._as(self.owner).post(
+                reverse('email_health_test', args=['send']), follow=True)
+        body = response.content.decode()
+        self.assertIn('Transport refused it.', body)
+        self.assertIn('Check the log.', body)
+
+    def test_a_failing_test_is_reported_not_raised(self):
+        from bot import email_health
+        with patch('bot.email_health._test_send',
+                   side_effect=RuntimeError('smtp exploded')):
+            result = email_health.run_test('send', to='a@b.com')
+        self.assertFalse(result['ok'])
+        self.assertIn('smtp exploded', result['detail'])
+
+
+class EmailHealthResolverTests(TestCase):
+    """What the panel reports, from configuration alone."""
+
+    def _caps(self, tenant=None):
+        from bot.email_health import email_capabilities
+        return {c['key']: c for c in email_capabilities(tenant)}
+
+    @override_settings(BREVO_API_KEY='key', DEFAULT_FROM_EMAIL='Bot <a@b.com>')
+    def test_a_configured_transport_reads_ready(self):
+        send = self._caps()['send']
+        self.assertEqual(send['state'], 'ready')
+        self.assertTrue(any('Brevo' in f for f in send['facts']))
+
+    @override_settings(BREVO_API_KEY='', SENDGRID_API_KEY='', EMAIL_HOST='')
+    def test_no_transport_reads_blocked_and_says_what_to_set(self):
+        send = self._caps()['send']
+        self.assertEqual(send['state'], 'blocked')
+        self.assertTrue(any('BREVO_API_KEY' in b for b in send['blockers']))
+
+    @override_settings(BREVO_API_KEY='', SENDGRID_API_KEY='',
+                       EMAIL_HOST='smtp.gmail.com')
+    def test_smtp_alone_is_not_a_working_transport(self):
+        """Railway blocks all outbound SMTP, so reporting it as ready would be a
+        green tick over a dead path."""
+        send = self._caps()['send']
+        self.assertEqual(send['state'], 'blocked')
+        self.assertTrue(any('SMTP' in b for b in send['blockers']))
+
+    @override_settings(BREVO_API_KEY='key', DEFAULT_FROM_EMAIL='Bot <a@b.com>')
+    def test_a_tenant_with_email_switched_off_is_not_ready(self):
+        """A perfectly good transport still sends nothing for that tenant, and it
+        defaults OFF for everyone but the homebase seed - the likeliest reason a
+        tenant's email is silently absent."""
+        tenant = Tenant.objects.create(name='Quiet Co', slug='quiet-co')
+        send = self._caps(tenant)['send']
+        self.assertEqual(send['state'], 'partial')
+        self.assertTrue(any('OFF' in f for f in send['facts']))
+
+    @override_settings(IMAP_EMAIL='inbox@example.com', IMAP_PASSWORD='pw')
+    def test_configured_imap_reads_ready(self):
+        self.assertEqual(self._caps()['receive']['state'], 'ready')
+
+    @override_settings(IMAP_EMAIL='', IMAP_PASSWORD='')
+    def test_missing_imap_credentials_read_blocked(self):
+        receive = self._caps()['receive']
+        self.assertEqual(receive['state'], 'blocked')
+        self.assertEqual(len(receive['blockers']), 2)
+
+    @override_settings(IMAP_EMAIL='', IMAP_PASSWORD='', DEEPSEEK_API_KEY='k')
+    def test_answering_needs_an_inbox_it_can_read(self):
+        """A reply is only ever an answer to mail we managed to read."""
+        respond = self._caps()['respond']
+        self.assertEqual(respond['state'], 'blocked')
+        self.assertTrue(any('inbox cannot be read' in b for b in respond['blockers']))
+
+    @override_settings(IMAP_EMAIL='a@b.com', IMAP_PASSWORD='pw', DEEPSEEK_API_KEY='')
+    def test_answering_needs_a_model_to_write_with(self):
+        respond = self._caps()['respond']
+        self.assertEqual(respond['state'], 'blocked')
+        self.assertTrue(any('DEEPSEEK' in b for b in respond['blockers']))
+
+    def test_every_capability_says_what_a_test_would_prove(self):
+        for cap in self._caps().values():
+            self.assertTrue(cap['proves'], cap['key'])
+            self.assertIn(cap['state'], ('ready', 'partial', 'blocked'))
+
+    @override_settings(IMAP_EMAIL='inbox@example.com', IMAP_PASSWORD='pw')
+    def test_the_receive_test_opens_the_mailbox_read_only(self):
+        """The polled inbox is the operator's own Gmail. The whole inbound
+        pipeline peeks so that looking never marks their mail read, and a test
+        that fetched a body would break that rule from the other side."""
+        from bot import email_health
+        with patch('bot.email_health.imaplib.IMAP4_SSL') as imap_cls:
+            imap = imap_cls.return_value
+            imap.select.return_value = ('OK', [b'1'])
+            imap.search.return_value = ('OK', [b'1 2 3'])
+            result = email_health.run_test('receive')
+        self.assertTrue(result['ok'])
+        self.assertIn('3 unread', result['summary'])
+        imap.select.assert_called_once_with('INBOX', readonly=True)
+        imap.fetch.assert_not_called()
+        imap.store.assert_not_called()
+
+    @override_settings(BREVO_API_KEY='key', DEFAULT_FROM_EMAIL='Bot <a@b.com>')
+    def test_the_send_test_is_platform_mail_not_a_tenants(self):
+        """It goes to the operator, so no tenant's outbound switch governs it -
+        and the panel reports that switch separately, so a green result here can
+        never be read as overriding it."""
+        from bot import email_health
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as sender:
+            result = email_health.run_test('send', to='owner@example.com')
+        self.assertTrue(result['ok'])
+        self.assertIsNone(sender.call_args.kwargs['tenant'])
+
+    def test_the_send_test_refuses_with_nowhere_to_send(self):
+        from bot import email_health
+        result = email_health.run_test('send', to='')
+        self.assertFalse(result['ok'])
+
+    @override_settings(DEEPSEEK_API_KEY='k')
+    def test_the_respond_test_sends_nothing(self):
+        from bot import email_health
+        with patch('bot.services.clients.deepseek_call',
+                   return_value='We can come out tomorrow.') as call, \
+             patch('bot.plumber_notifications.send_email_to_recipients') as sender:
+            result = email_health.run_test('respond')
+        self.assertTrue(result['ok'])
+        call.assert_called_once()
+        sender.assert_not_called()
+
+    @override_settings(DEEPSEEK_API_KEY='k')
+    def test_an_empty_model_reply_is_a_failure_with_the_reason(self):
+        """An empty reply is the signature of thinking mode eating the budget."""
+        from bot import email_health
+        with patch('bot.services.clients.deepseek_call', return_value='  '):
+            result = email_health.run_test('respond')
+        self.assertFalse(result['ok'])
+        self.assertIn('DEEPSEEK_THINKING', result['detail'])
+
+
 class EmailFollowupSectionTests(StaffClientTestCase):
     """The Email tab lists EVERY email sequence on the lead, not two of five.
 
