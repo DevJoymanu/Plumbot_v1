@@ -835,6 +835,45 @@
     overflow-y: auto;
   }
 
+  /* ── The site-visit banner is NOT pinned ───────────────────────────────
+     The banner sits above the tabs so it is reachable whichever one you are
+     reading - it used to be buried inside the Details pane, where anybody on
+     the Chat tab could see none of it. But "above the tabs" also put it
+     OUTSIDE the only scrolling box on the screen, so it never moved: on a
+     phone it held the top of the Quotes tab permanently, over a list it has
+     nothing to do with (owner rule, 2026-09-09).
+
+     So the document-style tabs scroll the PANE rather than themselves, and the
+     banner travels with the content like anything else on a page. The tab bar
+     is the one thing that stays behind: it is the way back to the chat, and
+     losing it to a flick would be worse than the banner ever was.
+
+     The Chat tab keeps the old shape and is the deliberate exception - its
+     transcript scrolls internally with the composer pinned under it, which a
+     document scroll cannot do. */
+  .appt-detail-pane.is-flow-scroll { overflow-y: auto; }
+
+  /* Spelled out with the IDs, not `.appt-tab-pane.is-active`: the rule this
+     has to beat is `#tab-quotes.is-active { overflow-y: auto }`, and an id
+     outranks any number of classes - a class-only override loses, the pane goes
+     on scrolling itself, and the banner stays pinned exactly as before. */
+  .appt-detail-pane.is-flow-scroll #tab-details.is-active,
+  .appt-detail-pane.is-flow-scroll #tab-quotes.is-active,
+  .appt-detail-pane.is-flow-scroll #tab-wa-followups.is-active,
+  .appt-detail-pane.is-flow-scroll #tab-email-followups.is-active {
+    overflow: visible;
+    flex: 0 0 auto;
+  }
+
+  .appt-detail-pane.is-flow-scroll .appt-tabbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    /* Opaque only now that things pass behind it: the default is translucent,
+       and the cards would scroll visibly through the tab labels. */
+    background: var(--color-surface-lowest, #f8f9ff);
+  }
+
   /* ── Follow-up history ── */
   .fu-count { font-family: var(--font-label); font-size: 11px; font-weight: 600; color: var(--color-muted); text-transform: none; letter-spacing: 0; }
   .fu-hint  { font-size: 12px; color: rgba(110, 120, 129, 0.8); align-self: center; }
@@ -2066,7 +2105,12 @@
       {% endif %}
     </aside>
 
-    <section class="appt-detail-pane">
+    {% comment %}
+    is-flow-scroll: the pane scrolls as one document so the site-visit banner
+    is not pinned. Present from the start because a record opens on Details,
+    which is a document tab; the switcher drops it for Chat.
+    {% endcomment %}
+    <section class="appt-detail-pane is-flow-scroll">
       <div class="appt-detail-header">
         <div class="appt-detail-user">
           <a href="{{ source_back_url }}" class="mobile-back" aria-label="Back to {{ source_title|lower }}">
@@ -2718,8 +2762,14 @@
                       <div class="quote-meta">
                         <div>Total: US${{ quote.total_amount|default:"0.00" }}</div>
                         <div>Created: {{ quote.created_at|date:"M d, Y H:i" }}</div>
-                        {% if quote.sent_via_whatsapp and quote.sent_at %}
-                        <div>Sent: {{ quote.sent_at|date:"M d, Y H:i" }}</div>
+                        {% comment %}
+                        Both channels, through the one reader: this said
+                        "sent_via_whatsapp" only, so a quote emailed from this
+                        very card showed no Sent line at all and read as never
+                        having gone out.
+                        {% endcomment %}
+                        {% if quote.sent_at and quote.sent_channels %}
+                        <div>Sent by {{ quote.sent_channel_label }}: {{ quote.sent_at|date:"M d, Y H:i" }}</div>
                         {% endif %}
                       </div>
                     </div>
@@ -2738,6 +2788,35 @@
                       {% csrf_token %}
                       <button type="submit" class="action-btn danger" onclick="return confirm('Delete this quotation permanently?');"><i class="fas fa-trash"></i> Delete</button>
                     </form>
+                    {% comment %}
+                    Two send buttons, independent, exactly as on the quotes list
+                    and both quote pages: one, the other, or both, and neither
+                    disables the other. Email matters most here - a quote often
+                    goes out days after the visit, by which time the lead's 24h
+                    WhatsApp window has shut - and this card was the one send
+                    surface in the app that offered no way to email it.
+
+                    `next` brings the plumber back to this pane. These buttons
+                    are pressed inside the conversations workspace iframe, and
+                    the handler's default landing (the quote's own view page)
+                    would render a full page into that narrow pane.
+                    {% endcomment %}
+                    {% if appointment.customer_email %}
+                    <form method="post" action="{% url 'send_quotation_email' quote.id %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ quotes_tab_url }}">
+                      <button type="submit" class="action-btn primary"><i class="fas fa-envelope"></i> {% if quote.sent_via_email %}Resend email{% else %}Email{% endif %}</button>
+                    </form>
+                    {% else %}
+                    {% comment %}
+                    A missing address is a missing detail, not a closed door, so
+                    this is a link to the screen that captures one rather than a
+                    dead button. _top because the editor is a whole page: opened
+                    in the frame it would sit squeezed into the record pane.
+                    {% endcomment %}
+                    <a href="{% url 'edit_quotation' quote.id %}" target="_top" class="action-btn ghost"
+                       title="Add an email address on the quote, then send"><i class="fas fa-envelope"></i> Add email</a>
+                    {% endif %}
                     {% comment %}
                     Opens the customer's chat on the plumber's own WhatsApp with
                     the PDF downloaded, rather than the bot sending it from its
@@ -3243,6 +3322,17 @@
     document.querySelectorAll('.appt-tab-pane').forEach(function (pane) {
       pane.classList.toggle('is-active', pane.id === 'tab-' + tabName);
     });
+    // Every tab but Chat scrolls as one document, so the banner above the tabs
+    // travels with the content instead of sitting over it. Chat keeps its own
+    // shape: the transcript scrolls internally under a pinned composer.
+    var detailPane = document.querySelector('.appt-detail-pane');
+    if (detailPane) {
+      detailPane.classList.toggle('is-flow-scroll', tabName !== 'chat');
+      // A new tab starts at ITS top. Without this the pane keeps the scroll
+      // position of the tab before it, so a short pane can open part-scrolled
+      // with the banner already gone.
+      detailPane.scrollTop = 0;
+    }
     if (tabName === 'chat') {
       scrollChatBottom();
     }

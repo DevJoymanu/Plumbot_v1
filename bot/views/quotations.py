@@ -17,6 +17,9 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
+from django.utils.http import url_has_allowed_host_and_scheme
+from urllib.parse import urlparse
+
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import requests
@@ -75,6 +78,64 @@ from .quote_layout import (
 )
 
 
+# An editor is not somewhere to hand the plumber back TO: a Referer pointing at
+# one is a reload, a failed save re-rendered, or a hop between the two sheets,
+# and returning there reopens the screen they have just finished with.
+_QUOTE_EDITOR_PATH = re.compile(
+    r'^/(?:appointments/\d+/create-quotation|quotations/(?:create|new|\d+/edit))/?$')
+
+
+def quote_return_url(request, appointment=None, quotation=None):
+    """Where Save / Email / WhatsApp hand the plumber back to.
+
+    The page the editor was opened FROM. A quote is always raised from
+    somewhere - the lead's own screen, the quotes list, the diary - and the job
+    is finished when the plumber is back there, not left on the sheet they have
+    just sent wondering whether it went. Resolved server-side from the Referer
+    at the moment the editor renders, so a navigation inside the page (the plan
+    tab, the lead picker) cannot move it afterwards.
+
+    Only the PATH is returned, never the referrer as given, so this can never
+    become an open redirect. Absent or foreign - a fresh tab, a stripped header,
+    a link from off-site - falls back to the lead's own page, and a standalone
+    quote (whose "lead" is a synthetic stub with no page worth landing on) to
+    the quotes list. The button always has somewhere real to go.
+    """
+    referer = request.META.get('HTTP_REFERER') or ''
+    if referer and url_has_allowed_host_and_scheme(
+            referer, allowed_hosts={request.get_host()},
+            require_https=request.is_secure()):
+        parsed = urlparse(referer)
+        path = parsed.path or '/'
+        if not _QUOTE_EDITOR_PATH.match(path):
+            return path + (('?' + parsed.query) if parsed.query else '')
+
+    lead = appointment or getattr(quotation, 'appointment', None)
+    if lead is not None and not str(
+            getattr(lead, 'phone_number', '') or '').startswith(
+                ('quotation_only_', 'email_')):
+        return reverse('appointment_detail', kwargs={'pk': lead.pk})
+    return reverse('quotations_list')
+
+
+def safe_return_path(request, fallback):
+    """The `next` a form posted, reduced to a local path.
+
+    Same rule as `quote_return_url`, for the buttons that post rather than
+    fetch: only the PATH survives, so a value that reached the form can never
+    redirect anybody off-site. Anything missing or foreign falls back to the
+    caller's own default, so a send never lands nowhere.
+    """
+    candidate = request.POST.get('next') or request.GET.get('next') or ''
+    if candidate and url_has_allowed_host_and_scheme(
+            candidate, allowed_hosts={request.get_host()},
+            require_https=request.is_secure()):
+        parsed = urlparse(candidate)
+        if parsed.path:
+            return parsed.path + (('?' + parsed.query) if parsed.query else '')
+    return fallback
+
+
 def quote_lead_panel(lead):
     """What sits behind the PLAN tab: the customer's own words, and every file
     they sent.
@@ -128,6 +189,9 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
         'lh': letterhead,
         'appointment': appointment,
         'quotation': quotation,
+        # Where the action bar hands them back to once the quote has gone.
+        'quote_return_url': quote_return_url(
+            request, appointment=appointment, quotation=quotation),
         # The plan and the customer's own words, on this screen rather than one
         # Back press away. Same resolver as the flat editor's.
         **quote_lead_panel(appointment),
@@ -495,6 +559,9 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     context = {
         'quote_mode': mode,
         'quote_project_types': QUOTE_PROJECT_TYPES,
+        # Where the action bar hands them back to once the quote has gone.
+        'quote_return_url': quote_return_url(
+            request, appointment=appointment, quotation=quotation),
         'lh': letterhead_for(tenant),
         **branding.branding_context(tenant),
     }

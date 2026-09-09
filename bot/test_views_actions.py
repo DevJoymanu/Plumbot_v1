@@ -29,6 +29,7 @@ from decimal import Decimal
 from io import StringIO
 from datetime import date, timedelta
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -5352,6 +5353,76 @@ class PostVisitFormTests(StaffClientTestCase):
         self.assertIn('Second bathroom, geyser move', body)
 
 
+class VisitBannerIsNotPinnedTests(StaffClientTestCase):
+    """The site-visit banner scrolls with the page; it is not a pinned bar.
+
+    It sits above the tabs so it is reachable whichever one you are reading -
+    buried inside the Details pane, anybody on the Chat tab could see none of it
+    (barmak 1144). But "above the tabs" also put it OUTSIDE the only scrolling
+    box on the screen, so it never moved: on a phone it held the top of the
+    Quotes tab permanently, over a list of quotes it has nothing to do with
+    (owner rule, 2026-09-09).
+
+    The fix is where the SCROLL is, not where the banner is: the document-style
+    tabs scroll the whole pane, so the banner travels with the content. The Chat
+    tab keeps its own shape - its transcript scrolls internally under a pinned
+    composer, which a document scroll cannot do.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9690, customer_name='Pinned Client', status='confirmed',
+                              scheduled_datetime=timezone.now() - timedelta(hours=3))
+        Quotation.objects.create(appointment=self.lead)
+
+    def _body(self):
+        response = self.client.get(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_the_banner_is_never_pinned_to_the_viewport(self):
+        body = self._body()
+        self.assertIn('Is the site visit complete?', body, 'the banner is gone')
+        for rule in re.findall(r'\.visit-prompt[^{]*\{[^}]*\}', body):
+            self.assertNotIn('position: sticky', rule)
+            self.assertNotIn('position: fixed', rule)
+            self.assertNotIn('position:sticky', rule)
+            self.assertNotIn('position:fixed', rule)
+
+    def test_the_pane_scrolls_as_one_document_so_the_banner_travels(self):
+        """The banner is outside every tab pane, so the ONLY way it can move is
+        for the pane itself to be the scroller."""
+        body = self._body()
+        self.assertIn('appt-detail-pane is-flow-scroll', body,
+                      'a record opens on Details, which is a document tab')
+        self.assertIn('.appt-detail-pane.is-flow-scroll { overflow-y: auto; }', body)
+        # The pane's own tab must stop being the scroller, or the banner stays
+        # put above it exactly as before. Asserted with the ID in the selector:
+        # the rule being beaten is `#tab-quotes.is-active { overflow-y: auto }`,
+        # and an id outranks any number of classes, so a class-only override
+        # would parse fine, read correctly, and do nothing at all.
+        self.assertRegex(
+            body,
+            r'\.appt-detail-pane\.is-flow-scroll #tab-quotes\.is-active[^{]*\{'
+            r'\s*overflow: visible;')
+
+    def test_the_tab_bar_is_what_stays_behind(self):
+        """Losing the way back to the chat to a flick would be worse than the
+        banner ever was."""
+        body = self._body()
+        self.assertRegex(
+            body,
+            r'\.appt-detail-pane\.is-flow-scroll \.appt-tabbar \{'
+            r'\s*position: sticky;')
+
+    def test_the_chat_tab_is_the_one_exception_and_the_switcher_knows(self):
+        body = self._body()
+        self.assertIn("classList.toggle('is-flow-scroll', tabName !== 'chat')", body)
+        # A new tab starts at its own top, or a short pane opens part-scrolled
+        # with the banner already gone.
+        self.assertIn('detailPane.scrollTop = 0;', body)
+
+
 class PostVisitSchedulerTests(TestCase):
     """The cron: the fallback email, Cases A / B / C, and the guards."""
 
@@ -6620,6 +6691,121 @@ class QuoteEditorSendTests(StaffClientTestCase):
             reverse('send_quotation_email', args=[foreign_quote.pk]),
             data='{}', content_type='application/json', HTTP_ACCEPT='application/json')
         self.assertEqual(response.status_code, 404)
+
+
+class LeadQuotesTabSendTests(StaffClientTestCase):
+    """The lead's Quotes tab can email the quote, not only WhatsApp it.
+
+    This card was the one send surface in the app that offered a single channel.
+    Email is the half that always arrives: a quote usually goes out days after
+    the visit, by which time the lead's 24h WhatsApp window has shut, and email
+    is the address the post-visit form always captures.
+
+    The tab is normally read inside the conversations workspace iframe, so where
+    the post LANDS is part of whether the button works at all - the handler's own
+    default is the quote's view page, and a full page rendered into that pane
+    strands the plumber away from the chat they were reading.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9680, customer_name='Tab Client',
+                              customer_email='tab@example.com')
+        self.quote = Quotation.objects.create(appointment=self.lead,
+                                              labor_cost=Decimal('150'))
+
+    def _tab(self, **params):
+        url = reverse('appointment_detail', args=[self.lead.pk])
+        if params:
+            url += '?' + urlencode(params)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def _pdf(self, build_pdf):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            tmp.write(b'%PDF-1.4 test')
+            build_pdf.return_value = tmp.name
+
+    def test_the_card_offers_both_channels(self):
+        body = self._tab()
+        self.assertIn(reverse('send_quotation_email', args=[self.quote.pk]), body,
+                      'no way to email the quote from the lead')
+        self.assertIn(reverse('quotation_whatsapp_handoff', args=[self.quote.pk]), body)
+
+    def test_no_address_points_at_the_screen_that_captures_one(self):
+        """A missing address is a missing detail, not a closed door."""
+        self.lead.customer_email = ''
+        self.lead.save()
+        body = self._tab()
+        self.assertNotIn(reverse('send_quotation_email', args=[self.quote.pk]), body)
+        self.assertIn('Add email', body)
+        self.assertIn(reverse('edit_quotation', args=[self.quote.pk]), body)
+
+    def test_the_button_comes_back_to_this_pane_not_the_quote_page(self):
+        body = self._tab(source='conversations', frame='1', hidetabs='1', tab='details')
+        target = re.search(r'name="next" value="([^"]*)"', body).group(1)
+        # tab is FORCED: the workspace switches panes by calling
+        # showAppointmentTab() in the frame, so ?tab= can still say 'details'
+        # while the plumber is looking at the quotes.
+        self.assertIn('tab=quotes', target)
+        self.assertIn(reverse('appointment_detail', args=[self.lead.pk]), target)
+        for flag in ('source=conversations', 'frame=1', 'hidetabs=1'):
+            self.assertIn(flag, target, f'{flag} lost - the post leaves the workspace')
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_a_send_from_the_tab_lands_back_on_the_tab(self, build_pdf, send):
+        self._pdf(build_pdf)
+        back = reverse('appointment_detail', args=[self.lead.pk]) + '?tab=quotes&frame=1'
+        response = self.client.post(
+            reverse('send_quotation_email', args=[self.quote.pk]), {'next': back})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], back)
+        self.quote.refresh_from_db()
+        self.assertTrue(self.quote.sent_via_email)
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_a_failed_send_comes_back_to_the_same_place(self, build_pdf, send):
+        """The plumber has to see WHY on the screen they pressed it on."""
+        self.lead.customer_email = ''
+        self.lead.save()
+        back = reverse('appointment_detail', args=[self.lead.pk]) + '?tab=quotes'
+        response = self.client.post(
+            reverse('send_quotation_email', args=[self.quote.pk]), {'next': back})
+        self.assertEqual(response['Location'], back)
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_no_next_still_lands_on_the_quote_page(self, build_pdf, send):
+        """The view page and any caller that never heard of `next` are untouched."""
+        self._pdf(build_pdf)
+        response = self.client.post(reverse('send_quotation_email', args=[self.quote.pk]))
+        self.assertEqual(response['Location'],
+                         reverse('view_quotation', args=[self.quote.pk]))
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_a_foreign_next_is_never_followed(self, build_pdf, send):
+        """`next` arrives in a form post, so it is a value from outside: only the
+        local PATH may survive it."""
+        self._pdf(build_pdf)
+        response = self.client.post(
+            reverse('send_quotation_email', args=[self.quote.pk]),
+            {'next': 'https://evil.example.com/steal/'})
+        self.assertEqual(response['Location'],
+                         reverse('view_quotation', args=[self.quote.pk]))
+
+    @patch('bot.customer_emails.send_quotation_email_to_customer', return_value=True)
+    @patch('bot.views.quotations.build_quotation_pdf_file')
+    def test_the_card_says_a_quote_went_out_by_email(self, build_pdf, send):
+        """This line read sent_via_whatsapp only, so a quote emailed from this
+        very card showed no Sent line and looked as though it had never gone."""
+        self._pdf(build_pdf)
+        self.client.post(reverse('send_quotation_email', args=[self.quote.pk]))
+        self.assertIn('Sent by Email', self._tab())
 
 
 class QuoteHandoffTests(StaffClientTestCase):
@@ -8342,6 +8528,139 @@ class QuoteDraftAutosaveTests(StaffClientTestCase):
             with self.subTest(screen=screen):
                 self.assertIn('onDraftEdit', html)
                 self.assertNotIn("addEventListener('input', scheduleDraftSave)", html)
+
+
+class QuoteReturnToCallerTests(StaffClientTestCase):
+    """Save, Email and WhatsApp hand the plumber back where they came from.
+
+    Raising a quote is a detour out of whatever the plumber was doing - a lead's
+    screen, the quotes list, the diary - and the three buttons that finish the
+    job used to end in three different places: a brand-new Save landed on the
+    quote's own view page, an edit's Save left them standing on the editor with
+    only a toast to say anything had happened, and a send left them on the sheet
+    with no way of telling whether it had gone.
+
+    The target is resolved server-side, once, from the Referer at render time
+    (quote_return_url) so a navigation inside the page - the plan tab, the lead
+    picker - cannot move it. Only the PATH is ever emitted, so this can never
+    become an open redirect.
+    """
+
+    SECTIONED_SLUG = 'barmak-return'
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9670, customer_name='Return Client',
+                              customer_email='return@example.com')
+
+    def _html(self, url, referer=None):
+        response = self.client.get(
+            url, **({'HTTP_REFERER': referer} if referer else {}))
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    @staticmethod
+    def _return_url(html):
+        """The target as the BROWSER will read it.
+
+        escapejs writes a path out as \u002D / \u003D escapes, which is the
+        same string once the JS engine has parsed it - so the escapes are undone
+        here rather than asserted against, or the test would be pinning the
+        filter's spelling instead of where the button goes."""
+        match = re.search(r'const RETURN_URL = "([^"]*)";', html)
+        if not match:
+            return None
+        return re.sub(r'\\u([0-9a-fA-F]{4})',
+                      lambda hit: chr(int(hit.group(1), 16)), match.group(1))
+
+    def _flat_editors(self):
+        quote = Quotation.objects.create(appointment=self.lead)
+        return {
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _sectioned_editors(self):
+        """The sectioned sheet is a tenant's own layout, so it needs its own."""
+        tenant = Tenant.objects.create(name='Barmak Return', slug=self.SECTIONED_SLUG)
+        TenantProfile.objects.create(tenant=tenant, letterhead=SECTIONED_LETTERHEAD)
+        user = get_user_model().objects.create_user(
+            username='return-sectioned', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        self.client.force_login(user)
+        lead = make_lead(9671, tenant=tenant, customer_name='Sectioned Return')
+        quote = Quotation.objects.create(appointment=lead)
+        return {
+            'create': reverse('create_quotation', args=[lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[quote.pk]),
+        }
+
+    def _every_editor(self):
+        for name, url in self._flat_editors().items():
+            yield 'flat ' + name, url
+        for name, url in self._sectioned_editors().items():
+            yield 'sectioned ' + name, url
+
+    def test_every_editor_on_both_layouts_has_somewhere_to_go_back_to(self):
+        for screen, url in self._every_editor():
+            with self.subTest(screen=screen):
+                html = self._html(url)
+                target = self._return_url(html)
+                self.assertTrue(target, 'no return target on the page')
+                self.assertTrue(target.startswith('/'),
+                                f'not a path: {target}')
+                self.assertIn('function returnToCaller', html,
+                              'nothing takes them back')
+
+    def test_the_page_they_came_from_is_where_they_go_back_to(self):
+        for screen, url in self._every_editor():
+            with self.subTest(screen=screen):
+                html = self._html(url, referer='http://testserver/priority-leads/?tab=hot')
+                self.assertEqual(self._return_url(html),
+                                 '/priority-leads/?tab=hot')
+
+    def test_an_editor_is_never_the_place_they_are_sent_back_to(self):
+        """A Referer pointing at an editor is a reload or a hop between the two
+        sheets. Returning there reopens the screen they just finished with, so
+        the lead's own page stands in."""
+        for referer in ('/quotations/new/', '/quotations/create/',
+                        f'/appointments/{self.lead.pk}/create-quotation/'):
+            with self.subTest(referer=referer):
+                html = self._html(
+                    reverse('create_quotation', args=[self.lead.pk]),
+                    referer='http://testserver' + referer)
+                self.assertEqual(self._return_url(html),
+                                 reverse('appointment_detail', args=[self.lead.pk]))
+
+    def test_a_foreign_referrer_is_never_followed(self):
+        """Only the path, and only from this host: the value reaches the page as
+        a location assignment, so an off-site Referer must not survive it."""
+        html = self._html(reverse('create_quotation', args=[self.lead.pk]),
+                          referer='https://evil.example.com/steal/')
+        self.assertEqual(self._return_url(html),
+                         reverse('appointment_detail', args=[self.lead.pk]))
+
+    def test_a_quote_with_no_real_lead_falls_back_to_the_quotes_list(self):
+        """A standalone quote's lead is a synthetic stub with no page worth
+        landing on."""
+        html = self._html(reverse('standalone_quotation'))
+        self.assertEqual(self._return_url(html), reverse('quotations_list'))
+
+    def test_saving_and_both_sends_hand_back_and_a_failed_send_does_not(self):
+        for screen, url in self._every_editor():
+            with self.subTest(screen=screen):
+                html = self._html(url)
+                # Save, the platform email send and the mailto handoff all
+                # return; the WhatsApp handoff returns only once its own tab has
+                # been pointed at the handoff page.
+                self.assertGreaterEqual(html.count('returnToCaller('), 4,
+                                        'a button still strands them here')
+                self.assertIn('the sheet is what needs fixing', html,
+                              'a failed send must keep them on the sheet')
+                self.assertIn('nothing may navigate over it', html,
+                              'a blocked popup must keep the handoff')
 
 
 class QuotePlanTabTests(StaffClientTestCase):

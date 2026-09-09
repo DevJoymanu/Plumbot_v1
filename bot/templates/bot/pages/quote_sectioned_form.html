@@ -293,6 +293,21 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
     let bqLeadName = "{{ lead_display_name|escapejs }}";
     let bqLeadDigits = "{{ lead_wa_digits }}";
 
+    // Where Save and the two sends hand the plumber back to: the page this
+    // editor was opened from, resolved server-side (quote_return_url). Raising
+    // a quote is a detour out of whatever they were doing, and being left on
+    // the finished sheet afterwards means guessing whether it actually went.
+    const RETURN_URL = "{{ quote_return_url|escapejs }}";
+
+    // A beat before leaving, so the outcome is read first: the alert on this
+    // screen IS the confirmation, and the page we return to does not repeat it.
+    // Pass 0 where something else already confirms (the WhatsApp handoff tab).
+    function returnToCaller(delay) {
+        if (!RETURN_URL) { return; }
+        window.setTimeout(() => { window.location.href = RETURN_URL; },
+                          delay === undefined ? 900 : delay);
+    }
+
     let sectionSeq = 0;
     let itemSeq = 0;
     let allTemplates = [];
@@ -756,14 +771,15 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         btn.disabled = true;
         btn.innerHTML = '<span class="pbq-spin"></span> Saving...';
 
-        const wasNew = !bqCurrentId;
         try {
             const id = await persist();
             if (!id) { return; }
             showAlert('Quote saved.', 'success');
-            if (wasNew) {
-                setTimeout(() => { window.location.href = `/quotations/${id}/`; }, 900);
-            }
+            // Saved is finished, so back to where the quote was raised from -
+            // whether that is a brand-new quote or an edit. This used to send a
+            // new quote to its own view page and leave an edit standing on the
+            // editor, so the same button ended in two different places.
+            returnToCaller();
         } catch (error) {
             showAlert('Could not save: ' + error.message, 'error');
         } finally {
@@ -867,7 +883,15 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
 
             if (channel === 'whatsapp') {
                 const url = '/quotations/' + id + '/whatsapp/';
-                if (opened) { opened.location.href = url; } else { window.location.href = url; }
+                if (opened) {
+                    opened.location.href = url;
+                    // The handoff carries on in its own tab, so this one goes
+                    // back where it came from. When the popup was blocked the
+                    // handoff IS this tab and nothing may navigate over it.
+                    returnToCaller(0);
+                } else {
+                    window.location.href = url;
+                }
                 return;
             }
 
@@ -878,8 +902,13 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
                           + '&body=' + encodeURIComponent(quoteBlurb()
                               + '\n\nThe quote is attached.');
                 if (opened) { opened.location.href = url; } else { window.location.href = url; }
-                markSent(id, 'email');
+                // Awaited now that this page leaves: a fetch still in flight
+                // when we navigate is a send the quotes list never records.
+                await markSent(id, 'email');
                 showAlert('Draft opened and the PDF downloaded. Attach it and send.', 'success');
+                // Longer, because the PDF is arriving through a hidden iframe
+                // on THIS page and the download has to be under way first.
+                returnToCaller(2000);
                 return;
             }
 
@@ -894,7 +923,9 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
             if (response.ok && result.success !== false) {
                 showAlert('Quote emailed to ' + (result.sent_to || fieldValue('m-email')) + '.',
                           'success');
+                returnToCaller();
             } else {
+                // A failed send keeps them here: the sheet is what needs fixing.
                 showAlert('Could not send: ' + (result.error || 'unknown error'), 'error');
             }
         } catch (error) {

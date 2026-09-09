@@ -899,10 +899,25 @@ class AppointmentDetailView(DetailView):
         sidebar_response_age = self.request.GET.get('sidebar_response_age', 'all')
         sidebar_context = _appointments_sidebar_context(sidebar_filter, sidebar_response_age, tenant=getattr(self.request, 'tenant', None))
 
+        # Where the Quotes tab's own send buttons come back to. Built here
+        # rather than in the markup because `tab` has to be FORCED to 'quotes':
+        # the conversations workspace switches panes by calling
+        # showAppointmentTab() inside the frame, which never touches the URL, so
+        # ?tab= can still say 'details' while the plumber is looking at the quote
+        # list. Everything else on the query string is carried through - source,
+        # frame, hidetabs, the sidebar filters - or the post would come back to a
+        # page outside the workspace it was pressed in.
+        quotes_tab_params = self.request.GET.copy()
+        quotes_tab_params['tab'] = 'quotes'
+        quotes_tab_url = '{}?{}'.format(
+            reverse('appointment_detail', kwargs={'pk': appointment.pk}),
+            quotes_tab_params.urlencode())
+
         context.update({
             'active_nav': active_nav,
             'is_frame': is_frame,
             'base_template': base_template,
+            'quotes_tab_url': quotes_tab_url,
             'sidebar_filter': sidebar_filter,
             'conversation_history': conversation_history,
             'completeness': appointment.get_customer_info_completeness(),

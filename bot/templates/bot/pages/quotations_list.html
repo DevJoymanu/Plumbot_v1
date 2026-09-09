@@ -219,6 +219,8 @@ contract pinned by QuoteMobileLayoutTests).
                                 {% if q.appointment.customer_email %}
                                 <form method="post" action="{% url 'send_quotation_email' q.pk %}">
                                     {% csrf_token %}
+                                    {# Back to the list, on this page of it, with the search still applied. #}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                     <button type="submit" class="btn btn-secondary">
                                         <i class="fas fa-envelope"></i> {% if q.sent_via_email %}Resend{% else %}Email{% endif %}
                                     </button>

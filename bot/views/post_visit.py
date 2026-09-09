@@ -191,20 +191,28 @@ def send_quotation_email(request, pk):
     from .quotations import build_quotation_pdf_file
     from ..customer_emails import send_quotation_email_to_customer
 
-    from .quotations import _visible_quotations
+    from .quotations import _visible_quotations, safe_return_path
     quotation = get_object_or_404(_visible_quotations(request), pk=pk)
     appointment = quotation.appointment
 
-    # The editor sends over fetch and wants JSON back; the quotes list and the
-    # view page post a plain form and want a redirect. One handler, two shapes.
+    # The editor sends over fetch and wants JSON back; the quotes list, the view
+    # page and the lead's Quotes tab post a plain form and want a redirect. One
+    # handler, two shapes.
     wants_json = 'application/json' in (
         (request.headers.get('Accept') or '') + (request.content_type or '')).lower()
+
+    # Back to the screen the button was pressed on, whichever that was. The
+    # lead's Quotes tab is the reason this is not simply the quote's own view
+    # page: that tab lives inside the conversations workspace iframe, and a full
+    # quote page rendered into that pane strands the plumber in a frame with no
+    # way back to the chat they were reading.
+    back = safe_return_path(request, reverse('view_quotation', kwargs={'pk': quotation.pk}))
 
     def _fail(message, status=400):
         if wants_json:
             return JsonResponse({'success': False, 'error': message}, status=status)
         messages.error(request, message)
-        return redirect('view_quotation', pk=quotation.pk)
+        return redirect(back)
 
     if not (appointment.customer_email or '').strip():
         return _fail('No email address on file for this customer. Add one on '
@@ -252,4 +260,4 @@ def send_quotation_email(request, pk):
             'sent_to': appointment.customer_email,
         })
     messages.success(request, f'Quote emailed to {appointment.customer_email}.')
-    return redirect('view_quotation', pk=quotation.pk)
+    return redirect(back)

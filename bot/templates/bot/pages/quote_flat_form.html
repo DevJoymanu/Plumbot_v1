@@ -320,6 +320,12 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     // WhatsApp handoff opens) has to follow it.
     let appointmentId = {% if appointment %}{{ appointment.pk }}{% else %}null{% endif %};
 
+    // Where Save and the two sends hand the plumber back to: the page this
+    // editor was opened from, resolved server-side (quote_return_url). Raising
+    // a quote is a detour out of whatever they were doing, and being left on
+    // the finished sheet afterwards means guessing whether it actually went.
+    const RETURN_URL = "{{ quote_return_url|escapejs }}";
+
     // Past this many rows the list gets its own scrollbar. Declared BEFORE
     // anything that reads it: calculateTotals() runs during boot, and a const
     // declared further down threw a ReferenceError that killed the whole
@@ -333,6 +339,15 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
     // Monotonic, never Date.now() and never the array index: every lookup is
     // by id, and two items created in the same millisecond shared one.
     function nextItemId() { return ++itemSeq; }
+
+    // A beat before leaving, so the outcome is read first: the alert on this
+    // screen IS the confirmation, and the page we return to does not repeat it.
+    // Pass 0 where something else already confirms (the WhatsApp handoff tab).
+    function returnToCaller(delay) {
+        if (!RETURN_URL) { return; }
+        window.setTimeout(function () { window.location.href = RETURN_URL; },
+                          delay === undefined ? 900 : delay);
+    }
 
     // ── Small helpers ────────────────────────────────────────────────────
     function esc(value) {
@@ -953,7 +968,15 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
                 // the message and opens the chat on the plumber's own number -
                 // the bot never sends the quote.
                 const url = '/quotations/' + id + '/whatsapp/';
-                if (opened) { opened.location.href = url; } else { window.location.href = url; }
+                if (opened) {
+                    opened.location.href = url;
+                    // The handoff carries on in its own tab, so this one goes
+                    // back where it came from. When the popup was blocked the
+                    // handoff IS this tab and nothing may navigate over it.
+                    returnToCaller(0);
+                } else {
+                    window.location.href = url;
+                }
                 return;
             }
 
@@ -965,9 +988,14 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
                           + '&body=' + encodeURIComponent(quoteBlurb()
                               + '\n\nThe quote is attached.');
                 if (opened) { opened.location.href = url; } else { window.location.href = url; }
-                markSent(id, 'email');
+                // Awaited now that this page leaves: a fetch still in flight
+                // when we navigate is a send the quotes list never records.
+                await markSent(id, 'email');
                 showAlert('Draft opened and the PDF downloaded. Attach it and send.',
                           'success');
+                // Longer, because the PDF is arriving through a hidden iframe
+                // on THIS page and the download has to be under way first.
+                returnToCaller(2000);
                 return;
             }
 
@@ -982,7 +1010,9 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
             if (response.ok && result.success !== false) {
                 showAlert('Quote emailed to ' + (result.sent_to || val('clientEmail')) + '.',
                           'success');
+                returnToCaller();
             } else {
+                // A failed send keeps them here: the sheet is what needs fixing.
                 showAlert('Could not send: ' + (result.error || 'unknown error'), 'error');
             }
         } catch (error) {
@@ -1013,15 +1043,14 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
             button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
         }
 
-        const wasNew = !currentQuotationId;
         try {
-            const id = await persist();
+            await persist();
             showAlert('Quotation saved.', 'success');
-            // Only a brand-new quote navigates. A save that happened because
-            // the plumber pressed Send, or an edit, keeps them where they are.
-            if (wasNew && MODE !== 'edit') {
-                window.location.href = '/quotations/' + id + '/';
-            }
+            // Saved is finished, so back to where the quote was raised from -
+            // whether that is a brand-new quote or an edit. This used to send a
+            // new quote to its own view page and leave an edit standing on the
+            // editor, so the same button ended in two different places.
+            returnToCaller();
         } catch (error) {
             showAlert('Could not save: ' + error.message, 'error');
         } finally {
