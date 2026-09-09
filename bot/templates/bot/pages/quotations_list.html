@@ -234,11 +234,32 @@ contract pinned by QuoteMobileLayoutTests).
                                 <a href="{% url 'quotation_whatsapp_handoff' q.pk %}" class="btn btn-secondary">
                                     <i class="fab fa-whatsapp"></i> {% if q.sent_via_whatsapp %}Resend{% else %}Send{% endif %}
                                 </a>
+                                {% comment %}
+                                Edit and Delete belong on the ROW. Both existed
+                                on the quote's own pages and on the appointment's
+                                Quotes tab, but not here - so the one screen that
+                                lists every quote was the one place you could not
+                                change or remove one, and a wrong figure meant
+                                opening the quote first. Delete carries `next` so
+                                it comes back to this page of this search rather
+                                than to the lead, which is its default.
+                                {% endcomment %}
+                                <a href="{% url 'edit_quotation' q.pk %}" class="btn btn-secondary">
+                                    <i class="fas fa-pen"></i> Edit
+                                </a>
                                 <form method="post" action="{% url 'duplicate_quotation' q.pk %}">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-secondary"
                                             onclick="return confirm('Duplicate this quote?');">
                                         <i class="fas fa-copy"></i> Duplicate
+                                    </button>
+                                </form>
+                                <form method="post" action="{% url 'delete_quotation' q.pk %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-danger"
+                                            onclick="return confirm('Delete {{ q.quotation_number|escapejs }} permanently? This cannot be undone.');">
+                                        <i class="fas fa-trash"></i> Delete
                                     </button>
                                 </form>
                             </div>

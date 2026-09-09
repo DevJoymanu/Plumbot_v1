@@ -6259,6 +6259,62 @@ class MyQuotesHistoryTests(StaffClientTestCase):
 
     # -- scoping (the leak this fixed) -------------------------------------
 
+    # -- edit and delete, on the row --------------------------------------
+
+    def test_the_row_can_edit_and_delete(self):
+        """Both existed on the quote's own pages and on the appointment's Quotes
+        tab, but not here - so the one screen that lists every quote was the one
+        place you could not change or remove one."""
+        body = self._list().content.decode()
+        self.assertIn(reverse('edit_quotation', args=[self.quote.pk]), body)
+        self.assertIn(reverse('delete_quotation', args=[self.quote.pk]), body)
+
+    def test_delete_from_the_list_comes_back_to_the_list(self):
+        """Its default is the LEAD's page, which is right for the appointment's
+        Quotes tab and wrong here: it would throw the plumber onto a lead they
+        were not looking at, losing their page and their search."""
+        back = reverse('quotations_list') + '?q=Rudo&page=1'
+        response = self.client.post(
+            reverse('delete_quotation', args=[self.quote.pk]), {'next': back})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], back)
+        self.assertFalse(Quotation.objects.filter(pk=self.quote.pk).exists())
+
+    def test_delete_without_a_next_still_lands_on_the_lead(self):
+        """The appointment's Quotes tab posts no `next`, and a quote deleted
+        from a lead's own screen belongs back on it."""
+        response = self.client.post(
+            reverse('delete_quotation', args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'],
+                         reverse('appointment_detail', args=[self.lead.pk]))
+
+    def test_delete_never_redirects_off_site(self):
+        response = self.client.post(
+            reverse('delete_quotation', args=[self.quote.pk]),
+            {'next': 'https://evil.example.com/steal'})
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('evil.example.com', response['Location'])
+
+    def test_neither_action_reaches_another_tenants_quote(self):
+        """Same resolver as every other per-quote action: adding these two to the
+        row must not widen what a workspace can touch."""
+        for name in ('edit_quotation', 'delete_quotation'):
+            with self.subTest(action=name):
+                url = reverse(name, args=[self.foreign_quote.pk])
+                response = (self.client.post(url) if name == 'delete_quotation'
+                            else self.client.get(url))
+                self.assertEqual(response.status_code, 404)
+        self.assertTrue(Quotation.objects.filter(pk=self.foreign_quote.pk).exists())
+
+    def test_delete_asks_before_it_deletes(self):
+        body = self._list().content.decode()
+        self.assertIn('cannot be undone', body)
+        # A GET must never delete: the control is a POST form, not a link.
+        self.assertNotIn(
+            f'href="{reverse("delete_quotation", args=[self.quote.pk])}"', body)
+
+
     def test_a_client_sees_only_their_own_quotes(self):
         """The view had no get_queryset at all, so ListView fell back to
         Quotation.objects.all() and every client saw every other client's

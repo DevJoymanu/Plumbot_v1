@@ -947,9 +947,15 @@ def delete_quotation(request, pk):
     if wants_json:
         return JsonResponse(payload)
     messages.success(request, f'Deleted quotation: {quotation_name}')
-    if appointment_id:
-        return redirect('appointment_detail', pk=appointment_id)
-    return redirect('quotations_list')
+    # Back where the delete was pressed. The lead's page is the right default -
+    # a quote deleted from the appointment's Quotes tab belongs there - but it is
+    # the wrong answer for the quotes LIST, which would otherwise throw the
+    # plumber onto a lead they were not looking at, losing their page and their
+    # search. `safe_return_path` keeps only the local path, so the value in the
+    # form can never redirect off-site.
+    default = (reverse('appointment_detail', kwargs={'pk': appointment_id})
+               if appointment_id else reverse('quotations_list'))
+    return redirect(safe_return_path(request, default))
 
 
 @staff_required
