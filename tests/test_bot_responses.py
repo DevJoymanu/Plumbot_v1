@@ -5441,6 +5441,128 @@ try:
         results.log(f"followup cadence [{_st}]: first touch is not instant",
                     _offs[0] >= 1.0, got=f"{_offs[0]:.1f}h")
 
+    # -- THE THREE RULES (owner, 2026-09-09) -------------------------------
+    # 1. a lead gets at most FOUR touches from their last message
+    # 2. at least FOUR HOURS between any two of them
+    # 3. every touch is contextual
+    from bot.management.commands.send_followups import (
+        space_offsets as _space, touches_since_last_reply as _touches,
+        FOLLOWUP_CAP_PER_REPLY as _FU_CAP,
+        LAST_CALL_MIN_GAP_HOURS as _LC_GAP_R,
+    )
+
+    results.log("followup rules: the floor is four hours", _FU_GAP == 4.0,
+                got=str(_FU_GAP))
+    results.log("followup rules: the ceiling is four touches", _FU_CAP == 4,
+                got=str(_FU_CAP))
+    results.log("followup rules: a last call cannot undercut the floor",
+                _LC_GAP_R >= _FU_GAP, got=f"last_call={_LC_GAP_R} floor={_FU_GAP}")
+
+    # No tier, on any window length, may produce a pair closer than the floor.
+    # VERY_HOT on a short window was 3.8h apart, which is what this catches.
+    for _st in (_LS2.VERY_HOT, _LS2.HOT, _LS2.WARM, _LS2.COLD):
+        for _ctwa, _ago in ((False, None), (True, None), (True, 50.0)):
+            _l = _WindowLead(status=_st, ctwa=_ctwa, entry_hours_ago=_ago)
+            _o = _fu2._followup_offsets(_l)
+            _gaps = [_o[i + 1] - _o[i] for i in range(len(_o) - 1)]
+            results.log(f"followup rules [{_st}, ctwa={_ctwa}, spent={_ago}]: "
+                        f"every gap clears four hours",
+                        all(g >= _FU_GAP - 0.001 for g in _gaps),
+                        got=str([round(g, 2) for g in _gaps]))
+            results.log(f"followup rules [{_st}, ctwa={_ctwa}, spent={_ago}]: "
+                        f"never more than four",
+                        len(_o) <= _FU_CAP, got=str(len(_o)))
+
+    # space_offsets is the one resolver: it PUSHES a close pair apart and DROPS
+    # what no longer fits, because when the gap and the count cannot both hold,
+    # the count is the one that gives.
+    results.log("followup rules: close offsets are pushed to the floor",
+                _space([1.0, 2.0, 3.0, 4.0], 100.0) == (1.0, 5.0, 9.0, 13.0),
+                got=str(_space([1.0, 2.0, 3.0, 4.0], 100.0)))
+    results.log("followup rules: what no longer fits is dropped, not squeezed",
+                _space([1.0, 2.0, 3.0, 4.0], 6.0) == (1.0, 5.0),
+                got=str(_space([1.0, 2.0, 3.0, 4.0], 6.0)))
+    results.log("followup rules: already-spaced offsets are left alone",
+                _space([6.0, 13.0, 33.0, 60.0], 70.0) == (6.0, 13.0, 33.0, 60.0),
+                got=str(_space([6.0, 13.0, 33.0, 60.0], 70.0)))
+    results.log("followup rules: a window too short for even one still gets one",
+                len(_space([5.0, 10.0], 2.0)) == 1,
+                got=str(_space([5.0, 10.0], 2.0)))
+
+    # The CAP is counted off the transcript, so it sees what the OTHER loops
+    # sent: a lead chased four times and then parked cannot be nudged four more
+    # times off the same silence.
+    class _CapLead:
+        def __init__(self, entries, since_hours=6.0):
+            self.last_customer_response = _FU_NOW - _td2(hours=since_hours)
+            self.last_inbound_at = self.last_customer_response
+            self.conversation_history = entries
+
+    def _turn(prefix, hours_ago, role='assistant'):
+        return {'role': role, 'content': f'{prefix} anything',
+                'timestamp': (_FU_NOW - _td2(hours=hours_ago)).isoformat()}
+
+    _all_loops = _CapLead([_turn('[AUTO FOLLOW-UP]', 5),
+                           _turn('[DELAY NUDGE 1]', 4),
+                           _turn('[PARKED NUDGE 2]', 3),
+                           _turn('[DELAY REACTIVATION]', 2)])
+    results.log("followup cap: counts every loop's own marker",
+                _touches(_all_loops) == 4, got=str(_touches(_all_loops)))
+    _old_and_new = _CapLead([_turn('[AUTO FOLLOW-UP]', 20),
+                             _turn('[AUTO FOLLOW-UP]', 2)])
+    results.log("followup cap: touches BEFORE their reply do not count",
+                _touches(_old_and_new) == 1, got=str(_touches(_old_and_new)))
+    results.log("followup cap: a human takeover is not the machine talking",
+                _touches(_CapLead([_turn('[MANUAL FOLLOW-UP]', 3)])) == 0)
+    results.log("followup cap: the lead's own messages are not touches",
+                _touches(_CapLead([_turn('[AUTO FOLLOW-UP]', 3, role='user')])) == 0)
+    results.log("followup cap: an unreadable timestamp never spends the allowance",
+                _touches(_CapLead([{'role': 'assistant',
+                                    'content': '[AUTO FOLLOW-UP] x'}])) == 0)
+
+    _spent = _WindowLead(count=1, hours_ago=6.0, last_followup_hours_ago=6.0)
+    _spent.conversation_history = [_turn('[AUTO FOLLOW-UP]', 1) for _ in range(4)]
+    _cap_ready, _cap_why = _fu2._is_ready_for_followup(_spent, None, force=True)
+    results.log("followup cap: a lead who has had their four is declined",
+                _cap_ready is False and 'cap' in _cap_why,
+                got=f"ready={_cap_ready} ({_cap_why})")
+
+    # RULE 3: the offline fallback names the lead's OWN job, carries no invented
+    # urgency and asserts no tenant's USP. "Still looking for a plumber?" was the
+    # last thing some leads ever heard from us.
+    class _CtxLead:
+        id = 77
+        customer_name = 'Rudo'
+        project_type = 'bathroom_renovation'
+        project_description = 'full ensuite refit, new tub'
+        customer_area = 'Borrowdale'
+        tenant = None
+        conversation_history = []
+
+    _job_banks = ('project_description', 'area', 'availability', 'complete')
+    for _bank in _job_banks:
+        for _attempt in (1, 2, 3, 4):
+            _msg = _fu2._template_message(_CtxLead(), _bank, _attempt)['message']
+            results.log(f"followup context [{_bank} #{_attempt}]: names their own job",
+                        'full ensuite refit' in _msg, got=_msg[:90])
+    for _bank in ('service_type',) + _job_banks:
+        for _attempt in (1, 2, 3, 4):
+            _msg = _fu2._template_message(_CtxLead(), _bank, _attempt)['message'].lower()
+            for _invented in ('booking up', 'tight on slots', 'only a few'):
+                results.log(f"followup context [{_bank} #{_attempt}]: no invented urgency",
+                            _invented not in _msg, got=_msg[:90])
+            for _claim in ('price the job upfront', 'price is fixed',
+                           'costs nothing', 'free site visit'):
+                results.log(f"followup context [{_bank} #{_attempt}]: no tenant's USP",
+                            _claim not in _msg, got=_msg[:90])
+    results.log("followup context: the lead is greeted by name",
+                'Rudo' in _fu2._template_message(_CtxLead(), 'area', 1)['message'],
+                got=_fu2._template_message(_CtxLead(), 'area', 1)['message'][:90])
+    _nameless = type('_N', (_CtxLead,), {'customer_name': ''})()
+    results.log("followup context: a nameless lead gets no placeholder",
+                'None' not in _fu2._template_message(_nameless, 'area', 1)['message'],
+                got=_fu2._template_message(_nameless, 'area', 1)['message'][:90])
+
     # Hotter leads are chased sooner than colder ones, in every band they share.
     _hot_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.VERY_HOT))
     _cold_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.COLD))
@@ -5604,24 +5726,48 @@ try:
         _stranded._now = _at(19, 0, day=22)
         _due_fz = _fu2._scheduled_due_at(_stranded)
         _deadline = _fu2._last_sendable_moment(_stranded)
+        # Inside the frozen clock: the spacing check measures from now(), so
+        # asking outside it compares against the real date and always passes.
+        _ready_str, _why_str = _fu2._is_ready_for_followup(_stranded, None, force=True)
     _eve_close_h, _eve_close_m = _fu_mod.CONTACT_WINDOWS[1][2:]
-    results.log("sending hours: the last touch is pulled back before the window shuts",
-                _due_fz is not None
-                and _due_fz <= _at(_eve_close_h, _eve_close_m, day=22),
-                expected="on the 22nd, before the evening close",
-                got=str(_due_fz.astimezone(_sast_fz)) if _due_fz else 'None')
-    results.log("sending hours: the pull-back leaves the cron room to catch it",
-                _deadline is not None and _due_fz <= _deadline - _td2(minutes=_LC_GRACE - 1),
-                got=f"due={_due_fz} deadline={_deadline}")
+    # The last touch of that lead cannot be saved, and MUST NOT be: their
+    # previous touch was at 17:00 and the last sendable minute is ~19:32, so
+    # anywhere the pull-back could put it is under the four-hour floor. The
+    # spacing wins and the touch is dropped (owner rule, 2026-09-09 — this case
+    # used to assert the opposite, with LAST_CALL_MIN_GAP_HOURS at 0.75).
+    results.log("sending hours: a last touch that cannot clear the gap is dropped, not squeezed",
+                _ready_str is False,
+                expected="declined: under the 4h floor",
+                got=f"ready={_ready_str} ({_why_str}) due={_due_fz}")
 
-    # In that final stretch the spacing rule relaxes — a touch that must go now
-    # or never is worth a tighter gap than one with a day of window ahead.
+    # The pull-back itself still works, and this is the case it exists for: the
+    # same stranded shape, but with room for the gap. Without it a touch due at
+    # 04:00 waited for the next 12:33, hours after the lead became unreachable.
+    _pullback = _ClockLead(_at(9, 0, day=22), count=3,
+                           last_followup=_at(13, 0, day=22))
+    with _frozen(_at(19, 0, day=22)):
+        _pullback._now = _at(19, 0, day=22)
+        _due_pb = _fu2._scheduled_due_at(_pullback)
+        _deadline_pb = _fu2._last_sendable_moment(_pullback)
+    results.log("sending hours: the last touch is pulled back before the window shuts",
+                _due_pb is not None
+                and _due_pb <= _at(_eve_close_h, _eve_close_m, day=22)
+                and _due_pb >= _at(13, 0, day=22) + _td2(hours=_FU_GAP),
+                expected="on the 22nd, before the evening close and 4h clear",
+                got=str(_due_pb.astimezone(_sast_fz)) if _due_pb else 'None')
+    results.log("sending hours: the pull-back leaves the cron room to catch it",
+                _deadline_pb is not None
+                and _due_pb <= _deadline_pb - _td2(minutes=_LC_GRACE - 1),
+                got=f"due={_due_pb} deadline={_deadline_pb}")
+
+    # The last-call branch still exists, but a minimum is a minimum: it no
+    # longer buys a tighter gap.
     with _frozen(_at(20, 30, day=22)):
         _stranded._now = _at(20, 30, day=22)
         results.log("sending hours: the final stretch counts as a last call",
                     _fu2._is_last_call(_stranded) is True)
-        results.log("sending hours: last call relaxes the spacing rule",
-                    _fu2._min_gap_hours(_stranded) == _LC_GAP,
+        results.log("sending hours: last call does NOT relax the four-hour floor",
+                    _fu2._min_gap_hours(_stranded) == _LC_GAP == _FU_GAP,
                     got=str(_fu2._min_gap_hours(_stranded)))
     _roomy = _ClockLead(_at(9, 0, day=23), count=1, last_followup=_at(12, 0, day=23))
     with _frozen(_at(13, 0, day=23)):
@@ -5644,8 +5790,11 @@ try:
                     expected=f"held until at least {_FU_GAP}h after the last send",
                     got=f"ready={_ready} due={_crowded_due} ({_why})")
         # ...and one that is properly spaced does fire.
+        # Derived from the constant, not a hardcoded hour: raising the floor
+        # must not silently turn this case into its opposite.
         _spaced = _ClockLead(_at(9, 0, day=22), count=1,
-                             last_followup=_at(10, 0, day=23))
+                             last_followup=_at(13, 0, day=23)
+                             - _td2(hours=_FU_GAP + 1))
         _spaced._now = _at(13, 0, day=23)
         results.log("followup cadence: a properly spaced attempt still fires",
                     _fu2._is_ready_for_followup(_spaced, None, force=True)[0] is True,
@@ -5731,16 +5880,23 @@ try:
                                           _fu2._followup_offsets(_WindowLead()))),
                 got=f"ad={[round(o, 1) for o in _fu2._followup_offsets(_WindowLead(ctwa=True))]} "
                     f"organic={[round(o, 1) for o in _fu2._followup_offsets(_WindowLead())]}")
-    # Even a sliver of window earns the full run - the min-gap rule, not the
-    # schedule, is what stops them going out on top of each other.
+    # A sliver of window CANNOT earn the full run any more, and that is the
+    # trade the four-hour floor makes: four is a ceiling, not a quota, so when
+    # the gap and the count cannot both hold, the COUNT gives (owner rule,
+    # 2026-09-09). This case used to assert four touches inside two hours.
     class _SliverWindow(_WindowLead):
         @property
         def messaging_window_closes_at(self):
             return self.last_inbound_at + _td2(hours=2)
     _sliver_offs = _fu2._followup_offsets(_SliverWindow())
-    results.log("ad window: even a sliver of window still schedules four touches",
-                len(_sliver_offs) == 4 and all(o < 2 for o in _sliver_offs),
+    results.log("ad window: a sliver of window gets FEWER touches, never four bunched",
+                1 <= len(_sliver_offs) < 4
+                and all(_sliver_offs[i + 1] - _sliver_offs[i] >= _FU_GAP
+                        for i in range(len(_sliver_offs) - 1)),
+                expected=f"under four, every gap >= {_FU_GAP}h",
                 got=str([round(o, 2) for o in _sliver_offs]))
+    results.log("ad window: a sliver still gets ONE touch, never none",
+                len(_sliver_offs) >= 1, got=str(len(_sliver_offs)))
 
     # THE RESET: a reply puts the counter back to zero, so the four touches are
     # four SINCE THEY LAST SPOKE. A lead who answers every time is never retired.

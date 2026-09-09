@@ -47,7 +47,7 @@
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
 from bot.models import Appointment, LeadStatus
 from bot.whatsapp_window import paid_sends_allowed
 from bot.utils import business_name_for
@@ -87,6 +87,80 @@ CONTACT_WINDOWS = [
 # and parked nudge loops, which have their own fraction lists, use it as their
 # target count too.
 FOLLOWUP_MIN_COUNT = 4
+
+# The CEILING on what a lead may receive between one message of theirs and the
+# next: four, counted across every loop that messages them (owner rule,
+# 2026-09-09). Each loop already caps its own run at four and the loops are
+# mutually exclusive per inbound, but "four from the lead" is a fact about the
+# LEAD, not about whichever code path happens to own them this week - a lead
+# chased four times and then parked could be nudged four more times off the same
+# silence.
+FOLLOWUP_CAP_PER_REPLY = 4
+
+# What a proactive touch looks like in the transcript. Every loop stamps its own
+# prefix as it sends, so the transcript is the one place that knows the total
+# regardless of which counter each loop keeps.
+PROACTIVE_MARKERS = (
+    '[AUTO FOLLOW-UP]', '[AUTOMATIC FOLLOW-UP]',
+    '[DELAY NUDGE', '[PARKED NUDGE', '[DELAY REACTIVATION]',
+)
+
+
+def touches_since_last_reply(lead) -> int:
+    """Proactive messages sent since the lead last said anything.
+
+    THE single reader for the cap, so no loop can answer it differently. Counted
+    off the transcript rather than a column because each loop keeps its own
+    counter (followup_count, and the two nudge states in internal_notes) and
+    none of them can see the others; the transcript sees all three.
+
+    A manual takeover by a human is deliberately NOT counted. The cap exists to
+    stop the machine talking over itself, and a person who has read the thread
+    and decided to write is the opposite of that.
+    """
+    history = getattr(lead, 'conversation_history', None) or []
+    since = getattr(lead, 'last_customer_response', None) or getattr(
+        lead, 'last_inbound_at', None)
+
+    count = 0
+    for message in history:
+        if (message or {}).get('role') != 'assistant':
+            continue
+        content = (message.get('content') or '').lstrip()
+        if not content.startswith(PROACTIVE_MARKERS):
+            continue
+        # No timestamp is treated as "before their reply": an entry we cannot
+        # place must not be allowed to spend the lead's allowance.
+        stamp = _parse_history_stamp(message.get('timestamp'))
+        if since is not None and (stamp is None or stamp <= since):
+            continue
+        count += 1
+    return count
+
+
+def _parse_history_stamp(raw):
+    """A conversation_history timestamp as an aware datetime, or None.
+
+    The field is schemaless (CLAUDE.md: transcript metadata never gets a
+    migration), so it holds whatever the writer put there across several years
+    of writers. Anything unreadable is None and the caller decides what that
+    means - here, that it does not count against the lead.
+    """
+    if raw in (None, ''):
+        return None
+    if isinstance(raw, datetime):
+        parsed = raw
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            return None
+    if timezone.is_naive(parsed):
+        try:
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        except Exception:
+            return None
+    return parsed
 
 
 def followup_window_start(lead):
@@ -138,6 +212,37 @@ def usable_window_hours(lead) -> float:
     return max(window_hours - FOLLOWUP_WINDOW_MARGIN_HOURS, window_hours * 0.5)
 
 
+def space_offsets(offsets, usable) -> tuple:
+    """Offsets pushed apart to the minimum gap, and truncated at the window.
+
+    THE SINGLE RESOLVER for "how far apart are these", used by the follow-up
+    schedule and both nudge loops. Two jobs, in this order:
+
+      * push each touch to at least FOLLOWUP_MIN_GAP_HOURS after the one before
+        it, so no written cadence can produce a pair closer than the floor
+        (VERY_HOT on a 24h window was 3.8h apart);
+      * DROP any touch that no longer fits inside the usable window rather than
+        squeezing it back in. When the gap and the count cannot both hold, the
+        COUNT gives: four is a ceiling, not a quota, and a bounced or bunched
+        message costs more than a missing one.
+
+    Truncating here is what keeps the count honest, because every reader of the
+    count reads it off the schedule (max_followups_for). A lead the window can
+    only carry two touches for is a lead the UI chip, the dashboard and the LLM
+    prompt all describe as having two.
+    """
+    spaced = []
+    for offset in offsets:
+        if spaced:
+            offset = max(offset, spaced[-1] + FOLLOWUP_MIN_GAP_HOURS)
+        if offset > usable:
+            break
+        spaced.append(offset)
+    # Never nothing: the first touch stands even on a window too short to hold
+    # it properly, because a lead we never chase at all is the worse failure.
+    return tuple(spaced) or (min(offsets[0], usable),)
+
+
 def followup_offsets_for(lead):
     """The four touches this lead gets, as absolute hours from the moment their
     messaging window opened (their last message to us).
@@ -164,9 +269,9 @@ def followup_offsets_for(lead):
     bands = FOLLOWUP_BAND_OFFSETS.get(tier, FOLLOWUP_BAND_OFFSETS[LeadStatus.COLD])
     usable = usable_window_hours(lead)
     if bands[-1] <= usable:
-        return bands
+        return space_offsets(bands, usable)
     fractions = SHORT_WINDOW_FRACTIONS.get(tier, SHORT_WINDOW_FRACTIONS[LeadStatus.COLD])
-    return tuple(f * usable for f in fractions)
+    return space_offsets([f * usable for f in fractions], usable)
 
 
 def max_followups_for(lead) -> int:
@@ -214,9 +319,23 @@ SHORT_WINDOW_FRACTIONS = {
 # free-form window shuts, not on its doorstep.
 FOLLOWUP_WINDOW_MARGIN_HOURS = 1.5
 
-# No two follow-ups back-to-back, even if the cron is catching up after an
-# outage or a long nightly pause.
-FOLLOWUP_MIN_GAP_HOURS = 1.5
+# FOUR HOURS between touches, minimum, and it is a floor rather than a target
+# (owner rule, 2026-09-09). Every path that sends a proactive message asks
+# `_min_gap_hours` for it, and `space_offsets` bakes it into the schedule so the
+# runtime guard rarely has to intervene.
+#
+# It was 1.5h, which the schedule itself almost never needed - the written
+# cadences are 4 to 27 hours apart. What 1.5h really licensed was the COLLAPSE:
+# absolute offsets rolled forward into the same contact window arrive at the
+# same minute, and a cron catching up after an outage fires whatever is due.
+#
+# THE CONSEQUENCE IS FEWER TOUCHES ON A SHORT WINDOW, and that is the trade the
+# rule makes. The sendable hours are two blocks a day (CONTACT_WINDOWS), so a
+# 4h floor allows at most two sends per day; a standard 24h lead therefore gets
+# TWO touches rather than four. The cap of four is a ceiling, not a quota, and
+# the count is read off the schedule everywhere (max_followups_for), so the UI
+# chip, the dashboard due-list, the LLM prompt and cron retirement all follow.
+FOLLOWUP_MIN_GAP_HOURS = 4.0
 
 # We just spoke to this lead (a reply, a nudge, anything) — hold off, whatever
 # the schedule says. Without this a follow-up can land minutes after our own
@@ -232,9 +351,17 @@ FOLLOWUP_LIVE_CONVERSATION_MINUTES = 20
 # messaging window will not survive.
 LAST_CALL_GRACE_MINUTES = 30
 
-# On a last call the usual spacing yields: a touch that must go now or never is
-# worth a tighter gap than one with a whole day of window ahead of it.
-LAST_CALL_MIN_GAP_HOURS = 0.75
+# On a last call the spacing USED to yield, down to 45 minutes: a touch that
+# must go now or never was worth a tighter gap than one with a whole day ahead.
+# A minimum of four hours is a minimum, so the relaxation is gone and this is
+# kept equal to the floor rather than deleted, because several call sites read
+# it and the last-call branch is still the right place to reason about.
+#
+# What gives instead is the TOUCH. A fourth message that cannot clear four
+# hours before the window shuts is not sent at all - which is the same trade the
+# schedule makes, and the honest one: a lead who hears from us twice in ninety
+# minutes has learned something about us that no fourth touch recovers.
+LAST_CALL_MIN_GAP_HOURS = FOLLOWUP_MIN_GAP_HOURS
 
 # Assumed window length when the lead has no usable inbound timestamp yet.
 DEFAULT_WINDOW_HOURS = 24.0
@@ -364,12 +491,18 @@ class Command(BaseCommand):
     _DELAY_NUDGE_FRACTIONS = (0.09, 0.34, 0.60, 0.85)
 
     def _delay_nudge_offsets(self, lead):
-        """Absolute hours-from-last-inbound for each delay nudge."""
+        """Absolute hours-from-last-inbound for each delay nudge.
+
+        Through `space_offsets` like the main schedule: the four-hour floor is a
+        rule about what a LEAD receives, so it cannot be something only one of
+        the three loops that message them obeys.
+        """
         usable = max(
             self._messaging_window_hours(lead) - FOLLOWUP_WINDOW_MARGIN_HOURS,
             self._messaging_window_hours(lead) * 0.5,
         )
-        return tuple(f * usable for f in self._DELAY_NUDGE_FRACTIONS)
+        return space_offsets(
+            [f * usable for f in self._DELAY_NUDGE_FRACTIONS], usable)
 
     def _nudge_delay_flow_ghosts(self, now_local, dry_run):
         """
@@ -426,12 +559,20 @@ class Command(BaseCommand):
 
                 nudge_count, last_nudge_at = self._read_delay_nudge_state(notes)
 
-                # At least four nudges, bounded by the copy we actually have.
+                # Read off THIS LEAD's schedule, bounded by the copy we have.
+                # It used to be max(FOLLOWUP_MIN_COUNT, len(fractions)) - "at
+                # least four" - which is the opposite of a ceiling, and which no
+                # longer matches a schedule the four-hour floor can truncate.
                 max_nudges = min(
-                    max(FOLLOWUP_MIN_COUNT, len(self._DELAY_NUDGE_FRACTIONS)),
+                    len(self._delay_nudge_offsets(lead)),
                     len(self._DELAY_NUDGE_MESSAGES[step]),
                 )
                 if nudge_count >= max_nudges:
+                    continue
+
+                # The cross-loop ceiling: this loop's own counter cannot see the
+                # touches the other loops sent off the same silence.
+                if touches_since_last_reply(lead) >= FOLLOWUP_CAP_PER_REPLY:
                     continue
 
                 # A free-form send outside the window bounces with 131047 and
@@ -585,10 +726,14 @@ class Command(BaseCommand):
     _PARKED_NUDGE_FRACTIONS = (0.38, 0.56, 0.72, 0.88)
 
     def _parked_nudge_offsets(self, lead):
-        """Absolute hours-from-last-inbound for each parked re-engagement nudge."""
+        """Absolute hours-from-last-inbound for each parked re-engagement nudge.
+
+        Same spacing resolver as the main schedule and the delay loop.
+        """
         window = self._messaging_window_hours(lead)
         usable = max(window - FOLLOWUP_WINDOW_MARGIN_HOURS, window * 0.5)
-        return tuple(f * usable for f in self._PARKED_NUDGE_FRACTIONS)
+        return space_offsets(
+            [f * usable for f in self._PARKED_NUDGE_FRACTIONS], usable)
 
     # Don't re-engage leads who have been cold for more than this — at that point
     # they are genuinely dormant and a nudge is just spam.
@@ -637,12 +782,19 @@ class Command(BaseCommand):
                 notes = lead.internal_notes or ''
                 nudge_count, last_nudge_at = self._read_parked_nudge_state(notes)
 
-                # At least four touches, bounded by the copy we have.
+                # Read off THIS LEAD's schedule, bounded by the copy we have.
+                # See the delay loop: "at least four" was the wrong shape once
+                # four became a ceiling.
                 max_nudges = min(
-                    max(FOLLOWUP_MIN_COUNT, len(self._PARKED_NUDGE_FRACTIONS)),
+                    len(self._parked_nudge_offsets(lead)),
                     len(self._PARKED_NUDGE_MESSAGES),
                 )
                 if nudge_count >= max_nudges:
+                    continue
+
+                # The cross-loop ceiling: this loop's own counter cannot see the
+                # touches the other loops sent off the same silence.
+                if touches_since_last_reply(lead) >= FOLLOWUP_CAP_PER_REPLY:
                     continue
 
                 # A free-form send outside the window bounces with 131047 and
@@ -1250,6 +1402,17 @@ class Command(BaseCommand):
         BACK to the last sendable moment, so the touch goes out this evening
         instead of being stranded until the lead writes again.
         """
+        # The ceiling FIRST, counted across every loop that messages this lead
+        # rather than off this loop's own counter: a lead who has had their four
+        # is not "not due yet", they are finished until they say something, and
+        # there is no point working out when a touch we will not send is due.
+        spent = touches_since_last_reply(lead)
+        if spent >= FOLLOWUP_CAP_PER_REPLY:
+            return False, (
+                f'{spent} touches since they last messaged '
+                f'(cap {FOLLOWUP_CAP_PER_REPLY})'
+            )
+
         due_at = self._scheduled_due_at(lead)
         if due_at is None:
             return False, 'no reference time'
@@ -1790,106 +1953,124 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
     # ─── Template fallback ────────────────────────────────────────────────────
 
     def _template_message(self, lead, next_question, attempt):
+        """The offline fallback, and it has to be as CONTEXTUAL as the AI path.
+
+        Every touch names the lead and names their job in their own words
+        (`lead_handoff.job_phrase`, the same resolver the plumber's draft reads),
+        because a follow-up that could have been sent to anybody tells the lead
+        exactly how closely we are reading. "Still looking for a plumber?" was
+        the fourth and last thing some leads ever heard from us.
+
+        Four attempts, getting shorter, never emptier:
+          1 - the job, said back, and the one thing outstanding
+          2 - the same ask from a different angle
+          3 - short
+          4 - shortest, and STILL names the job
+
+        Two things are deliberately gone from this bank:
+
+        * FABRICATED SCARCITY. "We're getting booked up this week" and "we're
+          getting tight on slots this week" appeared in four of these and were
+          true of nothing: the cron has no idea what the diary looks like. The
+          sales rules forbid invented urgency outright, and it is the opposite of
+          contextual - a line that would be identical for every lead on earth.
+        * TENANT CLAIMS. "We price the job upfront", "the price is fixed once we
+          confirm" and "locking in a slot costs nothing" are one business's USPs
+          and one business's visit policy, asserted into every tenant's copy.
         """
-        4 attempts, all within 24 hours.
-        Attempt 1 — value-led, warm
-        Attempt 2 — social proof + casual
-        Attempt 3 — soft urgency (we're booking up)
-        Attempt 4 — ultra-short 9-word style
-        """
-        service = self._service_label(lead)
-        area    = f' in {lead.customer_area}' if lead.customer_area else ''
-        # Where WE work, from this lead's own tenant — the fallback used to be
-        # a hardcoded 'around Harare' (Homebase's city) in every tenant's copy.
-        from bot.tenant_config import get_config
-        _city = get_config(getattr(lead, 'tenant', None)).location_city
-        area_or_ours = area or (f' around {_city}' if _city else '')
+        from bot.lead_handoff import job_phrase
+
+        # Never empty: _service_label falls back to 'plumbing work', so the copy
+        # below can always finish its sentence.
+        job = job_phrase(lead) or self._service_label(lead)
+        name = (getattr(lead, 'customer_name', '') or '').strip()
+        hi = f'Hi {name}, ' if name else 'Hi there, '
+        area = f' in {lead.customer_area}' if lead.customer_area else ''
 
         templates = {
+            # We do not know the service yet, so there is nothing to say back
+            # except that they got in touch. The choice is the ask.
             'service_type': [
                 (
-                    f"Hi there, what made you reach out? Most people don't message unless something's "
-                    f"actually bothering them about their space.\n\n"
-                    f"Is it a bathroom, kitchen, or new installation you're after?"
+                    f"{hi}you got in touch about some work{area} and I never "
+                    f"caught what sort. Is it a bathroom, a kitchen, or a new "
+                    f"installation?"
                 ),
                 (
-                    f"Hey! Just so I can point you in the right direction, are you looking at a "
-                    f"bathroom renovation, kitchen reno, or a new installation?\n\n"
-                    f"We price the job upfront so you know exactly what you're paying before anything starts."
+                    f"{hi}so I can point you the right way, is it a bathroom, a "
+                    f"kitchen, or a new installation you are after?"
                 ),
                 (
-                    f"We're getting booked up this week. If you're still keen, which service "
-                    f"were you after? Bathroom, kitchen, or new plumbing installation?"
+                    f"{hi}still keen to get this sorted? Bathroom, kitchen, or a "
+                    f"new installation?"
                 ),
                 (
-                    f"Still looking for a plumber?"
+                    f"Bathroom, kitchen, or a new installation?"
                 ),
             ],
             'project_description': [
                 (
-                    f"Hi there, to give you the most accurate quote for your {service}, "
-                    f"could you tell me a bit more about the specific work you need done?"
+                    f"{hi}about the {job}{area}. What exactly needs doing, so I "
+                    f"can get it priced properly for you?"
                 ),
                 (
-                    f"Hi there, the more detail you can share about the {service} job, "
-                    f"the more accurate we can be with the price. What exactly needs doing?"
+                    f"{hi}the more you can tell me about the {job}, the closer "
+                    f"the price will be. What needs doing?"
                 ),
                 (
-                    f"Hi there, we're booking up this week. "
-                    f"What's the main thing you need sorted for the {service}?"
+                    f"{hi}what is the main thing you need sorted with the {job}?"
                 ),
                 (
-                    f"What exactly needs doing?"
+                    f"What needs doing with the {job}?"
                 ),
             ],
             'area': [
                 (
-                    f"Hi there, I just need your area to finish the booking. "
-                    f"Which suburb are you based in?"
+                    f"{hi}I have the {job} down. I just need your area so I know "
+                    f"if we cover you. Which suburb are you in?"
                 ),
                 (
-                    f"Hi there, we've done a number of renovations{area_or_ours} recently — "
-                    f"just need your suburb to match you with the right team."
+                    f"{hi}which suburb is the {job} in? That is the last thing I "
+                    f"need before I can get you a price."
                 ),
                 (
-                    f"Almost done. We're booking up this week, "
-                    f"Which suburb are you in so we can lock in your slot?"
+                    f"{hi}whereabouts is the {job}?"
                 ),
                 (
-                    f"Which area are you in?"
+                    f"Which suburb is the {job} in?"
                 ),
             ],
             'availability': [
                 (
-                    f"Hi there, what day works best for the free site visit? "
-                    f"we have slots this week and next."
+                    f"{hi}we can come and see the place for the {job} and give "
+                    f"you an exact price. What day suits you?"
                 ),
                 (
-                    f"Hi there, locking in a slot costs nothing and you can always reschedule. "
-                    f"Would tomorrow or later this week work for the visit?"
+                    f"{hi}for the {job}, nothing is locked in until you say so "
+                    f"and you can always move it. Would earlier in the week or "
+                    f"later suit you better?"
                 ),
                 (
-                    f"We're getting tight on slots this week. "
-                    f"which day works for the site visit?"
+                    f"{hi}what day works for the visit for the {job}?"
                 ),
                 (
-                    f"Want to lock in a time?"
+                    f"What day works to come and see the {job}?"
                 ),
             ],
             'complete': [
                 (
-                    f"Hi there, everything's set on our end for your {service}. "
-                    f"Just say the word and I'll confirm your slot."
+                    f"{hi}everything is set on our side for the {job}{area}. "
+                    f"Just say the word and I will confirm your slot."
                 ),
                 (
-                    f"Hi there, your {service} slot is ready. The price is fixed once we confirm, "
-                    f"What's the best time to lock it in?"
+                    f"{hi}your {job} slot is ready to confirm. What time works "
+                    f"best for you?"
                 ),
                 (
-                    f"We're booking up, shall I lock in your {service} slot?"
+                    f"{hi}shall I lock in the slot for the {job}?"
                 ),
                 (
-                    f"Still want to get the {service} sorted?"
+                    f"Still want to get the {job} sorted?"
                 ),
             ],
         }

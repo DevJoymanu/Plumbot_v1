@@ -78,6 +78,27 @@ def service_label(appointment) -> str:
     return label.replace('&', 'and')
 
 
+def job_phrase(appointment) -> str:
+    """The job as a bare noun phrase, in the customer's OWN words where we have
+    any, else the service label, else empty.
+
+    THE shared resolver for "what is this lead's job called" in copy that has to
+    prove we read them. The recap in this module and the follow-up cron's
+    fallback templates both read it, so a lead is never "a bathroom renovation"
+    in one message and "your project" in the next. Their own words come first
+    for the same reason the recap prefers them: "Bathroom Renovation" is the
+    category we filed them under, and "full ensuite refit, new tub" is the job.
+
+    No article, because every caller sits it after one of their own ("about the
+    ...", "your ..."). `_recap` keeps its own article handling, which has to
+    decide between "a bathroom renovation" and a description that takes none.
+    """
+    notes = _tidy(_value(appointment, 'project_description'))
+    if _names_a_thing(notes):
+        return notes
+    return service_label(appointment).lower()
+
+
 def has_plan(appointment) -> bool:
     """A real plan on file, not one that was merely promised.
 
