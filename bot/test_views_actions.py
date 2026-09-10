@@ -10015,7 +10015,12 @@ class EmailFromDomainTests(TestCase):
             result = email_health.run_test('send', to='owner@example.com')
         self.assertTrue(result['ok'])
         self.assertIn('barmakplumbing.co.zw', result['detail'])
-        self.assertIn('DKIM', result['detail'])
+        # Names the records Brevo actually asks for. The selectors are brevo1 and
+        # brevo2 as CNAMEs, not the s1/s2 TXT records the older Sendinblue setup
+        # used -- checking for the wrong ones is how I misreported two domains as
+        # unauthenticated when all three were fine.
+        self.assertIn('brevo1', result['detail'])
+        self.assertIn('brevo2', result['detail'])
 
 
 class EmailTestAddressFallbackTests(StaffClientTestCase):

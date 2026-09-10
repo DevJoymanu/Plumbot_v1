@@ -301,19 +301,27 @@ def _test_send(*, to=None, tenant=None):
         # NAME the domain. "The sending domain is probably not authenticated" is
         # useless advice without saying which one, and the answer is not obvious:
         # each tenant's customer mail leaves on their OWN domain, and a tenant
-        # with none falls back to the platform subdomain. Verified 2026-09-10:
-        # homebaseplumbers.co.zw carries Brevo DKIM (s1/s2), while
-        # barmakplumbing.co.zw and notifications.homexmedia.com carry only the
-        # brevo-code verification TXT with no DKIM at all, so their mail is
-        # accepted and then filtered.
+        # with none falls back to the platform subdomain, so authenticating one
+        # authenticates nothing else.
+        #
+        # HOW TO CHECK IT, because getting this wrong is easy: Brevo publishes
+        # DKIM as two CNAMEs at `brevo1._domainkey` and `brevo2._domainkey`
+        # (pointing at b1/b2.<domain-with-dashes>.dkim.brevo.com), NOT as the
+        # s1/s2 TXT records the older Sendinblue setup used. A selector sweep
+        # that tried s1, s2, mail, brevo, selector1 and the rest found nothing on
+        # 2026-09-10 and I wrongly reported two domains as unauthenticated; all
+        # three resolve end to end under the brevo1/brevo2 names. Brevo asks for
+        # no SPF include either -- it aligns DMARC through DKIM and its own
+        # return-path -- so brevo-code + the two CNAMEs + DMARC is the whole set.
         domain = (_from_domain(getattr(settings, 'DEFAULT_FROM_EMAIL', ''))
                   or 'the sending domain')
         return {'ok': True, 'summary': f'{transport} accepted a test email to {address}.',
                 'detail': (f'Check that inbox. Acceptance is not delivery: it has '
                            f'to arrive, and that needs {domain} authenticated in '
-                           f'{transport} with SPF and DKIM published in DNS. Each '
-                           f'tenant sends on their own domain, so authenticating '
-                           f'one does not authenticate the others.')}
+                           f'{transport} (brevo-code, the brevo1 and brevo2 DKIM '
+                           f'CNAMEs, and DMARC). Each tenant sends on their own '
+                           f'domain, so authenticating one does not authenticate '
+                           f'the others.')}
     return {'ok': False, 'summary': f'{transport} refused the test email.',
             'detail': 'The transport returned a failure. The server log for this '
                       'request carries the reason.'}
