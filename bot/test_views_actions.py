@@ -9985,3 +9985,64 @@ class SectionedTemplateBuilderTests(TestCase):
         self.assertEqual([item.section for item in items],
                          ['CONTROL VALVES', 'CONTROL VALVES', 'DRAINAGE PIPE & MATERIAL'])
         self.assertEqual(items[2].quantity_text, '19 length')
+
+
+class EmailFromDomainTests(TestCase):
+    """The send test names the domain that has to be authenticated.
+
+    "The sending domain is probably not authenticated" is useless advice without
+    saying which one, and the answer is not obvious: each tenant's customer mail
+    leaves on their OWN domain and a tenant with none falls back to the platform
+    subdomain, so authenticating one authenticates nothing else.
+    """
+
+    def test_a_domain_is_read_out_of_either_from_shape(self):
+        from bot.email_health import _from_domain
+        self.assertEqual(_from_domain('Takudzwa <info@homebaseplumbers.co.zw>'),
+                         'homebaseplumbers.co.zw')
+        self.assertEqual(_from_domain('hps@notifications.homexmedia.com'),
+                         'notifications.homexmedia.com')
+        self.assertEqual(_from_domain('  MiXeD <A@B.CO.ZW> '), 'b.co.zw')
+        self.assertEqual(_from_domain(''), '')
+        self.assertEqual(_from_domain(None), '')
+
+    @override_settings(BREVO_API_KEY='key',
+                       DEFAULT_FROM_EMAIL='Bot <info@barmakplumbing.co.zw>')
+    def test_the_send_result_names_it(self):
+        from bot import email_health
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True):
+            result = email_health.run_test('send', to='owner@example.com')
+        self.assertTrue(result['ok'])
+        self.assertIn('barmakplumbing.co.zw', result['detail'])
+        self.assertIn('DKIM', result['detail'])
+
+
+class EmailTestAddressFallbackTests(StaffClientTestCase):
+    """PLATFORM_NOTIFICATION_EMAIL is a MODULE CONSTANT, not a Django setting.
+
+    Reading it off `settings` silently returned '' and the send test then refused
+    for any operator whose login carries no email address.
+    """
+
+    def test_the_fallback_resolves_when_the_login_has_no_email(self):
+        from bot.plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        from bot.views.settings_views import _email_test_address
+
+        class _Req:
+            pass
+
+        request = _Req()
+        request.user = get_user_model()(username='no-email', email='')
+        self.assertEqual(_email_test_address(request), PLATFORM_NOTIFICATION_EMAIL)
+        self.assertTrue(_email_test_address(request))
+
+    def test_the_login_address_still_wins(self):
+        from bot.views.settings_views import _email_test_address
+
+        class _Req:
+            pass
+
+        request = _Req()
+        request.user = get_user_model()(username='has-email', email='me@example.com')
+        self.assertEqual(_email_test_address(request), 'me@example.com')

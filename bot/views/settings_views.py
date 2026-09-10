@@ -154,7 +154,12 @@ def _email_test_address(request):
     own = (getattr(request.user, 'email', '') or '').strip()
     if own:
         return own
-    return (getattr(settings, 'PLATFORM_NOTIFICATION_EMAIL', '') or '').strip()
+    # PLATFORM_NOTIFICATION_EMAIL is a module constant in plumber_notifications,
+    # NOT a Django setting -- reading it off `settings` silently returned '' and
+    # the send test then refused with "no address to send the test to" for any
+    # operator whose login carries no email address.
+    from ..plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+    return (PLATFORM_NOTIFICATION_EMAIL or '').strip()
 
 
 @owner_required

@@ -93,6 +93,14 @@ def outbound_transport():
     return None, 'No email transport configured. Set BREVO_API_KEY.'
 
 
+def _from_domain(from_email) -> str:
+    """The domain out of a From value, which may be 'Name <addr@domain>'."""
+    raw = (from_email or '').strip()
+    if '<' in raw and '>' in raw:
+        raw = raw[raw.index('<') + 1:raw.index('>')]
+    return raw.rpartition('@')[2].strip().lower()
+
+
 def imap_target():
     """(address, host, port) for the polled inbox, address '' when unset."""
     return (_env('IMAP_EMAIL'),
@@ -290,10 +298,22 @@ def _test_send(*, to=None, tenant=None):
         tenant=None,
     )
     if sent:
+        # NAME the domain. "The sending domain is probably not authenticated" is
+        # useless advice without saying which one, and the answer is not obvious:
+        # each tenant's customer mail leaves on their OWN domain, and a tenant
+        # with none falls back to the platform subdomain. Verified 2026-09-10:
+        # homebaseplumbers.co.zw carries Brevo DKIM (s1/s2), while
+        # barmakplumbing.co.zw and notifications.homexmedia.com carry only the
+        # brevo-code verification TXT with no DKIM at all, so their mail is
+        # accepted and then filtered.
+        domain = (_from_domain(getattr(settings, 'DEFAULT_FROM_EMAIL', ''))
+                  or 'the sending domain')
         return {'ok': True, 'summary': f'{transport} accepted a test email to {address}.',
-                'detail': 'Check that inbox. Acceptance is not delivery: if it '
-                          'does not arrive, the sending domain is most likely '
-                          'not authenticated for this transport.'}
+                'detail': (f'Check that inbox. Acceptance is not delivery: it has '
+                           f'to arrive, and that needs {domain} authenticated in '
+                           f'{transport} with SPF and DKIM published in DNS. Each '
+                           f'tenant sends on their own domain, so authenticating '
+                           f'one does not authenticate the others.')}
     return {'ok': False, 'summary': f'{transport} refused the test email.',
             'detail': 'The transport returned a failure. The server log for this '
                       'request carries the reason.'}
