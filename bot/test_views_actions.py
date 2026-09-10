@@ -5812,8 +5812,12 @@ class PostVisitSchedulerTests(TestCase):
         self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
         self.lead.save()
         stats = self._tick()
+        # Exact dict on purpose: a stray counter is a send nobody asked for.
+        # 'stale' is the backlog guard's own tally (POST_VISIT_BACKLOG_DAYS) and
+        # a FUTURE visit is not stale, it is simply not due.
         self.assertEqual(stats, {'form_emails': 0, 'asks': 0, 'confirmations': 0,
-                                 'cold': 0, 'no_email': 0, 'skipped': 0})
+                                 'cold': 0, 'no_email': 0, 'skipped': 0,
+                                 'stale': 0})
 
     @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
     @patch('bot.customer_emails._send', return_value=True)
@@ -7174,6 +7178,155 @@ class QuoteHandoffTests(StaffClientTestCase):
         self.assertEqual(
             self.client.get(reverse('mark_quotation_sent', args=[self.quote.pk])).status_code,
             405)
+
+
+class PostVisitBacklogGuardTests(TestCase):
+    """Switching the post-visit machine on must not empty months into an inbox.
+
+    The command was written but never added to PLUMBOT_CRON, so this whole flow
+    has never run in production. Enabling it cold would have fired ~25 emails at
+    once about visits going back months, which is how a plumber learns that these
+    emails are noise.
+
+    THE GUARD IS ON OPENING A REPORT, NOT ON TICKING ONE. A single queryset feeds
+    both branches of the tick, so filtering it by age would also have stranded
+    every sequence already in flight - Case A confirmations fire two days before
+    a job date that can be weeks out, and Case B's third ask lands about eleven
+    days after the visit.
+    """
+
+    def _visit(self, suffix, *, days_ago):
+        # Four hours back on top of the days: the default duration is two hours,
+        # so a visit scheduled at `now` has not ENDED yet and the 35-minute
+        # fallback is not due. The flow measures from the end, not the start.
+        return make_lead(
+            suffix, customer_name=f'Visit {suffix}',
+            customer_email=f'lead{suffix}@example.com',
+            status='confirmed', appointment_type='site_visit',
+            scheduled_datetime=(timezone.now()
+                                - timedelta(days=days_ago, hours=4)))
+
+    def _tick(self, **kwargs):
+        from bot.post_visit import run_post_visit_tick
+        with patch('bot.plumber_notifications.send_site_visit_form_email',
+                   return_value=True) as form_email, \
+             patch('bot.customer_emails.send_post_visit_ask_email',
+                   return_value=True), \
+             patch('bot.plumber_notifications.send_post_visit_handback_email',
+                   return_value=True):
+            stats = run_post_visit_tick(**kwargs)
+        return stats, form_email
+
+    # -- the guard ---------------------------------------------------------
+
+    def test_a_visit_from_months_ago_earns_no_debrief(self):
+        lead = self._visit(9600, days_ago=90)
+        stats, form_email = self._tick()
+        self.assertEqual(stats['stale'], 1)
+        self.assertEqual(stats['form_emails'], 0)
+        form_email.assert_not_called()
+        # And no row is created, so nothing is armed behind it either.
+        self.assertFalse(hasattr(lead, 'site_visit_report')
+                         and lead.site_visit_report_id if False else False)
+        from bot.models import SiteVisitReport
+        self.assertFalse(SiteVisitReport.objects.filter(appointment=lead).exists())
+
+    def test_a_visit_that_just_finished_still_earns_one(self):
+        self._visit(9601, days_ago=0)
+        stats, form_email = self._tick()
+        self.assertEqual(stats['stale'], 0)
+        self.assertEqual(stats['form_emails'], 1)
+        form_email.assert_called_once()
+
+    @override_settings(POST_VISIT_BACKLOG_DAYS=30)
+    def test_the_cutoff_is_tunable_without_a_deploy(self):
+        self._visit(9602, days_ago=10)
+        stats, _ = self._tick()
+        self.assertEqual(stats['stale'], 0)
+        self.assertEqual(stats['form_emails'], 1)
+
+    @override_settings(POST_VISIT_BACKLOG_DAYS='not a number')
+    def test_a_nonsense_cutoff_falls_back_rather_than_crashing(self):
+        from bot.post_visit import POST_VISIT_BACKLOG_DAYS, backlog_days
+        self.assertEqual(backlog_days(), float(POST_VISIT_BACKLOG_DAYS))
+
+    # -- what the guard must NOT do ---------------------------------------
+
+    def test_a_report_that_already_exists_is_ticked_however_old_the_visit(self):
+        """The trap: Case B's third ask is due ~11 days after the visit, so an
+        age filter on the tick's queryset would silently strand it."""
+        from bot.post_visit import apply_submission, ensure_report
+        lead = self._visit(9603, days_ago=40)
+        report = ensure_report(lead)
+        apply_submission(report, outcome='went_ahead', expectation='unknown',
+                         email='lead9603@example.com')
+        report.refresh_from_db()
+        report.next_action_at = timezone.now() - timedelta(hours=1)
+        report.save(update_fields=['next_action_at'])
+
+        stats, _ = self._tick()
+        self.assertEqual(stats['stale'], 0, 'an armed sequence must never be skipped')
+        self.assertEqual(stats['asks'], 1)
+
+    def test_a_confirmation_weeks_after_the_visit_still_fires(self):
+        """Case A is keyed to the JOB date, not the visit, so it is legitimately
+        due long after the guard's window."""
+        from bot.post_visit import apply_submission, ensure_report
+        lead = self._visit(9604, days_ago=20)
+        report = ensure_report(lead)
+        apply_submission(
+            report, outcome='went_ahead', expectation='specific_date',
+            expected_date=timezone.localdate() + timedelta(days=2),
+            email='lead9604@example.com')
+        report.refresh_from_db()
+        report.next_action_at = timezone.now() - timedelta(minutes=5)
+        report.save(update_fields=['next_action_at'])
+
+        with patch('bot.customer_emails.send_post_visit_confirmation_email',
+                   return_value=True) as confirm:
+            from bot.post_visit import run_post_visit_tick
+            stats = run_post_visit_tick()
+        self.assertEqual(stats['stale'], 0)
+        self.assertEqual(stats['confirmations'], 1)
+        confirm.assert_called_once()
+
+    def test_an_EMPTY_report_row_does_not_defeat_the_guard(self):
+        """The one that mattered. `ensure_report` is called from the DETAIL PAGE
+        too, so a row exists for every lead whose screen anybody ever opened -
+        on the live database, 18 of them, none submitted and none having sent
+        anything. Keying the guard on `report is None` let all of them through:
+        the first dry run against real data still showed 26 emails."""
+        from bot.post_visit import ensure_report
+        lead = self._visit(9610, days_ago=90)
+        ensure_report(lead)          # exactly what opening the lead's page does
+        stats, form_email = self._tick()
+        self.assertEqual(stats['stale'], 1)
+        self.assertEqual(stats['form_emails'], 0)
+        form_email.assert_not_called()
+
+    def test_activity_on_the_row_is_what_makes_it_in_flight(self):
+        """A row that has SENT something keeps ticking whatever the age, because
+        its remaining touches are legitimately weeks out."""
+        from bot.post_visit import ensure_report, report_is_untouched
+        lead = self._visit(9611, days_ago=90)
+        report = ensure_report(lead)
+        self.assertTrue(report_is_untouched(report))
+        report.fallback_email_sent_at = timezone.now() - timedelta(days=89)
+        report.save(update_fields=['fallback_email_sent_at'])
+        self.assertFalse(report_is_untouched(report))
+        stats, _ = self._tick()
+        self.assertEqual(stats['stale'], 0)
+
+    def test_a_dry_run_reports_the_backlog_without_writing(self):
+        """This is how you check what enabling it would do."""
+        from bot.models import SiteVisitReport
+        self._visit(9605, days_ago=90)
+        self._visit(9606, days_ago=0)
+        stats, form_email = self._tick(dry_run=True)
+        self.assertEqual(stats['stale'], 1)
+        self.assertEqual(stats['form_emails'], 1)
+        form_email.assert_not_called()
+        self.assertEqual(SiteVisitReport.objects.count(), 0)
 
 
 class EmailHealthPanelTests(TestCase):

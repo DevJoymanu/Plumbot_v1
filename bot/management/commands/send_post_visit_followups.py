@@ -18,6 +18,10 @@ this on a frequent cron is safe:
 
 It rides the existing Email_Follow_Ups service (PLUMBOT_CRON, every 5 minutes)
 rather than needing a service of its own.
+
+BEFORE ENABLING IT, run it with --dry-run and read the counters. `stale=` is the
+backlog the guard declined (POST_VISIT_BACKLOG_DAYS); everything else is what
+would really go out on the next tick.
 """
 
 from django.core.management.base import BaseCommand
@@ -42,5 +46,5 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             'Post-visit -> form emails={form_emails} asks={asks} '
             'confirmations={confirmations} cold={cold} '
-            'no-email={no_email} skipped={skipped}'.format(**stats)
+            'no-email={no_email} skipped={skipped} stale={stale}'.format(**stats)
         ))

@@ -49,6 +49,30 @@ logger = logging.getLogger(__name__)
 # still fresh, long enough that we are not emailing them in the driveway.
 FALLBACK_EMAIL_DELAY_MINUTES = 35
 
+# How far back a visit may be and still EARN a debrief form (days).
+#
+# This is the backlog guard, and it is also just the right rule. A form link for
+# a visit three months ago asks the plumber about a day nobody remembers, and a
+# run of them teaches them that these emails are noise - which costs us the ones
+# that matter. So a finished visit with no report yet is left alone once it is
+# this stale.
+#
+# It exists because this whole machine has never run in production: the command
+# was written but never added to PLUMBOT_CRON, so switching it on cold would have
+# fired ~25 emails at once about visits going back months (13 form links and 12
+# no-email handbacks, oldest apt 141). See railway.json's cron reference.
+#
+# It ALSO covers every future outage. A cron that dies for a week used to come
+# back and empty its backlog into the plumber's inbox; now it picks up where a
+# human plausibly still cares and drops the rest.
+#
+# CRITICALLY it gates OPENING a report, never ticking one that exists - see
+# run_post_visit_tick. Case A confirmations fire two days before a job date that
+# can be weeks out, and Case B's third ask lands ~11 days after the visit, so
+# filtering the tick's queryset by age would silently strand every sequence
+# already in flight.
+POST_VISIT_BACKLOG_DAYS = 3
+
 # The hour (local) that "next day at 12pm" means, for both the Case C deadline
 # and Case B's first ask.
 ASK_HOUR = 12
@@ -182,6 +206,58 @@ def is_due_for_report(appointment, now=None):
         return False
     end = visit_end(appointment)
     return bool(end) and end <= now
+
+
+def backlog_days():
+    """The staleness cutoff, overridable without a deploy."""
+    try:
+        return float(getattr(settings, 'POST_VISIT_BACKLOG_DAYS',
+                             POST_VISIT_BACKLOG_DAYS))
+    except (TypeError, ValueError):
+        logger.warning('POST_VISIT_BACKLOG_DAYS is not a number - using %s',
+                       POST_VISIT_BACKLOG_DAYS)
+        return float(POST_VISIT_BACKLOG_DAYS)
+
+
+def report_is_untouched(report) -> bool:
+    """True when this row has DONE nothing: nothing sent, nothing submitted.
+
+    A row existing is not evidence of a sequence in flight. `ensure_report` is
+    also called from the DETAIL PAGE, so the banner has a link to offer -- which
+    means a row exists for every lead whose screen anybody has ever opened. On
+    the live database that is 18 rows, none submitted and none having sent
+    anything: empty containers, indistinguishable from a lead nobody has looked
+    at except that `report is None` is False.
+
+    So the age guard cannot key off existence. It keys off ACTIVITY: a row that
+    has sent something or been submitted is in flight and must keep ticking
+    whatever the age of the visit, and one that has not is still openable and
+    still guardable.
+    """
+    if report is None or report.pk is None:
+        return True
+    return not any((
+        report.submitted_at,
+        report.fallback_email_sent_at,
+        report.confirmation_sent_at,
+        report.last_ask_at,
+        report.no_email_notified_at,
+        report.cold_notified_at,
+    ))
+
+
+def too_stale_to_open(appointment, now=None) -> bool:
+    """True when this visit is too old to start a debrief for.
+
+    Only ever asked about a report that has done nothing (see
+    `report_is_untouched`); a sequence in flight is never interrupted, because
+    its later touches are legitimately weeks out.
+    """
+    now = now or timezone.now()
+    end = visit_end(appointment)
+    if end is None:
+        return False
+    return end < now - timedelta(days=backlog_days())
 
 
 def due_visits(now=None, tenant=None):
@@ -534,7 +610,7 @@ def run_post_visit_tick(now=None, dry_run=False, log=None, tenant=None):
     """
     now = now or timezone.now()
     stats = {'form_emails': 0, 'asks': 0, 'confirmations': 0,
-             'cold': 0, 'no_email': 0, 'skipped': 0}
+             'cold': 0, 'no_email': 0, 'skipped': 0, 'stale': 0}
 
     def emit(msg):
         if log:
@@ -543,8 +619,31 @@ def run_post_visit_tick(now=None, dry_run=False, log=None, tenant=None):
     for apt in due_visits(now=now, tenant=tenant):
         try:
             report = getattr(apt, 'site_visit_report', None)
+
+            # THE BACKLOG GUARD, and the only place it is asked. A visit nobody
+            # logged and nobody now remembers gets no form and starts no
+            # sequence. Keyed on the report having DONE nothing rather than on
+            # it not existing, because the detail page creates rows too -- see
+            # report_is_untouched.
+            if report_is_untouched(report) and too_stale_to_open(apt, now):
+                stats['stale'] += 1
+                continue
+
             if report is None:
-                report = ensure_report(apt)
+                if dry_run:
+                    # A dry run must not CREATE the row, and this is not a
+                    # pedantic point about the flag's promise: the guard above
+                    # gates opening a report, never ticking one that exists, so
+                    # a dry run that created rows for the whole backlog would
+                    # turn the command you use to PREVIEW it into the command
+                    # that arms it. Every branch a fresh report can reach is
+                    # dry-run guarded before any write, so a transient instance
+                    # is enough to report what would happen.
+                    from bot.models import SiteVisitReport
+                    report = SiteVisitReport(appointment=apt,
+                                             tenant_id=apt.tenant_id)
+                else:
+                    report = ensure_report(apt)
 
             if report.is_open:
                 _tick_open_report(apt, report, now, dry_run, emit, stats)
@@ -655,11 +754,19 @@ def _send_confirmation(apt, report, now, dry_run, emit, stats):
     if not report.expected_date:
         # Nothing to confirm and nothing to render - never send a date-shaped
         # email with no date in it. Fall back to the ask sequence instead.
+        if dry_run:
+            emit('[dry-run] no date on file -> fall back to the asks (apt {})'
+                 .format(apt.pk))
+            return
         report.sequence = 'asks'
         report.next_action_at = now
         report.save(update_fields=['sequence', 'next_action_at'])
         return
     if report.expected_date < _local(now).date():
+        if dry_run:
+            emit('[dry-run] the date has passed -> mark done (apt {})'
+                 .format(apt.pk))
+            return
         report.sequence = 'done'
         report.next_action_at = None
         report.save(update_fields=['sequence', 'next_action_at'])
