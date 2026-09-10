@@ -322,7 +322,8 @@ class BookingMixin:
                     self.appointment.scheduled_datetime = candidate
                     self._mark_time_confirmed()
                     self.appointment.save(update_fields=['scheduled_datetime', 'internal_notes'])
-                    hour_str = candidate.strftime('%I%p').lstrip('0')
+                    from .response_mixin import _clock_label
+                    hour_str = _clock_label(candidate)
                     day_label = self._format_day(date_obj)
                     return (
                         f"Perfect, please expect us anytime after {hour_str} on {day_label}. "

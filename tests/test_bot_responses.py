@@ -233,6 +233,7 @@ print("TEST 0: DETERMINISTIC INTENT CORRECTION")
 print("="*60)
 
 from bot.views.plumbot.response_mixin import ResponseMixin
+from bot.views.plumbot.availability_mixin import AvailabilityMixin as _AvailabilityMixin
 
 # (message, intent the LLM returned, expected intent after correction)
 INTENT_CORRECTION_CASES = [
@@ -2412,6 +2413,13 @@ class _FakeSelfFollowup:
         return "What specifically needs doing?"
     def _get_next_two_available_days(self):
         return []
+    # The availability ask offers a day AND a time now, so the fake has to
+    # expose the slot resolver the question builder reads.
+    _visit_slot_labels = ResponseMixin._visit_slot_labels
+    _format_slot = ResponseMixin._format_slot
+    _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+    def _get_two_available_times_for_date(self, day):
+        return []
 try:
     # No prior tie-down -> ask for a yes first (value-check), not the field question.
     _td1 = _FakeSelfFollowup("project_description")._get_pricing_followup_prompt(
@@ -2571,6 +2579,12 @@ try:
             return "tomorrow"
         def _describe_project_context(self):
             return "have a quick look at the site for the installation"
+        # The availability ask offers a day AND a time now.
+        _visit_slot_labels = ResponseMixin._visit_slot_labels
+        _format_slot = ResponseMixin._format_slot
+        _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+        def _get_two_available_times_for_date(self, day):
+            return []
     _jq = _FakeSelfJQ("area")._build_job_quote_reply(
         "english", "Need a quote to fit tub and shower")
     _jq_parts = [p.strip() for p in _jq.split(_SPLIT)]
@@ -6762,6 +6776,10 @@ try:
             return "What are you looking to get sorted?"
         def _get_next_two_available_days(self):
             return []
+        # Lives on AvailabilityMixin, which this fake doesn't inherit.
+        _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+        def _get_two_available_times_for_date(self, day):
+            return []
 
     def _ask(nq, lang="english"):
         return _StageBot(nq)._get_pricing_followup_prompt(lang)
@@ -10141,6 +10159,105 @@ try:
     )
 finally:
     _tcmod.get_config = _real_gc2
+
+# ── The availability ask carries a DAY AND A TIME ─────────────────────────────
+# Asking for the day alone costs a whole turn: the lead says "Sunday", we come
+# back with "9am or 2pm?", and a booking that could have closed in one reply
+# needs two, with a gap in between where the lead goes quiet. Both offers are
+# complete slots, and they differ in TIME as well as day so a lead who can only
+# do afternoons has something to say yes to.
+from bot.views.plumbot.response_mixin import _clock_label as _clk
+from django.utils import timezone as _tz_slot
+from datetime import datetime as _dt_slot, timedelta as _td_slot
+import pytz as _pytz_slot
+
+_slot_tz = _pytz_slot.timezone('Africa/Johannesburg')
+_slot_today = _tz_slot.now().astimezone(_slot_tz).date()
+
+
+def _slot_at(day, hour, minute=0):
+    return _slot_tz.localize(
+        _dt_slot.combine(day, _dt_slot.min.time().replace(hour=hour, minute=minute)))
+
+
+class _FakeSelfSlots:
+    _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+    _visit_slot_labels = ResponseMixin._visit_slot_labels
+    _format_slot = ResponseMixin._format_slot
+    _format_day = ResponseMixin._format_day
+    _get_first_pass_question = ResponseMixin._get_first_pass_question
+
+    def __init__(self, days, times_by_day):
+        self._days = days
+        self._times = times_by_day
+        self.appointment = _ty.SimpleNamespace(scheduled_datetime=None)
+
+    def _get_next_two_available_days(self):
+        return self._days
+
+    def _get_two_available_times_for_date(self, day):
+        return self._times.get(day, [])
+
+    def _describe_project_context(self):
+        return "have a quick look at the bathroom space"
+
+
+_slot_d1 = _slot_today + _td_slot(days=1)
+_slot_d2 = _slot_today + _td_slot(days=2)
+_slot_two_days = _FakeSelfSlots(
+    [_slot_d1, _slot_d2],
+    {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)],
+     _slot_d2: [_slot_at(_slot_d2, 9), _slot_at(_slot_d2, 14)]},
+)
+_slot_labels = _slot_two_days._visit_slot_labels()
+results.log(
+    "availability ask: both offers carry a day AND a time, and differ in time",
+    _slot_labels == ['tomorrow at 9am',
+                     'this %s at 2pm' % _slot_d2.strftime('%A')],
+    got=repr(_slot_labels),
+)
+_slot_q = _slot_two_days._get_first_pass_question("availability_date")
+results.log(
+    "availability ask: the scripted question offers two full slots in one message",
+    _slot_q.startswith("Great, what works better for you, tomorrow at 9am or ")
+    and (" at 2pm, for us to come through and have a quick look at the "
+         "bathroom space?") in _slot_q,
+    got=repr(_slot_q),
+)
+# The fee note hangs off this question being recognised as the availability ask
+# — a question the resolver can't see is a fee the lead never gets told.
+results.log(
+    "availability ask: the day+time question is still recognised as an availability ask",
+    _ava(_slot_q) and _ava("Would %s or %s work better for you?" % (
+        _slot_labels[0], _slot_labels[1])),
+    got=repr(_slot_q),
+)
+# One open day still offers a CHOICE: two times on the day we have, never a
+# single take-it-or-leave-it slot.
+_slot_one_day = _FakeSelfSlots(
+    [_slot_d1], {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)]})
+results.log(
+    "availability ask: a single open day offers two times on that day",
+    _slot_one_day._visit_slot_labels() == ['tomorrow at 9am', 'tomorrow at 2pm'],
+    got=repr(_slot_one_day._visit_slot_labels()),
+)
+# Nothing free -> day-only labels rather than an invented slot; the question
+# still goes out, exactly as it did before times were offered at all.
+_slot_no_times = _FakeSelfSlots([_slot_d1, _slot_d2], {})
+results.log(
+    "availability ask: no free time falls back to day-only, never an invented slot",
+    _slot_no_times._visit_slot_labels() == [
+        'tomorrow', 'this %s' % _slot_d2.strftime('%A')],
+    got=repr(_slot_no_times._visit_slot_labels()),
+)
+# The clock reads the way a person types it into WhatsApp.
+_slot_clocks = (_clk(_slot_at(_slot_d1, 9)), _clk(_slot_at(_slot_d1, 14)),
+                _clk(_slot_at(_slot_d1, 14, 30)), _clk(_slot_at(_slot_d1, 12)))
+results.log(
+    "availability ask: times read '9am' / '2pm' / '2:30pm', never '09:00AM'",
+    _slot_clocks == ('9am', '2pm', '2:30pm', '12pm'),
+    got=str(_slot_clocks),
+)
 
 # What counts as asking for a day.
 for _yes in ('What works better for you, tomorrow or this Saturday?',

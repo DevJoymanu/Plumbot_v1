@@ -259,6 +259,47 @@ class AvailabilityMixin:
             return results
 
 
+        def _get_two_visit_slots(self) -> list:
+            """
+            The two offers we put at the availability ask, each a real DAY and a
+            real TIME.
+
+            Asking for the day on its own costs a whole turn: the lead says
+            "Sunday", we come back with "9am or 2pm?", and a booking that could
+            have closed in one reply needs two — with a gap in between where the
+            lead goes quiet. One message carrying two complete slots closes it,
+            and a lead who picks one is done: `_time_confirmed` reads the hour
+            off `scheduled_datetime`, so `availability_time` never fires.
+
+            The two offers differ in TIME as well as day, so a lead who can only
+            do afternoons has something to say yes to rather than a day they
+            then have to negotiate.
+
+            Returns up to two timezone-aware datetimes, earliest first, or []
+            when nothing is free — the caller falls back to a day-only ask
+            rather than inventing a slot.
+            """
+            days = self._get_next_two_available_days()
+            slots = []
+            for index, day in enumerate(days[:2]):
+                times = self._get_two_available_times_for_date(day)
+                if not times:
+                    continue
+                # First day leads with its earliest slot; the second day offers a
+                # later one where it has one free, so the pair reads as a choice.
+                slots.append(times[1] if (index == 1 and len(times) > 1) else times[0])
+
+            if len(slots) == 1:
+                # Only one day came back with a free slot (a tenant open one day,
+                # or a diary that's full). A second TIME on that same day still
+                # gives the lead a choice, which a single slot does not.
+                for candidate in self._get_two_available_times_for_date(slots[0].date()):
+                    if candidate != slots[0]:
+                        slots.append(candidate)
+                        break
+            return slots[:2]
+
+
         def check_appointment_availability(self, requested_datetime):
             """Check if requested time slot is available"""
             try:

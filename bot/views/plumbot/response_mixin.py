@@ -1044,6 +1044,17 @@ def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
     )
 
 
+def _clock_label(slot_dt) -> str:
+    """A time the way it gets typed into WhatsApp: '9am', '2pm', '2:30pm'.
+
+    Lowercase, no leading zero, and minutes only when there are any — "09:00AM"
+    is a form field, not something a person writes to a customer.
+    """
+    hour = slot_dt.strftime('%I').lstrip('0') or '12'
+    minutes = f":{slot_dt.strftime('%M')}" if slot_dt.minute else ''
+    return f"{hour}{minutes}{slot_dt.strftime('%p').lower()}"
+
+
 class ResponseMixin:
         def _build_retry_context_line(self, updated_fields, next_question) -> str:
             updated_fields = updated_fields or []
@@ -1342,6 +1353,42 @@ class ResponseMixin:
             if 3 <= delta <= 6:
                 return f"this {day_name}"
             return f"{day_name} the {day_num}{suffix}"
+
+
+        def _format_slot(self, slot_dt, is_shona: bool = False) -> str:
+            """A day and a time in one phrase, the way a person texts it:
+            'tomorrow at 9am', 'this Saturday at 2pm'. Shona joins with 'na',
+            the pattern the reschedule copy already uses ('Muvhuro na2pm')."""
+            day = self._format_day(slot_dt)
+            joiner = 'na' if is_shona else 'at '
+            return f"{day} {joiner}{_clock_label(slot_dt)}"
+
+
+        def _visit_slot_labels(self, is_shona: bool = False) -> list:
+            """
+            THE resolver for the two options at the availability ask, each
+            carrying a day AND a time: ['tomorrow at 9am', 'this Saturday at
+            2pm'].
+
+            One resolver because five places ask this question (the first-pass
+            script in both copies, the forward question after a tie-down, the
+            DeepSeek retry instruction and the soft booking nudge) — a day
+            offered with a time in one of them and without in another reads as
+            two different businesses.
+
+            Degrades to day-only labels when no free time could be resolved:
+            offering a day we can serve beats offering nothing.
+            """
+            try:
+                slots = self._get_two_visit_slots()
+            except Exception:
+                logger.warning("Could not resolve visit slots; falling back to days",
+                               exc_info=True)
+                slots = []
+            if slots:
+                return [self._format_slot(s, is_shona) for s in slots]
+            days = self._get_next_two_available_days() or []
+            return [self._format_day(d) for d in days[:2]]
 
 
         # ── Non-price qualifying close ────────────────────────────────────────────
@@ -1873,21 +1920,23 @@ class ResponseMixin:
                     return "Parizvino, ungandiudza zvishoma kuti chii chaizvo chamunoda kuti chiitwe?"
                 return self._get_contextual_description_question()
             if next_question == "availability_date":
-                days = self._get_next_two_available_days()
-                if len(days) >= 2:
+                # Each option carries its own time, so the lead can close the
+                # booking in one reply (see _get_two_visit_slots). The Shona
+                # line asks "which suits you", not "which DAY" — the option is
+                # no longer a bare day.
+                slots = self._visit_slot_labels(is_shona)
+                if len(slots) >= 2:
                     if is_shona:
-                        return (
-                            f"{self._format_day(days[0])} kana {self._format_day(days[1])}, "
-                            f"nderipi zuva rinokukodzerai?"
-                        )
-                    return (
-                        f"Would {self._format_day(days[0])} or {self._format_day(days[1])} "
-                        f"work better for you?"
-                    )
+                        return f"{slots[0]} kana {slots[1]}, ndeipi inokukodzerai?"
+                    return f"Would {slots[0]} or {slots[1]} work better for you?"
+                if len(slots) == 1:
+                    if is_shona:
+                        return f"{slots[0]} inokukodzerai here?"
+                    return f"Would {slots[0]} work for you?"
                 return (
-                    "Nderipi zuva rinokukodzerai?"
+                    "Nderipi zuva nenguva inokukodzerai?"
                     if is_shona else
-                    "Which day would suit you best?"
+                    "Which day and time would suit you best?"
                 )
             if next_question == "availability_time":
                 return ("Mangwanani kana masikati, ndeipi inokukodzerai?"
@@ -4826,23 +4875,25 @@ class ResponseMixin:
                 return f"Got it! {self._get_contextual_description_question()}"
 
             if next_question == "availability_date":
-                days = self._get_next_two_available_days()
-                day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
-                day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+                # Day AND time in the one ask — see _get_two_visit_slots.
+                slots = self._visit_slot_labels()
+                slot_a = slots[0] if len(slots) > 0 else "tomorrow"
+                slot_b = slots[1] if len(slots) > 1 else "the day after"
                 visit_desc = self._describe_project_context()
                 return (
-                    f"Great, what works better for you, {day_a} or {day_b}, "
+                    f"Great, what works better for you, {slot_a} or {slot_b}, "
                     f"for us to come through and {visit_desc}?"
                 )
 
             if next_question == "availability_time":
+                # Only reached when the lead named a day and no time.
                 dt = self.appointment.scheduled_datetime
                 if dt:
                     selected_date = self._get_selected_local_date()
                     day_label = self._format_day(selected_date) if selected_date else "that day"
                     times = self._get_two_available_times_for_date(selected_date) if selected_date else []
-                    time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
-                    time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
+                    time_a = _clock_label(times[0]) if len(times) > 0 else "9am"
+                    time_b = _clock_label(times[1]) if len(times) > 1 else "2pm"
                     return (
                         f"Perfect, for {day_label} — "
                         f"what works better: {time_a} or {time_b}?"
@@ -5109,21 +5160,23 @@ class ResponseMixin:
                 )
 
             if next_question == "availability_date":
-                days = self._get_next_two_available_days()
-                day_a = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
-                day_b = self._format_day(days[1]) if len(days) > 1 else "the day after"
+                slots = self._visit_slot_labels()
+                slot_a = slots[0] if len(slots) > 0 else "tomorrow"
+                slot_b = slots[1] if len(slots) > 1 else "the day after"
                 visit_desc = self._describe_project_context()
                 return (
-                    f"Ask whether {day_a} or {day_b} works better for a free on-site visit "
-                    f"to {visit_desc}. Frame it as offering two specific options."
+                    f"Ask whether {slot_a} or {slot_b} works better for a free on-site visit "
+                    f"to {visit_desc}. Frame it as offering two specific options, and keep "
+                    f"the day and the time together exactly as written — the lead should be "
+                    f"able to book by picking one, without a second question about the time."
                 )
 
             if next_question == "availability_time":
                 selected_date = self._get_selected_local_date()
                 day_label = self._format_day(selected_date) if selected_date else "that day"
                 times = self._get_two_available_times_for_date(selected_date) if selected_date else []
-                time_a = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
-                time_b = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
+                time_a = _clock_label(times[0]) if len(times) > 0 else "9am"
+                time_b = _clock_label(times[1]) if len(times) > 1 else "2pm"
                 return (
                     f"Ask whether {time_a} or {time_b} works better on {day_label}. "
                     "Two options only — make it easy to reply."
@@ -5160,15 +5213,18 @@ class ResponseMixin:
                     "What exactly needs doing? The more detail the better for the quote.",
                     "What's the main thing you want sorted?",
                 ],
+                # Offline retries: no slot resolution here on purpose, so these
+                # never name a day and time we can't check. They ask for both,
+                # since that is what the first-pass question offered.
                 'availability_date': [
-                    "Which day works better for the site visit?",
+                    "Which of those works better for the visit?",
                     "Would tomorrow or the day after suit you better?",
-                    "What day works for you?",
+                    "What day and time works for you?",
                 ],
                 'availability_time': [
-                    "What works better for you, 9AM or 2PM?",
-                    "Would 9AM or 2PM suit you for the visit?",
-                    "9AM or 2PM?",
+                    "What works better for you, 9am or 2pm?",
+                    "Would 9am or 2pm suit you for the visit?",
+                    "9am or 2pm?",
                 ],
                 'area': [
                     "Which area are you based in?",
@@ -7188,23 +7244,25 @@ class ResponseMixin:
                         return f"Got it! {self._get_contextual_description_question()}"
 
                     if next_question == "availability_date":
-                        days       = self._get_next_two_available_days()
-                        day_a      = self._format_day(days[0]) if len(days) > 0 else "tomorrow"
-                        day_b      = self._format_day(days[1]) if len(days) > 1 else "the day after"
+                        # Day AND time in the one ask — see _get_two_visit_slots.
+                        slots      = self._visit_slot_labels()
+                        slot_a     = slots[0] if len(slots) > 0 else "tomorrow"
+                        slot_b     = slots[1] if len(slots) > 1 else "the day after"
                         visit_desc = self._describe_project_context()
                         return (
-                            f"Great, what works better for you, {day_a} or {day_b}, "
+                            f"Great, what works better for you, {slot_a} or {slot_b}, "
                             f"for us to come through and {visit_desc}?"
                         )
 
                     if next_question == "availability_time":
+                        # Only reached when the lead named a day and no time.
                         dt = self.appointment.scheduled_datetime
                         if dt:
                             selected_date = self._get_selected_local_date()
                             day_label = self._format_day(selected_date) if selected_date else "that day"
                             times     = self._get_two_available_times_for_date(selected_date) if selected_date else []
-                            time_a    = times[0].strftime('%I%p').lstrip('0') if len(times) > 0 else "9AM"
-                            time_b    = times[1].strftime('%I%p').lstrip('0') if len(times) > 1 else "2PM"
+                            time_a    = _clock_label(times[0]) if len(times) > 0 else "9am"
+                            time_b    = _clock_label(times[1]) if len(times) > 1 else "2pm"
                             return (
                                 f"Perfect, for {day_label} — "
                                 f"what works better: {time_a} or {time_b}?"
@@ -7709,11 +7767,11 @@ class ResponseMixin:
             next_q = self.get_next_question_to_ask()
  
             if next_q == "availability_date":
-                days = self._get_next_two_available_days()
-                if len(days) >= 2:
-                    day_a = self._format_day(days[0])
-                    day_b = self._format_day(days[1])
-                    return f"Would {day_a} or {day_b} work for a free site visit?"
+                slots = self._visit_slot_labels()
+                if len(slots) >= 2:
+                    return f"Would {slots[0]} or {slots[1]} work for a free site visit?"
+                if len(slots) == 1:
+                    return f"Would {slots[0]} work for a free site visit?"
                 return "Would you like to book a free site visit?"
  
             if next_q == "availability_time":
