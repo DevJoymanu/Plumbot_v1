@@ -332,6 +332,9 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
     from bot.customer_emails import _clean_phone, _fmt_date, _service
 
     name    = getattr(appointment, "customer_name", "") or "Unknown"
+    # Prose and subjects use lead_label (never "Unknown"); the labelled
+    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    label   = appointment.lead_label()
     phone   = _clean_phone(getattr(appointment, "phone_number", ""))
     service = _service(appointment)
     area    = getattr(appointment, "customer_area", "") or "not given"
@@ -364,9 +367,9 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
     wa_link = f"https://wa.me/{phone}" if phone else ""
     # A released slot is not a follow-up chore — it changes the plumber's day,
     # so it must be readable as such in the inbox list.
-    subject = (f"[Visit cancelled] {name} - {service}"
+    subject = (f"[Visit cancelled] {label} - {service}"
                if reason == "visit_deferred"
-               else f"[Lead follow-up] {name} - {service}")
+               else f"[Lead follow-up] {label} - {service}")
     message = (
         f"{reason_detail}\n\n"
         f"Customer: {name}\n"
@@ -605,12 +608,15 @@ def send_site_visit_form_email(report, *, dry_run=False):
 
     apt = report.appointment
     name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    # Prose and subjects use lead_label (never "Unknown"); the labelled
+    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    label = apt.lead_label()
     phone = _clean_phone(getattr(apt, 'phone_number', ''))
     link = form_url(report)
 
-    subject = f"[Site visit] How did {name} go?"
+    subject = f"[Site visit] How did {label} go?"
     message = (
-        f"The site visit for {name} is done. Two minutes to log the outcome and "
+        f"The site visit for {label} is done. Two minutes to log the outcome and "
         f"we take it from there:\n\n"
         f"{link}\n\n"
         f"The form asks how the visit went, when the customer expects the job "
@@ -624,7 +630,7 @@ def send_site_visit_form_email(report, *, dry_run=False):
         f"This link works once. If you already logged it in the app, ignore this.\n"
     )
     html = (
-        f'<p>The site visit for <strong>{name}</strong> is done. Two minutes to '
+        f'<p>The site visit for <strong>{label}</strong> is done. Two minutes to '
         f'log the outcome and we take it from there.</p>'
         f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
         f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
@@ -657,6 +663,9 @@ def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
     from bot.customer_emails import _clean_phone, _service
 
     name = (getattr(appointment, 'customer_name', '') or '').strip() or 'Unknown'
+    # Prose and subjects use lead_label (never "Unknown"); the labelled
+    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    label = appointment.lead_label()
     phone = _clean_phone(getattr(appointment, 'phone_number', ''))
     wa_link = f"https://wa.me/{phone}" if phone else ''
     detail = {
@@ -673,9 +682,9 @@ def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
         ),
     }.get(reason, str(reason))
 
-    subject = (f"[Lead cold] {name} - {_service(appointment)}"
+    subject = (f"[Lead cold] {label} - {_service(appointment)}"
                if reason == 'gone_cold'
-               else f"[Needs you] {name} - {_service(appointment)}")
+               else f"[Needs you] {label} - {_service(appointment)}")
     message = (
         f"{detail}\n\n"
         f"Customer: {name}\n"
@@ -735,6 +744,9 @@ def send_plan_quote_email(row, *, dry_run=False):
 
     apt = row.appointment
     name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    # Prose and subjects use lead_label (never "Unknown"); the labelled
+    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    label = apt.lead_label()
     phone = _clean_phone(getattr(apt, 'phone_number', ''))
     area = getattr(apt, 'customer_area', '') or 'not given'
     timeline = getattr(apt, 'timeline', '') or 'not given'
@@ -767,7 +779,7 @@ def send_plan_quote_email(row, *, dry_run=False):
             'They want it soon, so worth getting to them today.')
 
     message = (
-        f"{name} sent a plan, so there is no site visit to book. "
+        f"{label} sent a plan, so there is no site visit to book. "
         f"{attached}"
         + "\n\n" + pace
         + (("\n\n" + todo) if todo else "")
@@ -784,7 +796,7 @@ def send_plan_quote_email(row, *, dry_run=False):
     )
 
     html = (
-        f'<p><strong>{name}</strong> sent a plan, so there is no site visit to '
+        f'<p><strong>{label}</strong> sent a plan, so there is no site visit to '
         f'book. {attached}</p>'
         + f'<p style="font-size:14px;color:#444;">{pace}</p>'
         + (f'<p style="background:#fff4e5;border-radius:8px;padding:12px 14px;'
@@ -833,19 +845,22 @@ def send_plan_quote_reminder(row, *, number=1, dry_run=False):
 
     apt = row.appointment
     name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
+    # Prose and subjects use lead_label (never "Unknown"); the labelled
+    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    label = apt.lead_label()
     phone = _clean_phone(getattr(apt, 'phone_number', ''))
     link = form_url(row)
 
-    subject = f"[Plan] Did the quote for {name} go out?"
+    subject = f"[Plan] Did the quote for {label} go out?"
     message = (
-        f"Checking in on {name}'s quote. One tap either way:\n\n{link}\n\n"
+        f"Checking in on {label}'s quote. One tap either way:\n\n{link}\n\n"
         f"Customer: {name}\n"
         f"WhatsApp: {phone}  " + (f"https://wa.me/{phone}" if phone else "") + "\n"
         f"Area: {getattr(apt, 'customer_area', '') or 'not given'}\n\n"
         f"We stop asking as soon as you answer.\n"
     )
     html = (
-        f'<p>Checking in on <strong>{name}</strong>&rsquo;s quote.</p>'
+        f'<p>Checking in on <strong>{label}</strong>&rsquo;s quote.</p>'
         f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
         f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
         f'font-size:16px;font-weight:bold;">Answer in one tap</a></p>'

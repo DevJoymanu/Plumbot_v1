@@ -782,6 +782,32 @@ class Appointment(models.Model):
             self.lead_source = 'direct'
             self.save(update_fields=['lead_source'])
 
+    def lead_label(self) -> str:
+        """What to CALL this lead in prose, when we may not know their name.
+
+        THE single resolver for it, so no email has to invent its own fallback.
+        Six plumber-facing emails each wrote `customer_name or 'Unknown'`, which
+        put "How did Unknown go?" in a subject line and "Checking in on Unknown's
+        quote" in a body -- honest, and useless to the person reading it.
+
+        The chain is name, then the AREA, then nothing identifying at all. Area
+        rather than the phone number because a tradesperson recognises a job by
+        where it was long before they recognise a number, and because it has to
+        survive four sentence shapes including a possessive: "the Norton lead's
+        quote" reads; "+263771234567's quote" does not. Every one of these emails
+        prints the phone number on its own line anyway.
+
+        Prose only. A LABELLED FIELD ("Customer: ...") is a different job: there
+        "Unknown" is a true and perfectly readable value, so those are left alone.
+        """
+        name = (self.customer_name or '').strip()
+        if name:
+            return name
+        area = (self.customer_area or '').strip()
+        if area:
+            return f'the {area} lead'
+        return 'this lead'
+
     def plumber_contact(self) -> str:
         """Direct line for this lead's plumber: the per-lead override when a
         specific plumber is assigned, else the tenant profile's number.

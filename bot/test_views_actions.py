@@ -10051,3 +10051,73 @@ class EmailTestAddressFallbackTests(StaffClientTestCase):
         request = _Req()
         request.user = get_user_model()(username='has-email', email='me@example.com')
         self.assertEqual(_email_test_address(request), 'me@example.com')
+
+
+class LeadLabelTests(TestCase):
+    """A plumber-facing email never says "Unknown".
+
+    Six of them wrote `customer_name or 'Unknown'` each, which put "How did
+    Unknown go?" in a subject line and "Checking in on Unknown's quote" in a
+    body -- honest, and useless to the person reading it. Seen in production on
+    2026-09-10, on the very first debrief email the newly-enabled cron sent.
+    """
+
+    def test_a_named_lead_is_called_by_name(self):
+        lead = make_lead(9700, customer_name='Rudo Moyo', customer_area='Norton')
+        self.assertEqual(lead.lead_label(), 'Rudo Moyo')
+
+    def test_a_nameless_lead_is_called_by_where_the_job_is(self):
+        """A tradesperson recognises a job by where it was long before they
+        recognise a phone number."""
+        lead = make_lead(9701, customer_area='Norton')
+        self.assertEqual(lead.lead_label(), 'the Norton lead')
+
+    def test_with_neither_it_says_nothing_it_cannot_back_up(self):
+        self.assertEqual(make_lead(9702).lead_label(), 'this lead')
+
+    def test_whitespace_is_not_a_name(self):
+        lead = make_lead(9703, customer_name='   ', customer_area='  ')
+        self.assertEqual(lead.lead_label(), 'this lead')
+
+    def test_it_survives_every_sentence_shape_including_the_possessive(self):
+        """The four shapes these emails actually use. The phone number was the
+        other candidate for the fallback and fails the last one: "the Norton
+        lead's quote" reads, "+263771234567's quote" does not."""
+        for lead in (make_lead(9704, customer_name='Rudo'),
+                     make_lead(9705, customer_area='Norton'),
+                     make_lead(9706)):
+            label = lead.lead_label()
+            for sentence in (f'How did {label} go?',
+                             f'The site visit for {label} is done.',
+                             f'Did the quote for {label} go out?',
+                             f"Checking in on {label}'s quote."):
+                self.assertNotIn('Unknown', sentence)
+                self.assertNotIn('None', sentence)
+                self.assertTrue(sentence[0].isupper(), sentence)
+
+    def test_the_debrief_subject_no_longer_says_unknown(self):
+        """The exact email seen in the production inbox."""
+        from bot.post_visit import ensure_report
+        from bot.plumber_notifications import send_site_visit_form_email
+        lead = make_lead(9707, customer_area='Norton', status='confirmed',
+                         scheduled_datetime=timezone.now() - timedelta(hours=4))
+        report = ensure_report(lead)
+        with patch('bot.plumber_notifications.send_plumber_notification_email',
+                   return_value=True) as send:
+            send_site_visit_form_email(report)
+        subject = send.call_args.args[0] if send.call_args.args else send.call_args.kwargs['subject']
+        self.assertIn('the Norton lead', subject)
+        self.assertNotIn('Unknown', subject)
+
+    def test_the_customer_field_still_says_unknown(self):
+        """A labelled FIELD is a different job from prose: there "Unknown" is a
+        true and perfectly readable value, so it is deliberately left alone."""
+        from bot.post_visit import ensure_report
+        from bot.plumber_notifications import send_site_visit_form_email
+        lead = make_lead(9708, customer_area='Norton', status='confirmed',
+                         scheduled_datetime=timezone.now() - timedelta(hours=4))
+        with patch('bot.plumber_notifications.send_plumber_notification_email',
+                   return_value=True) as send:
+            send_site_visit_form_email(ensure_report(lead))
+        body = ' '.join(str(a) for a in send.call_args.args)
+        self.assertIn('Customer: Unknown', body)
