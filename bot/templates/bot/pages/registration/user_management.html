@@ -37,13 +37,23 @@
                     {% endif %}
                 </td>
                 <td>
-                    <a href="{% url 'toggle_user_status' user_obj.id %}"
-                        class="btn btn-sm {% if user_obj.is_active %}btn-warning{% else %}btn-success{% endif %}">
-                        {% if user_obj.is_active %}Deactivate{% else %}Activate{% endif %}
-                    </a>
+                    {# Both actions change state, so they POST behind a confirm. #}
+                    <form method="post" action="{% url 'toggle_user_status' user_obj.id %}"
+                        class="d-inline"
+                        onsubmit="return confirm('{% if user_obj.is_active %}Deactivate{% else %}Activate{% endif %} {{ user_obj.username }}?');">
+                        {% csrf_token %}
+                        <button type="submit"
+                            class="btn btn-sm {% if user_obj.is_active %}btn-warning{% else %}btn-success{% endif %}">
+                            {% if user_obj.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
                     {% if not user_obj.is_superuser %}
-                    <a href="{% url 'promote_to_superuser' user_obj.id %}" class="btn btn-sm btn-danger">Make
-                        Superuser</a>
+                    <form method="post" action="{% url 'promote_to_superuser' user_obj.id %}"
+                        class="d-inline"
+                        onsubmit="return confirm('Make {{ user_obj.username }} a superuser? This cannot be undone from this screen.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-danger">Make Superuser</button>
+                    </form>
                     {% endif %}
                 </td>
             </tr>

@@ -13,6 +13,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
+from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from . import branding
@@ -278,9 +279,13 @@ def user_management_view(request):
 
 
 @superuser_required
+@require_POST
 def toggle_user_status(request, user_id):
     """
-    Toggle user active status - only accessible to superusers
+    Toggle user active status - only accessible to superusers.
+
+    POST-only: a GET that flips a user's access is one a browser or a scanner
+    can prefetch.
     """
     try:
         user = User.objects.get(id=user_id, is_staff=True)
@@ -304,9 +309,13 @@ def toggle_user_status(request, user_id):
 
 
 @superuser_required
+@require_POST
 def promote_to_superuser(request, user_id):
     """
-    Promote user to superuser - only accessible to superusers
+    Promote user to superuser - only accessible to superusers.
+
+    POST-only for the same reason as toggle_user_status, and more so: this one
+    grants privilege.
     """
     try:
         user = User.objects.get(id=user_id, is_staff=True)

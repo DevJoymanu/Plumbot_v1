@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 from . import views
+from . import auth_views
 from .views import platform as platform_views
 from .views import gallery as gallery_views
 from .views import offer as offer_views
@@ -59,6 +60,16 @@ urlpatterns = [
     path('logout/', logout_view, name='logout'),
     path('profile/', profile_view, name='profile'),
     path('change-password/', change_password_view, name='change_password'),
+
+    # Staff user administration. Superuser-only and URL-only (no nav entry),
+    # like the test-console screens. The views and templates already existed
+    # and referenced each other by name; only the routes were missing, so the
+    # two screens could never render.
+    path('users/', auth_views.user_management_view, name='user_management'),
+    path('users/create/', auth_views.CreateUserView.as_view(), name='create_user'),
+    # POST-only: both change a user's access.
+    path('users/<int:user_id>/toggle/', auth_views.toggle_user_status, name='toggle_user_status'),
+    path('users/<int:user_id>/promote/', auth_views.promote_to_superuser, name='promote_to_superuser'),
     # Self-service password reset (public; email link via HTTP transport)
     path('password-reset/', views.password_reset_request, name='password_reset_request'),
     path('reset/<uidb64>/<token>/',
@@ -239,6 +250,10 @@ urlpatterns = [
     path('scenario-lab/<int:pk>/', views.scenario_lab_detail, name='scenario_lab_detail'),
 
     path('calendar/', CalendarView.as_view(), name='calendar'),
+    # The calendar page ships no server-side context; this is the only source
+    # its JS has. It existed in calendar_views.py but was never routed, so the
+    # fetch 404'd and the calendar rendered permanently empty.
+    path('api/appointments/', views.appointment_data, name='appointment_data'),
 
         # Template Items API
     path('api/quotation-templates/<int:template_id>/items/', 

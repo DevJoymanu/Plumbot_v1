@@ -22,3 +22,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('bot.urls')),
 ]
+
+# staff_required / superuser_required raise PermissionDenied, which renders
+# Django's bare default 403. access_denied_view was written for this contract
+# (request, exception=None) but was never wired, so its template was dead.
+handler403 = 'bot.auth_views.access_denied_view'

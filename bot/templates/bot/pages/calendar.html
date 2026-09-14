@@ -453,7 +453,7 @@
 
     async function fetchAppointments() {
         try {
-            const res = await fetch('/api/appointments/');
+            const res = await fetch('{% url "appointment_data" %}');
             appointments = await res.json();
             generateCalendar();  // re-render after loading data
         } catch (err) {

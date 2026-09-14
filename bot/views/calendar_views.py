@@ -51,6 +51,7 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
+@method_decorator(staff_required, name='dispatch')
 class CalendarView(View):
     template_name = 'bot/pages/calendar.html'
 
@@ -58,10 +59,15 @@ class CalendarView(View):
         return render(request, self.template_name)
 
 
+@staff_required
 def appointment_data(request):
     """
     Return all appointments as JSON data
     Optional filter: ?service=bathroom or kitchen or installation
+
+    The calendar page has no server-side context - this endpoint is its only
+    data source - so it carries customer names and phone numbers and is gated
+    like the page that reads it.
     """
     service_filter = request.GET.get('service')
     
