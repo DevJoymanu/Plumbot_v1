@@ -981,6 +981,79 @@ def _visit_fact_line(bot) -> str:
     return f"The visit is free: {_VISIT_SHAPE}"
 
 
+# Statements that tell the customer an appointment EXISTS, or that one is
+# about to be made official. Deliberately narrow: each is a claim of fact about
+# the row, not a turn of phrase. A question ("Shall I lock that in?") is not a
+# claim and must never match, which is why every pattern is an assertion.
+_BOOKING_CLAIM_RE = re.compile(
+    r"\bwe(?:'| a)?ll\s+confirm\b"
+    r"|\bwe\s+will\s+confirm\b"
+    r"|\bi(?:'| wi)?ll\s+confirm\b"
+    r"|\bconfirming\s+(?:your|the)\s+(?:visit|appointment|booking)\b"
+    r"|\byou(?:'re| are)\s+(?:all\s+)?(?:booked|set)\b"
+    r"|\b(?:we|i)(?:'ve| have)\s+booked\b"
+    r"|\b(?:it|that|this)(?:'s| is)\s+(?:all\s+)?(?:confirmed|booked)\b"
+    r"|\bconsider\s+it\s+(?:booked|done)\b"
+    r"|\byour\s+(?:visit|appointment|booking)\s+is\s+(?:confirmed|booked)\b"
+    r"|\b(?:visit|appointment|booking)\s+is\s+now\s+(?:confirmed|booked)\b",
+    re.IGNORECASE,
+)
+
+
+def strip_unbacked_confirmation(reply: str, appointment):
+    """Never tell a customer they have an appointment when the row says they don't.
+
+    The house architecture is that the model picks the move and deterministic
+    code writes anything the customer must be able to trust. Whether an
+    appointment EXISTS is the biggest of those, and it was the only one still
+    improvisable: with the booking flow out of questions (see
+    `_job_is_known`), barmak lead 1144 got "Thursday 3pm works. We'll confirm
+    the visit." straight from DeepSeek, twice, on a row whose status never left
+    'pending'. Nothing was in the diary, the plumber was never told, and the
+    lead came back ten hours later asking whether Thursday was real.
+
+    So the claim is dropped whenever the row does not back it. Inert on a
+    confirmed lead, which is why the real confirmation copy
+    (`_build_named_booking_confirmation`, `_build_confirmation_message`) passes
+    through untouched: those only ever send after `status='confirmed'`.
+
+    A PROMISE to confirm is treated exactly like a claim of having confirmed.
+    "We'll confirm the visit" is what a lead reads as "I'm booked", and it is
+    the one sentence in this transcript nobody could act on: it named no
+    channel, no time and no next step, and nothing behind it was running.
+
+    Returns (reply, changed). English only, deliberately: the Shona close
+    "Ndokubhukira ... here?" is a QUESTION asking permission to book, and a
+    pattern loose enough to catch a Shona claim would catch that ask instead.
+    """
+    if not reply:
+        return reply, False
+    if str(getattr(appointment, 'status', '') or '') == 'confirmed':
+        return reply, False
+
+    changed = False
+    parts = []
+    for part in reply.split(MESSAGE_SPLIT_MARKER):
+        sentences = _split_sentences(part)
+        kept = [x for x in sentences if not _BOOKING_CLAIM_RE.search(x)]
+        if len(kept) == len(sentences):
+            parts.append(part)
+            continue
+        changed = True
+        text = ' '.join(kept).strip()
+        if not text:
+            # The whole part was the claim. Say the true thing instead, which
+            # is also the close: nothing is booked yet, so ask for the yes.
+            text = ('Shall I lock that in for you?'
+                    if getattr(appointment, 'scheduled_datetime', None)
+                    else 'What day works for you?')
+        parts.append(text)
+
+    if not changed:
+        return reply, False
+    return MESSAGE_SPLIT_MARKER.join(parts), True
+
+
 def strip_repeat_free_visit(reply: str, appointment, message: str = None):
     """Take "free" off the visit once this lead has already been told.
 

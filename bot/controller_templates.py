@@ -162,15 +162,27 @@ def fee_objection(tenant_cfg, is_shona: bool = False, today=None) -> str:
 
 
 def show_examples(appointment=None, is_shona: bool = False,
-                  next_question: str = '') -> str:
+                  next_question: str = '', count: int = 0) -> str:
     """The line that rides out with the photos.
 
     Short, because the photos are the message. Whatever question comes next
     travels with them or it never gets asked: the photo path returns outright,
     so a question left behind is a lead left waiting.
+
+    `count` is how many images are actually going out. "Here are a couple" over
+    a single photo is a small lie of the kind a customer notices immediately
+    (barmak 1144 got exactly that), and it costs nothing to say the true
+    number. The Shona line is left alone on purpose: "mamwe emabasa" is
+    "some of the work" rather than a count, so it does not go wrong the way an
+    English "a couple" does, and inventing a second Shona phrasing to fix a
+    problem it does not have is how bad copy gets shipped.
     """
-    lead_in = ('Heano mamwe emabasa atakapedza.' if is_shona
-               else 'Here are a couple we just finished.')
+    if is_shona:
+        lead_in = 'Heano mamwe emabasa atakapedza.'
+    elif count == 1:
+        lead_in = 'Here is one we just finished.'
+    else:
+        lead_in = 'Here are a couple we just finished.'
     question = (next_question or '').strip()
     # No question is a real answer here, not a missing one: on the proof step
     # the question rides out BEHIND the images, so putting it on the intro too

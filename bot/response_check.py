@@ -28,7 +28,8 @@ copy runs straight at that, so the refinement is fenced:
 
   * It may fix what the reply SAYS to the lead: a question already answered, a
     slot offered to somebody who is away, an answer to a question they did not
-    ask, an acknowledgement of something they never said.
+    ask, an acknowledgement of something they never said, an answer that
+    ignores the message the customer actually highlighted.
   * It may NOT introduce a figure. Any currency amount in the refined text must
     already appear in the draft — prices come from the tenant's own tables and
     a model that invents one is quoting a business it does not work for.
@@ -93,6 +94,11 @@ Say "refine" ONLY when the draft is wrong in context. The clearest cases:
 - it answers a question the customer did not ask, or ignores the one they did
 - it acknowledges something the customer never said
 - it contradicts a fact in the conversation
+- the customer HIGHLIGHTED one of our earlier messages (marked in the
+  transcript as [highlighting our earlier message: "..."]) and the draft
+  answers something else. A short reply like "this one?" or "how much?"
+  is about the message they highlighted, not the last thing either of
+  you said.
 
 Say "ok" for everything else. Wording you would merely have phrased differently
 is "ok". Being terse is "ok". This is a safety net, not an editor.
@@ -132,11 +138,25 @@ def _facts(appointment) -> str:
 
 
 def _transcript(appointment, limit=HISTORY_TURNS) -> str:
+    """The recent turns, each carrying whatever it was a reply TO.
+
+    WhatsApp's reply-to (the "highlighted message") is the one piece of
+    context a plain transcript loses: "this one, how much?" is meaningless
+    on its own and perfectly clear against the photo it points at. The
+    quote is already stored on the entry by add_conversation_message
+    (quoted=...), so it is read back from there rather than threaded in
+    through every caller - which also makes it right by construction when
+    the debounce batches several rapid messages into one turn and only ONE
+    of them carried a quote.
+    """
     rows = [e for e in (getattr(appointment, 'conversation_history', None) or [])
             if isinstance(e, dict) and e.get('content')]
     out = []
     for e in rows[-limit:]:
         who = 'CUSTOMER' if e.get('role') == 'user' else 'US'
+        quoted = str(e.get('quoted') or '').strip()
+        if quoted:
+            who += f' [highlighting our earlier message: "{quoted[:140]}"]'
         out.append(f"{who}: {str(e.get('content'))[:300]}")
     return '\n'.join(out)
 

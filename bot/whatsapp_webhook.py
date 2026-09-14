@@ -2035,7 +2035,8 @@ def generate_photo_followup(appointment=None) -> str:
 # -----------------------------------------------------------------------------
 
 def send_previous_work_photos(sender, appointment=None, intro=None,
-                              images=None, followup=None, asked_for=True):
+                              images=None, followup=None, asked_for=True,
+                              message_body=None):
     """
     Send previous work photos with a small delay between each image.
     Returns True if photos were queued (caller must NOT send additional text).
@@ -2050,6 +2051,10 @@ def send_previous_work_photos(sender, appointment=None, intro=None,
     everything on file.
 
     `followup` replaces the line that goes out behind the images.
+
+    `message_body` is the customer's own message, threaded through only so the
+    outbound chain can tell an explicit "what does the visit cost?" from an
+    unprompted repeat. Optional, so existing callers are untouched.
 
     `asked_for` is the important one. The 24-hour lock exists to stop a lead
     who says "photos?" twice getting two galleries. But it returns True when it
@@ -2088,7 +2093,15 @@ def send_previous_work_photos(sender, appointment=None, intro=None,
             delay_seconds = 0 if is_test_sender(sender) else get_random_delay(sender=sender)
             print(f"Waiting {delay_seconds // 60} minute(s) before sending images to {sender}")
             time.sleep(delay_seconds)
-            client.send_text_message(sender, intro)
+            # The lead-in is a fixed template, so it takes the deterministic
+            # rules but not the model reader: there is nothing contextual in it
+            # for a reader to catch, and one would cost a call per send.
+            intro_out = _finalised_for_send(
+                intro, appointment, message_body, check=False)
+            intro_wamid = None
+            if intro_out:
+                intro_wamid = _sent_wamid(
+                    client.send_text_message(sender, intro_out))
             sent_count = 0
             media_index = {}
             from bot import portfolio_catalog
@@ -2115,15 +2128,39 @@ def send_previous_work_photos(sender, appointment=None, intro=None,
                         image_path, tenant=appointment.tenant if appointment else None)
                 sent_count += 1
                 time.sleep(0.5)
-            follow_up = followup or generate_photo_followup(appointment)
-            time.sleep(1)
-            client.send_text_message(sender, follow_up)
+            # The follow-up carries the scripted next question, so it gets the
+            # WHOLE chain, reader included: this is the message that has to
+            # state the call-out fee when it is the availability ask, and the
+            # one most able to be wrong in context.
+            follow_up = _finalised_for_send(
+                followup or generate_photo_followup(appointment),
+                appointment, message_body)
+            follow_wamid = None
+            if follow_up:
+                time.sleep(1)
+                follow_wamid = _sent_wamid(
+                    client.send_text_message(sender, follow_up))
             if appointment:
-                appointment.add_conversation_message("assistant", intro)
+                # The transcript holds what was SENT, never the draft, so both
+                # of these log the finalised text.
+                if intro_out:
+                    appointment.add_conversation_message("assistant", intro_out)
                 appointment.record_sent_media(
                     media_index, f"[MEDIA] Sent {sent_count} previous work image(s)"
                 )
-                appointment.add_conversation_message("assistant", follow_up)
+                if follow_up:
+                    appointment.add_conversation_message("assistant", follow_up)
+                # Stamp both, so a customer who HIGHLIGHTS either of these two
+                # messages can be answered knowing what they highlighted. The
+                # images have carried a WAMID each since record_sent_media; the
+                # two text lines around them never did, so a reply quoting
+                # "Here are a couple we just finished." or the question behind
+                # it resolved to None and was answered quote-blind
+                # (the "not found in history" log line).
+                if intro_out:
+                    appointment.mark_message_sent("assistant", intro_out, intro_wamid)
+                if follow_up:
+                    appointment.mark_message_sent("assistant", follow_up, follow_wamid)
             print(f"Sent {sent_count}/{len(images)} previous work images to {sender}")
         except Exception as e:
             print(f"Failed to send images: {str(e)}")
@@ -2997,7 +3034,8 @@ def _mark_stop_requested(appointment) -> None:
         print(f"WARNING could not mark stop request: {exc}")
 
 
-def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
+def finalise_outbound(reply: str, appointment, message_body: str = None,
+                      check: bool = True) -> str:
     """Every rewrite a reply gets between composition and the wire.
 
     Extracted because STEP 0 (multi-intent compose) sent its own reply
@@ -3006,10 +3044,16 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     the dash stripper. A fee tenant's multi-intent answer could therefore have
     promised a free visit with nothing to correct it. Any new send path calls
     this, rather than repeating the chain and drifting from it.
+
+    `check=False` skips the MODEL reader only; every deterministic rule below
+    still runs. It is for copy with nothing contextual to get wrong — a fixed
+    template like the photo lead-in — where a reader costs a DeepSeek call per
+    send and can catch nothing. Never pass it for anything the flow composed.
     """
     from bot.views.plumbot.response_mixin import (
         strip_known_questions, strip_free_visit_claims,
-        strip_repeat_free_visit, ensure_visit_price_note)
+        strip_repeat_free_visit, ensure_visit_price_note,
+        strip_unbacked_confirmation)
     from bot.utils import enforce_single_question, strip_dashes
 
     # ── The model reads it back ───────────────────────────────────────────────
@@ -3026,7 +3070,10 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     # lead so a human can see what was changed and why.
     try:
         from bot.response_check import verify_and_refine
-        reply, _check_note = verify_and_refine(reply, appointment, message_body)
+        if check:
+            reply, _check_note = verify_and_refine(reply, appointment, message_body)
+        else:
+            _check_note = None
         if _check_note:
             print(f"🔎 {_check_note}")
             try:
@@ -3040,6 +3087,13 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     reply, _re_asked = strip_known_questions(reply, appointment)
     if _re_asked:
         print(f"🧠 Memory check dropped re-asked field(s): {sorted(set(_re_asked))}")
+
+    # Never tell a customer they have an appointment the row does not have.
+    # Runs before the rest of the chain so everything below rewrites the honest
+    # text rather than polishing a claim that is about to be dropped.
+    reply, _unbacked = strip_unbacked_confirmation(reply, appointment)
+    if _unbacked:
+        print("🛑 Booking claim dropped - this lead is not confirmed")
 
     # Never promise a free visit a tenant charges for. The message is passed so
     # an explicit "what does the visit cost?" gets the figure again.
@@ -3074,6 +3128,53 @@ def finalise_outbound(reply: str, appointment, message_body: str = None) -> str:
     if _asked != _undashed:
         print("❓ Trailing tie-down dropped — the reply already asked a question")
     return _asked
+
+def _sent_wamid(send_result):
+    """The WAMID out of a Cloud API send result, or None.
+
+    One reader, because every direct send path needs it and each one that
+    rolls its own gets the nesting slightly wrong and silently stamps nothing.
+    """
+    try:
+        return (send_result or {}).get('messages', [{}])[0].get('id')
+    except Exception:
+        return None
+
+
+def _finalised_for_send(text, appointment, message_body=None, check=True):
+    """`finalise_outbound` for a path that writes to the wire itself.
+
+    Most replies reach the customer through `delayed_response`, which is where
+    the split marker is flattened and where every caller already finalises
+    first. The photo path does neither: it calls `send_text_message` directly
+    from its own thread, so its lead-in and its follow-up went out having
+    skipped the ENTIRE chain - the reply check, the memory check, both
+    free-visit strippers, the visit-price note and the dash stripper.
+
+    The follow-up is the one that bites. It carries the scripted next question,
+    which for `availability_date` IS the availability ask - the exact message
+    `ensure_visit_price_note` exists to attach the call-out fee to. A fee
+    tenant whose ask rode out behind the photos named no fee, so the lead met
+    the figure later, which is the nasty surprise the once-only fee rule was
+    written to prevent. The same gap could promise a free visit for a tenant
+    that charges, with nothing downstream to take it back.
+
+    Returns '' when the chain decides there is nothing left to say (the memory
+    check drops a question we already hold the answer to); the caller then
+    sends nothing rather than a draft the chain rejected. Fails open on an
+    unexpected error: the draft goes as it is, because a checker that can stop
+    a message is worse than no checker.
+    """
+    if not text or appointment is None:
+        return text or ''
+    try:
+        text = finalise_outbound(text, appointment, message_body, check=check)
+    except Exception as exc:
+        print(f"Outbound chain skipped for a direct send: {exc}")
+    # Only delayed_response knows what to do with the split marker, and this
+    # path does not go through it.
+    return str(text or '').replace(MESSAGE_SPLIT_MARKER, ' ').strip()
+
 
 
 def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None, quoted_text=None, tenant=None):
@@ -3263,16 +3364,26 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 # not acknowledging anything the customer said. "All good, what
                 # area are you in?" after "Here are a couple we just finished"
                 # is a second canned opener with nothing to acknowledge.
-                _scripted = question_without_ack(
-                    plumbot._get_first_pass_question(_next_q) or '')
+                # `_get_first_pass_question` IS the retry_count == 0 script
+                # and does not check the count itself, so calling it here
+                # re-sent a question asked a minute earlier, word for word
+                # (barmak 1144, 07:36 and 07:37, identical). Already asked ->
+                # send nothing and let send_previous_work_photos fall back to
+                # the deterministic photo follow-up.
+                _scripted = ''
+                if plumbot._get_question_retry_count(_next_q) == 0:
+                    _scripted = question_without_ack(
+                        plumbot._get_first_pass_question(_next_q) or '')
                 _controller.note_branch(appointment, 'show_work')
                 if send_previous_work_photos(
                         sender, appointment,
                         intro=show_examples(appointment, is_shona=_is_shona,
-                                            next_question=''),
+                                            next_question='',
+                                            count=len(_proof)),
                         images=_proof,
                         followup=_scripted or None,
-                        asked_for=False):
+                        asked_for=False,
+                        message_body=message_body):
                     if _scripted:
                         plumbot._set_question_retry_count(_next_q, 1)
                     print(f"🖼️ Proof sent: {len(_proof)} matched image(s)")
@@ -3821,7 +3932,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if _multi and _multi.get('reply'):
             print(f"🧩 Multi-intent compose — intents={_multi.get('intents')}")
             if _multi.get('send_photos'):
-                send_previous_work_photos(sender, appointment)
+                send_previous_work_photos(sender, appointment,
+                                          message_body=message_body)
             for _pi in (_multi.get('intents') or []):
                 if _pi not in ('location', 'hours', 'pictures', 'other'):
                     _mark_pricing_intent_sent(appointment, _pi)
@@ -3849,7 +3961,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 and not _delay_email_wants_wa):
             print("Catalogue/pictures request → sending full previous-work gallery")
             _controller.note_branch(appointment, 'show_work')
-            if send_previous_work_photos(sender, appointment):
+            if send_previous_work_photos(sender, appointment,
+                                         message_body=message_body):
                 return
             # No images on disk → fall through to the existing handlers below.
 
@@ -3901,7 +4014,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             print("Product catalogue + prices request detected")
             images_queued = send_catalogue_images(sender, appointment)
             if not images_queued:
-                images_queued = send_previous_work_photos(sender, appointment)
+                images_queued = send_previous_work_photos(
+                    sender, appointment, message_body=message_body)
             price_text = build_catalogue_price_text(
                 plumbot._get_pricing_followup_prompt('english'),
                 tenant=getattr(appointment, 'tenant', None),
@@ -3944,7 +4058,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 "so you can see it fitted."
             ) if _definition else None
             photos_queued = send_previous_work_photos(
-                sender, appointment, intro=_photo_intro)
+                sender, appointment, intro=_photo_intro,
+                message_body=message_body)
             if photos_queued:
                 return
             fallback_reply = (

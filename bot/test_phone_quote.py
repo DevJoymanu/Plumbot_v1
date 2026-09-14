@@ -613,6 +613,123 @@ class HalfMadeBookingTests(PhoneQuoteBase):
         self.assertEqual(decide_move(uc, self.lead), 'close_pleasantry')
 
 
+class DescriptionOnlyLeadBooksTests(PhoneQuoteBase):
+    """The lead-1144 shape, end to end: a real row that used to be unbookable.
+
+    "I'd like a quote for some plumbing work in Arlington East" captured a
+    description and an area, and the quote route stored the request itself as
+    the description. `get_next_question_to_ask` treated that as answering the
+    service question; `smart_booking_check` went on requiring project_type. So
+    the flow had nothing left to ask AND could not book: the slot was stored,
+    the status stayed pending, no confirmation and no plumber alert went out,
+    and the turn fell through to the LLM, which improvised "Thursday 3pm works.
+    We'll confirm the visit."
+    """
+
+    def _lead_1144(self):
+        self.lead.project_type = ''
+        self.lead.project_description = (
+            "Hi Barmak, I'd like a quote for some plumbing work in Arlington East")
+        self.lead.customer_area = 'Arlington East'
+        self.lead.scheduled_datetime = (
+            timezone.now() + timedelta(days=2)).replace(
+                hour=15, minute=0, second=0, microsecond=0)
+        self.lead.save()
+        from bot.views.plumbot.base import Plumbot
+        return Plumbot.for_appointment(self.lead)
+
+    def test_the_flow_has_nothing_left_to_ask_and_can_book(self):
+        bot = self._lead_1144()
+        self.assertTrue(bot._job_is_known())
+        # The two used to disagree here: 'complete' with ready_to_book False is
+        # a lead who can neither be asked anything nor booked.
+        self.assertEqual(bot.get_next_question_to_ask(), 'complete')
+        self.assertTrue(bot.smart_booking_check()['ready_to_book'])
+
+    def test_a_lead_with_no_job_at_all_is_still_asked(self):
+        self._lead_1144()
+        self.lead.project_description = ''
+        self.lead.save()
+        from bot.views.plumbot.base import Plumbot
+        bot = Plumbot.for_appointment(self.lead)
+        self.assertFalse(bot._job_is_known())
+        self.assertEqual(bot.get_next_question_to_ask(), 'service_type')
+        self.assertFalse(bot.smart_booking_check()['ready_to_book'])
+
+    def test_we_never_tell_this_lead_they_are_booked(self):
+        from bot.whatsapp_webhook import finalise_outbound
+        self._lead_1144()
+        self.addCleanup(patch.stopall)
+        patch('bot.response_check.verify_and_refine',
+              side_effect=lambda r, a, m=None: (r, None)).start()
+        self.assertEqual(self.lead.status, 'pending')
+        out = finalise_outbound(
+            "Thursday 3pm works. We'll confirm the visit.", self.lead, 'thursday 3pm')
+        self.assertNotIn('confirm', out.lower())
+        self.assertIn('Thursday 3pm works', out)
+
+    def test_once_confirmed_the_real_confirmation_goes_out_whole(self):
+        from bot.whatsapp_webhook import finalise_outbound
+        self._lead_1144()
+        self.addCleanup(patch.stopall)
+        patch('bot.response_check.verify_and_refine',
+              side_effect=lambda r, a, m=None: (r, None)).start()
+        self.lead.status = 'confirmed'
+        self.lead.save()
+        real = ("Perfect, thanks Tendai. You're all set for your visit on "
+                "Thursday at 3:00 PM in Arlington East.")
+        self.assertIn("all set", finalise_outbound(real, self.lead, 'thanks'))
+
+
+class ProofDoesNotAnswerAQuestionTests(PhoneQuoteBase):
+    """show_work must not reply to a question with photographs.
+
+    Barmak lead 1144 asked "How do l book for a site visit" and got the
+    gallery: it answers a question they did not ask and leaves the one they
+    did ask unanswered. The rule that the customer's own words outrank any
+    gate was enforced for close_pleasantry only.
+    """
+
+    def _lead_ready_for_proof(self):
+        self.lead.project_description = 'plumbing work in Arlington East'
+        self.lead.previous_work_photos_sent_at = None
+        self.lead.save()
+
+    def _uc(self, **extra):
+        uc = {'next_move': 'show_work', 'move_confidence': 0.9,
+              'intent': 'general', 'confidence': 'HIGH',
+              'state_update': {'want_level': 'interested'}}
+        uc.update(extra)
+        return uc
+
+    def test_it_fires_when_nothing_was_asked(self):
+        from bot.controller import decide_move
+        self._lead_ready_for_proof()
+        self.assertEqual(decide_move(self._uc(), self.lead), 'show_work')
+
+    def test_a_question_holds_it_back(self):
+        from bot.controller import decide_move
+        self._lead_ready_for_proof()
+        self.assertIsNone(
+            decide_move(self._uc(speech_act='question'), self.lead))
+
+    def test_a_price_ask_holds_it_back(self):
+        from bot.controller import decide_move
+        self._lead_ready_for_proof()
+        self.assertIsNone(
+            decide_move(self._uc(intent='price_question'), self.lead))
+
+    def test_but_asking_to_SEE_the_work_still_shows_it(self):
+        # The exception, and the reason this is not simply _asks_us_something:
+        # "can I see your work?" is a question whose answer is the work.
+        from bot.controller import decide_move
+        self._lead_ready_for_proof()
+        self.assertEqual(
+            decide_move(self._uc(speech_act='question', is_photo_request=True),
+                        self.lead),
+            'show_work')
+
+
 class SentImagesVisibleTests(PhoneQuoteBase):
     """Which photos went out as proof, shown in the transcript."""
 

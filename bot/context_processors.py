@@ -12,6 +12,8 @@ NAV_MAP = {
     "job_appointments_list": "jobs",
     "schedule_job": "jobs",
     "reschedule_job": "jobs",
+    "gallery": "gallery",
+    "offer": "offer",
     "quotation_templates_list": "templates",
     "quotation_template_detail": "templates",
     "create_quotation_template": "templates",
@@ -20,12 +22,26 @@ NAV_MAP = {
     "delete_template": "templates",
     "standalone_quotation": "new_quote",
     "create_quotation_standalone": "new_quote",
+    # The quote screens themselves: the list highlighted nothing on an
+    # editor or a client copy, so working on a quote left the sidebar blank.
+    "quotations_list": "quotations",
+    "create_quotation": "quotations",
+    "view_quotation": "quotations",
+    "preview_quotation": "quotations",
+    "edit_quotation": "quotations",
+    "quotation_whatsapp_handoff": "quotations",
     "settings": "settings",
     "calendar_settings": "settings",
     "ai_settings": "settings",
     "profile": "profile",
     "change_password": "profile",
 }
+
+# Quotes, templates and the tenant's own offer are one job - raising and
+# pricing work - and share ONE sidebar item. This set is the single answer to
+# "does this page belong to that group?", read by the desktop accordion (which
+# renders open on its own pages) and by the mobile More button.
+QUOTES_NAV_GROUP = {"quotations", "new_quote", "templates", "offer"}
 
 
 def plumbot_shell(request):
@@ -34,8 +50,11 @@ def plumbot_shell(request):
 
     from .decorators import is_platform_owner
 
+    active_nav = NAV_MAP.get(url_name, "")
+
     counts = {
-        "active_nav": NAV_MAP.get(url_name, ""),
+        "active_nav": active_nav,
+        "nav_group_quotes": active_nav in QUOTES_NAV_GROUP,
         "hot_lead_count": 0,
         "pending_followup_count": 0,
         # Templates gate the delete-conversation control on this, matching

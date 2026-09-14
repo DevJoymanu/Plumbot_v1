@@ -175,8 +175,14 @@ class BookingMixin:
             """
             Ready to book when all 5 required fields are present.
             has_plan is NOT required — it is no longer part of the booking flow.
+
+            "Do we know the job?" is `_job_is_known`, the SAME resolver
+            `get_next_question_to_ask` uses. It used to be `bool(project_type)`
+            here and "type OR description" there, so a lead carrying only a
+            description had nothing left to be asked and could never be booked
+            (barmak 1144 — see `_job_is_known`).
             """
-            has_service  = bool(self.appointment.project_type)
+            has_service  = self._job_is_known()
             has_desc     = bool(self.appointment.project_description)
             has_datetime = (
                 bool(self.appointment.scheduled_datetime) and self._time_confirmed()

@@ -22,7 +22,11 @@
             Follow-ups
             {% if pending_followup_count %}<span class="pb-bottomnav__badge">{{ pending_followup_count }}</span>{% endif %}
         </a>
-        <button type="button" class="pb-bottomnav__item pb-bottomnav__more {% if active_nav == 'jobs' or active_nav == 'templates' or active_nav == 'new_quote' or active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}"
+        {% comment %}
+        Every destination behind More lights it up - `gallery` and the whole
+        quotes group were missing, so those pages showed nothing selected.
+        {% endcomment %}
+        <button type="button" class="pb-bottomnav__item pb-bottomnav__more {% if active_nav == 'jobs' or active_nav == 'gallery' or nav_group_quotes or active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}"
                 aria-haspopup="true" aria-expanded="false" aria-controls="pbMobileSheet" data-sheet-toggle>
             <i class="fas fa-ellipsis-h nav-icon"></i>
             More
@@ -42,17 +46,23 @@
         <a href="{% url 'gallery' %}" class="pb-sheet__item {% if active_nav == 'gallery' %}active{% endif %}">
             <i class="fas fa-images"></i> Gallery
         </a>
-        <a href="{% url 'offer' %}" class="pb-sheet__item {% if active_nav == 'offer' %}active{% endif %}">
-            <i class="fas fa-bullhorn"></i> My Offer
-        </a>
+        {% comment %}
+        Same grouping as the sidebar. The sheet is already a list of sections,
+        so the group is a label rather than a second accordion - an accordion
+        inside a bottom sheet is two taps to reach one page.
+        {% endcomment %}
+        <div class="pb-sheet__label">Quotes &amp; Pricing</div>
         <a href="{% url 'quotations_list' %}" class="pb-sheet__item {% if active_nav == 'quotations' %}active{% endif %}">
             <i class="fas fa-folder-open"></i> My Quotes
+        </a>
+        <a href="{% url 'standalone_quotation' %}" class="pb-sheet__item {% if active_nav == 'new_quote' %}active{% endif %}">
+            <i class="fas fa-plus"></i> New Quotation
         </a>
         <a href="{% url 'quotation_templates_list' %}" class="pb-sheet__item {% if active_nav == 'templates' %}active{% endif %}">
             <i class="fas fa-file-invoice"></i> Templates
         </a>
-        <a href="{% url 'standalone_quotation' %}" class="pb-sheet__item {% if active_nav == 'new_quote' %}active{% endif %}">
-            <i class="fas fa-file-invoice-dollar"></i> New Quotation
+        <a href="{% url 'offer' %}" class="pb-sheet__item {% if active_nav == 'offer' %}active{% endif %}">
+            <i class="fas fa-bullhorn"></i> My Offer
         </a>
         <div class="pb-sheet__label">Account</div>
         {% if user.is_superuser %}

@@ -422,6 +422,39 @@ class ExtractionMixin:
                        + timedelta(days=self.PLAN_NEAR_TIMELINE_DAYS))
             return target <= horizon
 
+        def _job_is_known(self) -> bool:
+            """Do we know enough about the job to book the visit?
+
+            ONE answer, because two places ask it and they used to disagree.
+            `get_next_question_to_ask` has treated a captured description as
+            answering the service question since 2026-07-02 (a lead who said
+            "2x shower cubicles and accessories" must not be bounced back to
+            "How may we assist you"), while `smart_booking_check` went on
+            REQUIRING `project_type`. A lead holding a description and no type
+            therefore had nothing left to be asked AND could never be booked.
+
+            That gap is unbookable by construction, and it is where barmak lead
+            1144 died (2026-09-09): description and area captured off the
+            opening message, "Thursday afternoon, 3pm?" stored as the slot, and
+            `ready_to_book` False forever on a missing `project_type`. Status
+            stayed pending, so there was no confirmation, no plumber alert and
+            no name ask, and with the deterministic flow out of questions the
+            turn fell through to the LLM, which improvised "Thursday 3pm works.
+            We'll confirm the visit." and confirmed nothing. The lead came back
+            ten hours later asking whether Thursday was real. It was not.
+
+            The DESCRIPTION wins the tie because it is the customer's own
+            account of the job, and everything downstream degrades honestly
+            without a type: `_visit_job_noun` falls back to "work",
+            `_describe_project_context` to "the space".
+            """
+            appt = self.appointment
+            return bool(
+                str(getattr(appt, 'project_type', '') or '').strip()
+                or str(getattr(appt, 'project_description', '') or '').strip()
+            )
+
+
         def get_next_question_to_ask(self):
             """
             5-question booking flow:
@@ -465,8 +498,7 @@ class ExtractionMixin:
             # bounced back to "How may we assist you on plumbing services" just
             # because the service-type classifier couldn't label it (prod
             # 2026-07-02: a 'yes' after the budget tie-down got the opener).
-            if (not self.appointment.project_type
-                    and not self.appointment.project_description):
+            if not self._job_is_known():
                 return "service_type"
 
             if not self.appointment.project_description:

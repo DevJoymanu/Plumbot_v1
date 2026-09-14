@@ -157,6 +157,193 @@ class ChainOrderTests(TestCase):
         self.assertNotIn(' - ', out)
 
 
+class QuotedMessageReachesTheReaderTests(TestCase):
+    """A highlighted message is context, so the reader has to see it.
+
+    WhatsApp delivers only the quoted message's WAMID, which the webhook
+    resolves locally and stores on the inbound entry. Everything downstream
+    that judges CONTEXT has to read it back, or "this one, how much?" reaches
+    the reader as a message about nothing.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Quoting', slug='quoting')
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+263773333333', tenant=self.tenant)
+
+    def test_the_transcript_marks_what_was_highlighted(self):
+        from .response_check import _transcript
+        self.lead.add_conversation_message(
+            'assistant', 'Freestanding tub, from US$670.', message_id='wamid.T')
+        self.lead.add_conversation_message(
+            'user', 'this one how much?',
+            quoted=self.lead.resolve_quoted_message('wamid.T'))
+        out = _transcript(self.lead)
+        self.assertIn('highlighting our earlier message', out)
+        self.assertIn('Freestanding tub, from US$670.', out)
+        self.assertIn('CUSTOMER', out.split('\n')[-1])
+
+    def test_a_turn_with_no_quote_is_unchanged(self):
+        from .response_check import _transcript
+        self.lead.add_conversation_message('user', 'hi')
+        self.assertEqual(_transcript(self.lead), 'CUSTOMER: hi')
+
+    def test_the_batched_turn_keeps_the_quote_on_its_own_message(self):
+        # The debounce joins rapid messages into ONE reply, and only one of
+        # them carries the quote. Reading it off the entry rather than
+        # threading one value through keeps it attached to the right message.
+        from .response_check import _transcript
+        self.lead.add_conversation_message(
+            'assistant', 'Here are a couple we just finished.',
+            message_id='wamid.P')
+        self.lead.add_conversation_message(
+            'user', 'this one', quoted='Here are a couple we just finished.')
+        self.lead.add_conversation_message('user', 'how much is it')
+        lines = _transcript(self.lead).split('\n')
+        self.assertIn('highlighting', lines[1])
+        self.assertNotIn('highlighting', lines[2])
+
+    def test_the_reader_is_given_the_quote(self):
+        # End to end through verify_and_refine: whatever the model is asked,
+        # the highlighted text is in the payload it sees.
+        from .response_check import verify_and_refine
+        self.lead.add_conversation_message(
+            'assistant', 'Freestanding tub, from US$670.', message_id='wamid.T')
+        self.lead.add_conversation_message(
+            'user', 'this one how much?', quoted='Freestanding tub, from US$670.')
+        with patch('bot.services.clients.deepseek_call',
+                   return_value=_reply('ok')) as call:
+            verify_and_refine('From US$670.', self.lead, 'this one how much?')
+        payload = call.call_args[0][0][1]['content']
+        self.assertIn('highlighting our earlier message', payload)
+        self.assertIn('Freestanding tub', payload)
+
+
+class PhotoPathStampsItsWamidsTests(TestCase):
+    """Both text messages around the gallery must be quotable.
+
+    The images have carried a WAMID each since record_sent_media, but the
+    lead-in and the follow-up never did, so a customer highlighting either of
+    them resolved to None and was answered quote-blind - the "not found in
+    history" log line.
+    """
+
+    def test_both_lines_are_stamped_and_resolve_back(self):
+        import inspect
+        from . import whatsapp_webhook as wh
+        src = inspect.getsource(wh.send_previous_work_photos)
+        self.assertEqual(src.count('_sent_wamid('), 2)
+        self.assertEqual(src.count('mark_message_sent('), 2)
+
+    def test_a_stamped_line_resolves_to_its_text(self):
+        tenant = Tenant.objects.create(name='Stamped', slug='stamped')
+        lead = Appointment.objects.create(
+            phone_number='whatsapp:+263774444444', tenant=tenant)
+        lead.add_conversation_message('assistant', 'What area are you in?')
+        lead.mark_message_sent('assistant', 'What area are you in?', 'wamid.Q')
+        self.assertEqual(lead.resolve_quoted_message('wamid.Q'),
+                         'What area are you in?')
+
+    def test_the_wamid_reader_never_raises_on_a_bad_result(self):
+        from .whatsapp_webhook import _sent_wamid
+        for bad in (None, {}, {'messages': []}, {'messages': [{}]}, 'nope', 42):
+            self.assertIsNone(_sent_wamid(bad))
+        self.assertEqual(_sent_wamid({'messages': [{'id': 'wamid.X'}]}), 'wamid.X')
+
+
+class PhotoPathGetsTheChainTests(TestCase):
+    """The photo path writes to the wire itself, so it must finalise itself.
+
+    Its lead-in and its follow-up went straight to send_text_message, skipping
+    the reply check, the memory check, both free-visit strippers, the
+    visit-price note and the dash stripper. The follow-up is the one that bit:
+    it carries the scripted next question, which for availability_date IS the
+    availability ask, and that is the message the call-out fee has to be
+    stated on.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Fee Co', slug='fee-co')
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+263772222222', tenant=self.tenant,
+            project_description='bathroom refit', customer_area='Borrowdale')
+        # The reader is a live DeepSeek call; these cases are about the
+        # deterministic rules that follow it.
+        self.addCleanup(patch.stopall)
+        patch('bot.response_check.verify_and_refine',
+              side_effect=lambda r, a, m=None: (r, None)).start()
+
+    def _with_fee(self, fee):
+        """Point tenant_config at a tenant that charges for the visit."""
+        from bot import tenant_config as tc
+        real = tc.get_config
+        cfg = real(self.tenant)
+        patch.object(type(cfg), 'consultation_fee', fee).start()
+        return cfg
+
+    def test_the_followup_carries_the_call_out_fee(self):
+        from . import whatsapp_webhook as wh
+        self._with_fee(20)
+        ask = ('What works better for you, tomorrow at 9am or this Sunday '
+               'at 2pm, for us to come through and have a quick look at the '
+               'bathroom space?')
+        out = wh._finalised_for_send(ask, self.lead, 'borrowdale')
+        self.assertIn('US$20', out)
+        self.assertIn('call-out', out.lower())
+
+    def test_a_free_visit_claim_cannot_survive_for_a_fee_tenant(self):
+        from . import whatsapp_webhook as wh
+        self._with_fee(20)
+        out = wh._finalised_for_send(
+            'We can come out for a free site visit. What day suits you?',
+            self.lead, 'ok')
+        self.assertNotIn('free', out.lower())
+
+    def test_dashes_are_stripped_on_this_path_too(self):
+        from . import whatsapp_webhook as wh
+        out = wh._finalised_for_send('Sure thing - when suits you?',
+                                     self.lead, 'hi')
+        self.assertNotIn(' - ', out)
+
+    def test_the_split_marker_never_reaches_the_wire(self):
+        # Only delayed_response knows how to flatten it, and this path does
+        # not go through delayed_response.
+        from . import whatsapp_webhook as wh
+        from .views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+        out = wh._finalised_for_send(
+            'Got it.%sWhat area are you in?' % MESSAGE_SPLIT_MARKER,
+            self.lead, 'hi')
+        self.assertNotIn(MESSAGE_SPLIT_MARKER, out)
+
+    def test_it_fails_open_rather_than_losing_the_message(self):
+        from . import whatsapp_webhook as wh
+        with patch.object(wh, 'finalise_outbound', side_effect=RuntimeError('boom')):
+            out = wh._finalised_for_send('Here are a couple we just finished.',
+                                         self.lead, 'photos?')
+        self.assertEqual(out, 'Here are a couple we just finished.')
+
+    def test_check_false_skips_the_reader_but_not_the_rules(self):
+        from . import whatsapp_webhook as wh
+        with patch('bot.response_check.verify_and_refine') as reader:
+            out = wh.finalise_outbound('Sure thing - when suits you?',
+                                       self.lead, 'hi', check=False)
+        reader.assert_not_called()
+        self.assertNotIn(' - ', out)
+
+    def test_both_photo_sends_go_through_the_helper(self):
+        # Source-level: the sends happen inside a daemon thread behind a real
+        # media upload, and what matters is that neither reaches
+        # send_text_message with an unfinalised draft.
+        import inspect
+        from . import whatsapp_webhook as wh
+        src = inspect.getsource(wh.send_previous_work_photos)
+        sends = [ln for ln in src.split('\n') if 'send_text_message(' in ln]
+        self.assertEqual(len(sends), 2, src)
+        for line in sends:
+            self.assertRegex(line, r'send_text_message\(sender, (intro_out|follow_up)\)')
+        self.assertEqual(src.count('_finalised_for_send('), 2)
+
+
 class VolunteeredEmailTests(TestCase):
     """The email capture, exercised rather than grepped.
 

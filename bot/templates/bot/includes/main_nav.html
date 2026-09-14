@@ -41,22 +41,37 @@
             <i class="fas fa-images nav-icon"></i>
             Gallery
         </a>
-        <a href="{% url 'offer' %}" class="pb-sidenav__item {% if active_nav == 'offer' %}active{% endif %}">
-            <i class="fas fa-bullhorn nav-icon"></i>
-            My Offer
-        </a>
-        <a href="{% url 'quotations_list' %}" class="pb-sidenav__item {% if active_nav == 'quotations' %}active{% endif %}">
-            <i class="fas fa-folder-open nav-icon"></i>
-            My Quotes
-        </a>
-        <a href="{% url 'quotation_templates_list' %}" class="pb-sidenav__item {% if active_nav == 'templates' %}active{% endif %}">
-            <i class="fas fa-file-invoice nav-icon"></i>
-            Templates
-        </a>
-        <a href="{% url 'standalone_quotation' %}" class="pb-sidenav__item {% if active_nav == 'new_quote' %}active{% endif %}">
-            <i class="fas fa-file-invoice-dollar nav-icon"></i>
-            New Quotation
-        </a>
+        {% comment %}
+        Quotes, templates and the offer are one job - raising and pricing
+        work - so they live under one item. `nav_group_quotes` is resolved in
+        context_processors from the same NAV_MAP the highlight uses, so the
+        group cannot be shut over the page you are reading.
+        {% endcomment %}
+        <details class="pb-sidenav__group" {% if nav_group_quotes %}open{% endif %}>
+            <summary class="pb-sidenav__item">
+                <i class="fas fa-file-invoice-dollar nav-icon"></i>
+                Quotes &amp; Pricing
+                <i class="fas fa-chevron-right pb-sidenav__caret" aria-hidden="true"></i>
+            </summary>
+            <div class="pb-sidenav__subitems">
+                <a href="{% url 'quotations_list' %}" class="pb-sidenav__item pb-sidenav__subitem {% if active_nav == 'quotations' %}active{% endif %}">
+                    <i class="fas fa-folder-open nav-icon"></i>
+                    My Quotes
+                </a>
+                <a href="{% url 'standalone_quotation' %}" class="pb-sidenav__item pb-sidenav__subitem {% if active_nav == 'new_quote' %}active{% endif %}">
+                    <i class="fas fa-plus nav-icon"></i>
+                    New Quotation
+                </a>
+                <a href="{% url 'quotation_templates_list' %}" class="pb-sidenav__item pb-sidenav__subitem {% if active_nav == 'templates' %}active{% endif %}">
+                    <i class="fas fa-file-invoice nav-icon"></i>
+                    Templates
+                </a>
+                <a href="{% url 'offer' %}" class="pb-sidenav__item pb-sidenav__subitem {% if active_nav == 'offer' %}active{% endif %}">
+                    <i class="fas fa-bullhorn nav-icon"></i>
+                    My Offer
+                </a>
+            </div>
+        </details>
     </div>
 
     <div class="pb-sidenav__secondary">

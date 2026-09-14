@@ -2960,6 +2960,7 @@ try:
     from bot.views.plumbot.extraction_mixin import ExtractionMixin as _EM
     class _FakeSelfNQ:
         get_next_question_to_ask = _EM.get_next_question_to_ask
+        _job_is_known = _EM._job_is_known
         appointment = _FakeApptNQ()
         def _time_confirmed(self):
             return False
@@ -2976,6 +2977,64 @@ try:
         "next question: captured description satisfies service_type (no opener bounce)",
         _FakeSelfNQ().get_next_question_to_ask() == "area",
         got=_FakeSelfNQ().get_next_question_to_ask(),
+    )
+    # ...and the OTHER half of the same rule: the BOOKING check has to agree
+    # with the question order. It required `project_type` while the order above
+    # treats a description as answering it, so a lead carrying only a
+    # description had nothing left to be asked AND could never be booked.
+    # Barmak lead 1144 died in that gap (2026-09-09): description and area off
+    # the opening message, "Thursday afternoon, 3pm?" stored as the slot,
+    # ready_to_book False forever, status left pending — no confirmation, no
+    # plumber alert, no name ask — and the turn fell through to the LLM, which
+    # improvised "Thursday 3pm works. We'll confirm the visit." Both now read
+    # `_job_is_known`.
+    from bot.views.plumbot.booking_mixin import BookingMixin as _BM
+    from django.utils import timezone as _tz_book
+    from datetime import timedelta as _td_book
+
+    class _FakeApptBook(_FakeApptNQ):
+        customer_area = "Arlington East"
+        scheduled_datetime = _tz_book.now() + _td_book(days=1)
+
+    class _FakeSelfBook:
+        smart_booking_check = _BM.smart_booking_check
+        get_next_question_to_ask = _EM.get_next_question_to_ask
+        _job_is_known = _EM._job_is_known
+        appointment = _FakeApptBook()
+        def _time_confirmed(self):
+            return True
+        def _customer_name_declined(self):
+            return False
+        def _on_plan_path(self):
+            return False
+        def _plan_timeline_is_near(self):
+            return True
+
+    _bk = _FakeSelfBook()
+    results.log(
+        "booking: a description with no project_type IS bookable (both checks agree)",
+        _bk.smart_booking_check()['ready_to_book'] is True
+        and _bk.get_next_question_to_ask() == 'complete',
+        got="%s / next=%s" % (_bk.smart_booking_check(),
+                              _bk.get_next_question_to_ask()),
+    )
+
+    # The gap closes from both sides: a lead we know NOTHING about is still not
+    # bookable, and is still asked rather than silently booked.
+    class _FakeApptBare(_FakeApptBook):
+        project_description = None
+
+    class _FakeSelfBare(_FakeSelfBook):
+        appointment = _FakeApptBare()
+
+    _bare = _FakeSelfBare()
+    results.log(
+        "booking: no job on file is neither bookable nor silent",
+        _bare.smart_booking_check()['ready_to_book'] is False
+        and 'service type' in _bare.smart_booking_check()['missing_fields']
+        and _bare.get_next_question_to_ask() == 'service_type',
+        got="%s / next=%s" % (_bare.smart_booking_check(),
+                              _bare.get_next_question_to_ask()),
     )
     # "that on facebook" is a price-reference question — confirmed, never
     # steamrolled (prod: got the area script). Long texts don't trigger.
@@ -10159,6 +10218,111 @@ try:
     )
 finally:
     _tcmod.get_config = _real_gc2
+
+# ── The proof step must not re-ask a question it already asked ────────────────
+# `_get_first_pass_question` IS the retry_count == 0 script and does not check
+# the count itself, so a caller that skips the check re-sends the question word
+# for word. The proof step did (barmak 1144: the availability ask went out at
+# 07:36 from the quote route, which recorded it, then again at 07:37 riding
+# behind the photos, identical). Source-level because the branch lives in the
+# webhook behind the classifier and the media send; what matters is that no
+# call site in that file reaches the script without asking the count first.
+import io as _io_rt
+import re as _re_rt
+
+_wh_src = _io_rt.open('bot/whatsapp_webhook.py', encoding='utf-8').read()
+_fpq_calls = [m.start() for m in
+              _re_rt.finditer(r'_get_first_pass_question\(', _wh_src)]
+_guarded = [
+    pos for pos in _fpq_calls
+    if '_get_question_retry_count' in _wh_src[max(0, pos - 700):pos]
+]
+results.log(
+    "proof step: every webhook call to the first-pass script checks retry_count first",
+    len(_fpq_calls) >= 1 and len(_guarded) == len(_fpq_calls),
+    got="%d call(s), %d guarded" % (len(_fpq_calls), len(_guarded)),
+)
+
+# ── A confirmation the row does not back never leaves the building ────────────
+# The house architecture is that the model picks the move and deterministic
+# code writes anything the customer must be able to trust. Whether an
+# appointment EXISTS is the biggest of those and was the only one still
+# improvisable: barmak 1144 got "Thursday 3pm works. We'll confirm the visit."
+# from DeepSeek, twice, on a row whose status never left 'pending'.
+from bot.views.plumbot.response_mixin import (
+    strip_unbacked_confirmation as _suc,
+    MESSAGE_SPLIT_MARKER as _SPLIT_C,
+)
+
+_pending = _ty.SimpleNamespace(status='pending', scheduled_datetime='2026-09-12 15:00')
+_no_slot = _ty.SimpleNamespace(status='pending', scheduled_datetime=None)
+_booked = _ty.SimpleNamespace(status='confirmed', scheduled_datetime='2026-09-12 15:00')
+
+# The production line: the acknowledgement survives, the promise does not.
+_out, _hit = _suc("Thursday 3pm works. We'll confirm the visit.", _pending)
+results.log(
+    "booking claim: the promise to confirm is dropped, the acknowledgement kept",
+    _hit and _out == "Thursday 3pm works." and 'confirm' not in _out.lower(),
+    got=repr(_out),
+)
+for _claim in ("You're all booked for Thursday.",
+               "Great, you are all set.",
+               "I've booked your appointment for Thursday at 3pm.",
+               "That's confirmed.",
+               "Consider it booked.",
+               "Your visit is confirmed.",
+               "We will confirm the visit shortly."):
+    _o, _h = _suc("Thanks for that. %s" % _claim, _pending)
+    results.log("booking claim: dropped (%s)" % _claim[:34],
+                _h and _claim not in _o, got=repr(_o))
+
+# A QUESTION is not a claim. The whole close depends on still being able to ask.
+for _ok in ("Shall I lock that in for you?",
+            "Want me to book you a time?",
+            "Ndokubhukira mangwana here?",
+            "What works better for you, tomorrow at 9am or this Sunday at 2pm?",
+            "The plumber will call 30 minutes before arrival."):
+    results.log("booking claim: not a claim, left alone (%s)" % _ok[:34],
+                _suc(_ok, _pending) == (_ok, False), got=repr(_suc(_ok, _pending)))
+
+# Inert on a confirmed lead — which is what lets the REAL confirmation copy
+# through untouched, since it only ever sends after status='confirmed'.
+_real = ("Perfect, thanks Tendai. You're all set for your visit on Thursday, "
+         "September 12 at 3:00 PM in Arlington East.")
+results.log(
+    "booking claim: a confirmed lead's real confirmation is untouched",
+    _suc(_real, _booked) == (_real, False),
+    got=repr(_suc(_real, _booked)),
+)
+
+# A claim that IS the whole message becomes the true thing, which is the close.
+_o1, _h1 = _suc("You're all booked!", _pending)
+_o2, _h2 = _suc("You're all booked!", _no_slot)
+results.log(
+    "booking claim: an all-claim reply is replaced, never sent empty",
+    _h1 and _o1 == 'Shall I lock that in for you?'
+    and _h2 and _o2 == 'What day works for you?',
+    got="%r / %r" % (_o1, _o2),
+)
+
+# The split marker survives: each part is judged on its own.
+_o3, _h3 = _suc("Thursday 3pm works.%sWe'll confirm the visit." % _SPLIT_C, _pending)
+results.log(
+    "booking claim: split parts are judged separately and the marker survives",
+    _h3 and _o3.split(_SPLIT_C) == ['Thursday 3pm works.',
+                                    'Shall I lock that in for you?'],
+    got=repr(_o3),
+)
+
+# ── The proof line counts what it is actually sending ─────────────────────────
+from bot.controller_templates import show_examples as _shx
+results.log(
+    "proof line: one image says one, several say a couple",
+    _shx(count=1) == 'Here is one we just finished.'
+    and _shx(count=3) == 'Here are a couple we just finished.'
+    and _shx(count=1, is_shona=True) == 'Heano mamwe emabasa atakapedza.',
+    got="%r / %r" % (_shx(count=1), _shx(count=3)),
+)
 
 # ── The availability ask carries a DAY AND A TIME ─────────────────────────────
 # Asking for the day alone costs a whole turn: the lead says "Sunday", we come

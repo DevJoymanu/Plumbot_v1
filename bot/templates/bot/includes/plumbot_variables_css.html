@@ -235,6 +235,52 @@ a { color: inherit; text-decoration: none; }
 .pb-sidenav__item:hover .nav-icon,
 .pb-sidenav__item.active .nav-icon { opacity: 1; }
 
+/* ── Sidebar group ──
+   Everything about quotes and money hangs off ONE nav item. Built on
+   <details>/<summary> so it needs no JS and keeps keyboard access; the
+   template renders it `open` whenever one of its own pages is showing,
+   so the group is never collapsed over the page you are looking at. */
+.pb-sidenav__group > summary {
+    list-style: none;
+    cursor: pointer;
+}
+.pb-sidenav__group > summary::-webkit-details-marker { display: none; }
+
+.pb-sidenav__caret {
+    margin-left: auto;
+    font-size: 10px;
+    opacity: 0.5;
+    transition: transform var(--transition), opacity var(--transition);
+}
+.pb-sidenav__group[open] > summary .pb-sidenav__caret {
+    transform: rotate(90deg);
+    opacity: 0.9;
+}
+
+/* An active CHILD tints the parent; it never takes the child's `active`
+   treatment, or two items would claim to be the page you are on. */
+.pb-sidenav__group:has(.active) > summary {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+.pb-sidenav__group:has(.active) > summary .nav-icon { opacity: 1; }
+
+.pb-sidenav__subitems {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0 4px 26px;
+    padding-left: 10px;
+    /* Whitespace over lines everywhere else, but nesting needs one hairline
+       to read as nesting rather than as four more top-level items. */
+    border-left: 1px solid rgba(0, 101, 145, 0.10);
+}
+
+.pb-sidenav__subitem {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+
 .pb-badge {
     margin-left: auto;
     min-width: 20px;

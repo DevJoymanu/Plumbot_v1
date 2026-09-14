@@ -10121,3 +10121,87 @@ class LeadLabelTests(TestCase):
             send_site_visit_form_email(ensure_report(lead))
         body = ' '.join(str(a) for a in send.call_args.args)
         self.assertIn('Customer: Unknown', body)
+
+
+# ======================================================================
+# 22. One sidebar item for the money screens
+#
+# Quotes, the template builder and the tenant's own offer are one job -
+# raising and pricing work - and sat as four separate top-level items in
+# an eleven-item sidebar. They are now one collapsible group, which is
+# only usable if two things hold: the group is OPEN on its own pages (a
+# nav that hides the page you are reading is worse than a long nav), and
+# every quote URL resolves to a nav value the group knows about. The
+# second is the one that rots silently - a new quote screen returns 200
+# with the sidebar showing nothing selected.
+# ======================================================================
+
+class QuotesNavGroupTests(StaffClientTestCase):
+    """The quote/money pages live under one sidebar item."""
+
+    #: Every page that must sit inside the group, with the nav value it
+    #: is expected to resolve to.
+    def group_pages(self):
+        lead = make_lead(5301, customer_name='Nav Group Lead')
+        quote = Quotation.objects.create(appointment=lead)
+        template = QuotationTemplate.objects.create(name='Nav Group Template')
+        return {
+            reverse('quotations_list'): 'quotations',
+            reverse('view_quotation', args=[quote.pk]): 'quotations',
+            reverse('edit_quotation', args=[quote.pk]): 'quotations',
+            reverse('create_quotation', args=[lead.pk]): 'quotations',
+            reverse('standalone_quotation'): 'new_quote',
+            reverse('quotation_templates_list'): 'templates',
+            reverse('quotation_template_detail', args=[template.pk]): 'templates',
+            reverse('create_quotation_template'): 'templates',
+            reverse('edit_quotation_template', args=[template.pk]): 'templates',
+            reverse('offer'): 'offer',
+        }
+
+    def test_every_quote_page_belongs_to_the_group(self):
+        """`nav_group_quotes` is the single resolver, read by the desktop
+        accordion and the mobile More button. A quote page it does not know
+        renders with the group shut over the page being looked at."""
+        for url, expected in self.group_pages().items():
+            with self.subTest(page=url):
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200, url)
+                self.assertEqual(response.context['active_nav'], expected, url)
+                self.assertTrue(response.context['nav_group_quotes'],
+                                f'{url} is not in the quotes nav group')
+
+    #: The group's opening tag. Matched on the markup rather than the class
+    #: name alone, which also appears in the inlined stylesheet above it.
+    GROUP_TAG = '<details class="pb-sidenav__group"'
+
+    def _sidebar(self, html):
+        return (html.split('<div class="pb-sidenav__items">', 1)[1]
+                .split('<div class="pb-sidenav__secondary">', 1)[0])
+
+    def test_the_group_renders_open_on_its_own_pages(self):
+        """The <details> carries `open`, so the child links are on screen."""
+        html = self.client.get(reverse('quotations_list')).content.decode()
+        self.assertIn(self.GROUP_TAG, html)
+        group = html.split(self.GROUP_TAG, 1)[1].split('</details>', 1)[0]
+        self.assertIn('open', group.split('>', 1)[0])
+        for label in ('My Quotes', 'New Quotation', 'Templates', 'My Offer'):
+            self.assertIn(label, group, f'{label} is not in the group')
+
+    def test_the_group_is_shut_elsewhere(self):
+        """On an unrelated page it collapses, which is the point of grouping."""
+        html = self.client.get(reverse('dashboard')).content.decode()
+        opening = html.split(self.GROUP_TAG, 1)[1].split('>', 1)[0]
+        self.assertNotIn('open', opening)
+
+    def test_the_money_pages_are_not_also_top_level_items(self):
+        """Four links, each once: inside the group and nowhere else in the
+        sidebar, or grouping them changed nothing."""
+        nav = self._sidebar(self.client.get(reverse('dashboard')).content.decode())
+        group = nav.split(self.GROUP_TAG, 1)[1]
+        for url in (reverse('quotations_list'), reverse('standalone_quotation'),
+                    reverse('quotation_templates_list'), reverse('offer')):
+            with self.subTest(url=url):
+                self.assertEqual(nav.count(f'href="{url}"'), 1,
+                                 f'{url} appears twice in the sidebar')
+                self.assertIn(f'href="{url}"', group,
+                              f'{url} is still a top-level sidebar item')

@@ -731,6 +731,25 @@ def decide_move(uclass, appointment):
     # already there for.
     if move == 'show_work' and not should_show_work(appointment):
         return None
+
+    # ...and it must not answer a question with photographs. The same house
+    # rule that holds `close_pleasantry` back applies here: the customer's own
+    # words outrank whatever the model concluded. Barmak lead 1144 asked "How
+    # do l book for a site visit" and got the gallery, which answers a question
+    # they did not ask and leaves the one they did ask unanswered.
+    #
+    # A photo REQUEST is the exception, and the reason this is not simply
+    # `_asks_us_something`: "can I see your work?" is a question whose answer
+    # is the work.
+    if move == 'show_work' and _asks_us_something(uclass):
+        try:
+            from bot.unified_classifier import uc_is_photo_request
+            asked_for_photos = bool(uc_is_photo_request(uclass))
+        except Exception:
+            asked_for_photos = False
+        if not asked_for_photos:
+            logger.info('show_work held back: the customer asked something')
+            return None
     return move
 
 
