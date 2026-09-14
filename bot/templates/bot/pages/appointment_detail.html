@@ -755,6 +755,8 @@
     border-bottom: 1px solid rgba(0, 101, 145, 0.06);
   }
 
+  .appt-score-text { font-size: 13px; color: #3e4850; }
+
   .appt-score-chip {
     display: inline-flex;
     align-items: center;
@@ -1979,10 +1981,54 @@
   }
 
   @media (max-width: 640px) {
+    /* ── The header is overhead; the conversation is the page ──────────────
+       Header plus three wrapped rows of status pills plus the tab bar came to
+       roughly 400px of a ~740px screen, so the transcript got what was left.
+       Everything here is still on screen and still says the same thing, just
+       at a size that leaves room for the messages. */
     .appt-detail-header {
-      padding: 12px;
+      padding: 8px 12px;
+      gap: 10px;
       align-items: flex-start;
     }
+
+    .mobile-back { width: 30px; height: 30px; }
+
+    .appt-detail-avatar {
+      width: 32px;
+      height: 32px;
+      font-size: 12px;
+      box-shadow: none;
+    }
+
+    .appt-detail-name { font-size: 15px; }
+    .appt-detail-meta { font-size: 11px; }
+
+    /* One swipeable strip instead of three stacked rows. Nothing is dropped -
+       the pills run off the right edge, which is its own affordance, and the
+       two that matter most (status and temperature) lead. */
+    .appt-detail-statusbar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 6px 12px;
+      gap: 5px;
+    }
+
+    .appt-detail-statusbar::-webkit-scrollbar { display: none; }
+    .appt-detail-statusbar > * { flex: 0 0 auto; }
+
+    .appt-pill { padding: 2px 8px; font-size: 9.5px; }
+
+    .appt-score-chip {
+      min-width: 26px;
+      height: 20px;
+      padding: 0 7px;
+      font-size: 10px;
+    }
+
+    /* The chip immediately to its left already says 50. */
+    .appt-score-text { display: none; }
 
     .appt-detail-actions {
       width: 100%;
@@ -1990,12 +2036,18 @@
     }
 
     .appt-detail-action {
-      padding: 7px 11px;
-      font-size: 12px;
+      padding: 6px 11px;
+      font-size: 11px;
     }
 
     .appt-tabbar {
       grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    /* Still a 44px target, just without the padding a mouse never needed. */
+    .appt-tab-btn {
+      padding: 9px 4px;
+      min-height: 44px;
     }
 
     .detail-form-grid {
@@ -2143,7 +2195,7 @@
               {{ appointment.customer_name|default:appointment.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}
             </div>
             <div class="appt-detail-meta">
-              {{ appointment.phone_number }}{% if appointment.customer_area %} · {{ appointment.customer_area }}{% endif %}
+              {{ appointment.phone_number|cut:"whatsapp:" }}{% if appointment.customer_area %} · {{ appointment.customer_area }}{% endif %}
             </div>
           </div>
         </div>
@@ -2166,7 +2218,7 @@
           {{ computed_lead_status_label|default:appointment.get_lead_status_display }}
         </span>
         <span class="appt-score-chip">{{ computed_lead_score|default:appointment.lead_score }}</span>
-        <span style="font-size:13px; color:#3e4850;">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
+        <span class="appt-score-text">Score {{ computed_lead_score|default:appointment.lead_score }}/100</span>
         {% if appointment.chatbot_paused %}
         <span class="appt-pill pending">Bot paused</span>
         {% endif %}

@@ -552,3 +552,105 @@ class ChatComposerTests(TestCase):
         self.assertIn('min-height: 0', pane)
         self.assertIn('min-height: 0', scroll)
         self.assertIn('overflow-y: auto', scroll)
+
+
+class CompactDetailHeaderTests(TestCase):
+    """The header is overhead; the conversation is the page.
+
+    Header, then three wrapped rows of status pills, then the tab bar came to
+    roughly 400px of a ~740px phone screen, so the transcript got what was
+    left (owner report, 2026-09-14). Everything still renders and still says
+    the same thing - it is sized to leave room for the messages.
+    """
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='hdr-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=self.user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
+        self.client.force_login(self.user)
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+263786318169', customer_area='Harare')
+
+    def _body(self):
+        response = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    @staticmethod
+    def _media(css, condition):
+        """Everything that applies at `condition`, brace-matched.
+
+        Two traps here. Splitting on the opening line alone runs past its
+        closing brace and swallows the rest of the stylesheet, so 'is this
+        inside the mobile block?' answers yes for everything. And this page
+        has FOUR separate max-width:640px blocks, so taking the first one
+        answers no for rules that are plainly there.
+        """
+        opener = '@media (%s) {' % condition
+        blocks, at = [], 0
+        while True:
+            start = css.find(opener, at)
+            if start == -1:
+                break
+            depth, i = 0, css.index('{', start)
+            for j in range(i, len(css)):
+                if css[j] == '{':
+                    depth += 1
+                elif css[j] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+            else:
+                raise AssertionError('unbalanced media block')
+            blocks.append(css[i + 1:j])
+            at = j
+        assert blocks, 'no %s block found' % condition
+        return chr(10).join(blocks)
+
+    @staticmethod
+    def _rule(block, selector):
+        start = block.index(selector + ' {')
+        return block[start:block.index('}', start)]
+
+    def test_the_pills_are_one_swipeable_strip_on_a_phone(self):
+        """Three stacked rows of badges cost more height than the header
+        itself. Nothing is dropped - they run off the right edge."""
+        mobile = self._media(self._body(), 'max-width: 640px')
+        bar = self._rule(mobile, '.appt-detail-statusbar')
+        self.assertIn('flex-wrap: nowrap', bar)
+        self.assertIn('overflow-x: auto', bar)
+
+    def test_no_pill_is_hidden_to_save_the_room(self):
+        """Shrinking is the brief; dropping a status the plumber reads is not.
+        A display:none there would be a badge that silently stopped existing."""
+        body = self._body()
+        mobile = self._media(body, 'max-width: 640px')
+        self.assertNotIn('display: none', self._rule(mobile, '.appt-pill'))
+        for badge in ('window', 'follow-up'):
+            self.assertIn(badge, body.lower(), f'{badge} badge is gone')
+
+    def test_the_duplicated_score_text_is_the_one_thing_dropped(self):
+        """'Score 50/100' sits immediately right of a chip reading 50. The
+        chip stays; the sentence goes."""
+        body = self._body()
+        self.assertIn('appt-score-chip', body)
+        mobile = self._media(body, 'max-width: 640px')
+        self.assertIn('display: none', self._rule(mobile, '.appt-score-text'))
+
+    def test_the_meta_line_does_not_print_the_storage_key(self):
+        """phone_number is stored as 'whatsapp:+263...'. Printed raw it
+        truncates to 'whatsa...' on a phone - a line of pure noise under a
+        name that had already cut the prefix."""
+        body = self._body()
+        header = (body.split('<div class="appt-detail-header">', 1)[1]
+                      .split('<div class="appt-detail-statusbar">', 1)[0])
+        self.assertNotIn('whatsapp:+263786318169', header)
+        self.assertIn('+263786318169', header)
+        self.assertIn('Harare', header)
+
+    def test_the_tab_bar_keeps_a_thumb_sized_target(self):
+        """Tightening the header must not shrink what people tap."""
+        mobile = self._media(self._body(), 'max-width: 640px')
+        self.assertIn('min-height: 44px', self._rule(mobile, '.appt-tab-btn'))
