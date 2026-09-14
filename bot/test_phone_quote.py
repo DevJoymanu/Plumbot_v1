@@ -806,8 +806,18 @@ class SentImagesVisibleTests(PhoneQuoteBase):
         self.assertIn('Freestanding tub', html)
 
 
-class BannerIsAboveTheTabsTests(PhoneQuoteBase):
-    """Every next-step action must be visible from any tab."""
+class BannerLivesInTheDetailsTabTests(PhoneQuoteBase):
+    """Every next-step action sits in the Details tab, at the top of it.
+
+    These actions once sat above the tab bar so they would be visible from any
+    tab - the fix for their having been buried where anyone reading the Chat
+    tab could miss them. But above the tab bar is outside the only scrolling
+    box on the screen, so the banner never moved and held the top of the
+    Quotes, WhatsApp and Email tabs, over content it has nothing to do with.
+
+    Details is the tab a record opens on, so at the top of it they are still
+    the first thing seen (owner rule, 2026-09-14).
+    """
 
     def _become_owner(self):
         """Make the logged-in user the real platform owner.
@@ -828,12 +838,13 @@ class BannerIsAboveTheTabsTests(PhoneQuoteBase):
         self.lead.scheduled_datetime = timezone.now() + timedelta(days=2)
         self.lead.save(update_fields=['scheduled_datetime'])
 
-    def test_the_actions_are_not_buried_in_a_tab_pane(self):
+    def test_the_actions_are_at_the_top_of_the_details_tab(self):
         html = self.client.get(
             reverse('appointment_detail', args=[self.lead.pk])
         ).content.decode()
-        # The MARKUP, not the stylesheet rule of the same name.
-        first_pane = html.find('<div class="appt-tab-pane')
+        details = html.find('id="tab-details"')
+        next_pane = html.find('id="tab-quotes"')
+        self.assertNotEqual(details, -1)
         for label, needle in (
             ('log the visit', reverse('site_visit_start', args=[self.lead.pk])),
             ('quote on the phone', reverse('phone_quote_start', args=[self.lead.pk])),
@@ -841,9 +852,11 @@ class BannerIsAboveTheTabsTests(PhoneQuoteBase):
         ):
             at = html.find(needle)
             self.assertNotEqual(at, -1, '%s missing entirely' % label)
-            self.assertLess(at, first_pane,
-                            '%s is inside a tab pane, so it is invisible from '
-                            'the Chat tab' % label)
+            self.assertLess(details, at,
+                            '%s is outside the Details pane, so it sits over '
+                            'every other tab' % label)
+            self.assertLess(at, next_pane,
+                            '%s has escaped past the end of Details' % label)
 
     def test_the_plumber_button_posts_to_its_own_form(self):
         # Inside the Edit Details form it would submit every field on the page.
@@ -855,8 +868,9 @@ class BannerIsAboveTheTabsTests(PhoneQuoteBase):
         chunk = src[at - 300:at + 300]
         self.assertIn('method="post"', chunk)
         self.assertIn('{% csrf_token %}', chunk)
-        # ...and it sits above the tabs, like the rest of the banner.
-        self.assertLess(at, src.find('<div class="appt-tab-pane'))
+        # ...and it sits in the Details pane, like the rest of the banner.
+        self.assertLess(src.find('id="tab-details"'), at)
+        self.assertLess(at, src.find('id="tab-quotes"'))
 
 
 class PlumberAlertIsOwnerOnlyTests(PhoneQuoteBase):

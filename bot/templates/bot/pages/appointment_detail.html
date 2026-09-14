@@ -835,44 +835,20 @@
     overflow-y: auto;
   }
 
-  /* ── The site-visit banner is NOT pinned ───────────────────────────────
-     The banner sits above the tabs so it is reachable whichever one you are
-     reading - it used to be buried inside the Details pane, where anybody on
-     the Chat tab could see none of it. But "above the tabs" also put it
-     OUTSIDE the only scrolling box on the screen, so it never moved: on a
-     phone it held the top of the Quotes tab permanently, over a list it has
-     nothing to do with (owner rule, 2026-09-09).
+  /* ── The site-visit banner is NOT pinned ──────────────────────
+     It lives at the top of the Details pane and scrolls away with it (owner
+     rule, 2026-09-14). It used to sit above the tab bar, which put it OUTSIDE
+     the only scrolling box on the screen: it never moved, and it held the top
+     of the Quotes, WhatsApp and Email tabs, over content it has nothing to do
+     with.
 
-     So the document-style tabs scroll the PANE rather than themselves, and the
-     banner travels with the content like anything else on a page. The tab bar
-     is the one thing that stays behind: it is the way back to the chat, and
-     losing it to a flick would be worse than the banner ever was.
+     So there is nothing to unpin here any more - the panes above scroll their
+     own content, the banner is the first thing in one of them, and it behaves
+     like anything else on a page. Do not reintroduce a pane-level scroller to
+     make it "reachable from every tab": that is the arrangement this replaced.
 
-     The Chat tab keeps the old shape and is the deliberate exception - its
-     transcript scrolls internally with the composer pinned under it, which a
-     document scroll cannot do. */
-  .appt-detail-pane.is-flow-scroll { overflow-y: auto; }
-
-  /* Spelled out with the IDs, not `.appt-tab-pane.is-active`: the rule this
-     has to beat is `#tab-quotes.is-active { overflow-y: auto }`, and an id
-     outranks any number of classes - a class-only override loses, the pane goes
-     on scrolling itself, and the banner stays pinned exactly as before. */
-  .appt-detail-pane.is-flow-scroll #tab-details.is-active,
-  .appt-detail-pane.is-flow-scroll #tab-quotes.is-active,
-  .appt-detail-pane.is-flow-scroll #tab-wa-followups.is-active,
-  .appt-detail-pane.is-flow-scroll #tab-email-followups.is-active {
-    overflow: visible;
-    flex: 0 0 auto;
-  }
-
-  .appt-detail-pane.is-flow-scroll .appt-tabbar {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    /* Opaque only now that things pass behind it: the default is translucent,
-       and the cards would scroll visibly through the tab labels. */
-    background: var(--color-surface-lowest, #f8f9ff);
-  }
+     The tab bar sits above the panes and so stays visible without needing to
+     be sticky. */
 
   /* ── Follow-up history ── */
   .fu-count { font-family: var(--font-label); font-size: 11px; font-weight: 600; color: var(--color-muted); text-transform: none; letter-spacing: 0; }
@@ -2116,12 +2092,7 @@
       {% endif %}
     </aside>
 
-    {% comment %}
-    is-flow-scroll: the pane scrolls as one document so the site-visit banner
-    is not pinned. Present from the start because a record opens on Details,
-    which is a document tab; the switcher drops it for Chat.
-    {% endcomment %}
-    <section class="appt-detail-pane is-flow-scroll">
+    <section class="appt-detail-pane">
       <div class="appt-detail-header">
         <div class="appt-detail-user">
           <a href="{{ source_back_url }}" class="mobile-back" aria-label="Back to {{ source_title|lower }}">
@@ -2186,100 +2157,6 @@
         </span>
         {% endif %}
       </div>
-
-      {% comment %}
-      ABOVE THE TABS on purpose. This banner carries every action a lead
-      needs next (log the visit, quote on the phone, message them, tell the
-      plumber a visit is booked) and it used to sit INSIDE the Details
-      pane. Anybody reading the conversation on the Chat tab could see none
-      of it, which is how a booking sat with the plumber never told and no
-      obvious way to tell them (barmak 1144). A control that cannot be
-      found is the same as one that does not exist.
-      {% endcomment %}
-      {% comment %}
-      Site visit. Pinned above every other detail, because logging it is
-      what triggers the quote and the whole post-visit follow-up sequence.
-      This is the ONLY way to log a visit - it replaced the "Complete Site
-      Visit" button that used to be buried in the Scheduling card - so it is
-      always here, never conditional on the row looking tidy, and it opens
-      the same tokenized form the plumber gets by email 35 minutes after the
-      visit. Once logged it flips to the resolved state rather than
-      disappearing, so the banner is never a dead control and the plumber
-      can always see what the answer set running.
-      {% endcomment %}
-      {% if site_visit_banner.state == 'resolved' %}
-      {% with report=site_visit_banner.report %}
-      <div class="visit-prompt visit-prompt--done">
-        <div style="min-width:0;">
-          <span class="visit-prompt-kicker"><i class="fas fa-circle-check"></i> Site visit logged</span>
-          <p class="visit-prompt-q">{{ report.get_outcome_display }}</p>
-          <p class="visit-prompt-sub">
-            Logged {{ report.submitted_at|date:"j M, H:i" }}{% if report.submitted_by %} by {{ report.submitted_by.get_username }}{% endif %}.
-            {% if report.sequence == 'confirm' and report.expected_date %}
-              Customer expects the job on {{ report.expected_date|date:"l j F" }}; we confirm two days before.
-            {% elif report.sequence == 'asks' %}
-              Chasing a firmer date by email{% if report.ask_count %} - {{ report.ask_count }} of 3 sent{% endif %}.
-            {% elif report.sequence == 'cold' %}
-              No reply after three follow-ups; this one is yours to close.
-            {% elif report.sequence == 'stopped' %}
-              No quote and no follow-ups will go out.
-            {% else %}
-              Nothing further scheduled.
-            {% endif %}
-          </p>
-        </div>
-        {% if report.outcome == 'went_ahead' %}
-        <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
-          <i class="fas fa-file-invoice-dollar"></i> Create quote
-        </a>
-        {% endif %}
-      </div>
-      {% endwith %}
-      {% else %}
-      <div class="visit-prompt">
-        <div style="min-width:0;">
-          <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
-          <p class="visit-prompt-q">Is the site visit complete?</p>
-          <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
-        </div>
-        <div class="visit-prompt-actions">
-          <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
-            <i class="fas fa-pen-to-square"></i> Log the visit
-          </a>
-          <a href="{% url 'phone_quote_start' appointment.pk %}"
-             class="visit-prompt-btn visit-prompt-btn--ghost">
-            <i class="fas fa-phone"></i> Quote on the phone
-          </a>
-          <a href="{% url 'lead_whatsapp_handoff' appointment.pk %}"
-             class="visit-prompt-btn visit-prompt-btn--ghost">
-            <i class="fab fa-whatsapp"></i> Message them
-          </a>
-          {% comment %}
-          Telling the plumber a visit is booked belongs HERE, in the banner
-          that is on screen whichever tab you are reading. It first went in
-          at the bottom of the Edit Details form, which is a different tab
-          from the conversation you are looking at when you notice the
-          plumber was never told, so in practice it could not be found.
-
-          Its own form: the surrounding markup here is not one, and the
-          Edit Details form would post every field on the page with it.
-          {% endcomment %}
-          {% if appointment.scheduled_datetime and is_platform_owner %}
-          <form method="post"
-                action="{% url 'notify_plumber_of_booking' appointment.pk %}?{{ request.GET.urlencode }}"
-                style="display:inline;">
-            {% csrf_token %}
-            <button type="submit"
-                    class="visit-prompt-btn{% if appointment.plumber_contacted_at %} visit-prompt-btn--ghost{% endif %}"
-                    title="{% if appointment.plumber_contacted_at %}Sent {{ appointment.plumber_contacted_at|date:'j M, H:i' }}. Sends again.{% else %}The plumber has not been told about this booking.{% endif %}">
-              <i class="fas fa-envelope"></i>
-              {% if appointment.plumber_contacted_at %}Resend to plumber{% else %}Email the plumber{% endif %}
-            </button>
-          </form>
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
 
       <div class="appt-tabbar">
         {# Details is the default pane — a plumber opens the record to see the job, not the transcript. Deep links (?tab=) still override. #}
@@ -2392,6 +2269,101 @@
 
       <div class="appt-tab-pane is-active" id="tab-details">
         <div class="appt-detail-content">
+          {% comment %}
+          INSIDE the Details tab, at its top, and scrolling with it (owner rule,
+          2026-09-14). It spent a while above the tab bar so it would be on
+          screen whichever tab you were reading, but that put a banner about the
+          site visit over the Quotes, WhatsApp and Email tabs, which it has
+          nothing to do with, and being outside the scrolling box it never moved
+          off them. The job it belongs to is the job this tab describes, and
+          Details is the tab a record opens on, so it is still the first thing
+          seen. Nothing pins it: it is the first child of the pane that scrolls,
+          so it travels with the content like anything else on a page.
+
+          First among the details because logging the visit triggers the quote
+          and the whole post-visit follow-up sequence. This is the ONLY way to
+          log a visit - it replaced the "Complete Site Visit" button that used to
+          be buried in the Scheduling card - so it is always here, never
+          conditional on the row looking tidy, and it opens the same tokenized
+          form the plumber gets by email 35 minutes after the visit. Once logged
+          it flips to the resolved state rather than disappearing, so the banner
+          is never a dead control and the plumber can always see what the answer
+          set running.
+          {% endcomment %}
+          {% if site_visit_banner.state == 'resolved' %}
+          {% with report=site_visit_banner.report %}
+          <div class="visit-prompt visit-prompt--done">
+            <div style="min-width:0;">
+              <span class="visit-prompt-kicker"><i class="fas fa-circle-check"></i> Site visit logged</span>
+              <p class="visit-prompt-q">{{ report.get_outcome_display }}</p>
+              <p class="visit-prompt-sub">
+                Logged {{ report.submitted_at|date:"j M, H:i" }}{% if report.submitted_by %} by {{ report.submitted_by.get_username }}{% endif %}.
+                {% if report.sequence == 'confirm' and report.expected_date %}
+                  Customer expects the job on {{ report.expected_date|date:"l j F" }}; we confirm two days before.
+                {% elif report.sequence == 'asks' %}
+                  Chasing a firmer date by email{% if report.ask_count %} - {{ report.ask_count }} of 3 sent{% endif %}.
+                {% elif report.sequence == 'cold' %}
+                  No reply after three follow-ups; this one is yours to close.
+                {% elif report.sequence == 'stopped' %}
+                  No quote and no follow-ups will go out.
+                {% else %}
+                  Nothing further scheduled.
+                {% endif %}
+              </p>
+            </div>
+            {% if report.outcome == 'went_ahead' %}
+            <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
+              <i class="fas fa-file-invoice-dollar"></i> Create quote
+            </a>
+            {% endif %}
+          </div>
+          {% endwith %}
+          {% else %}
+          <div class="visit-prompt">
+            <div style="min-width:0;">
+              <span class="visit-prompt-kicker"><i class="fas fa-clipboard-check"></i> Action needed</span>
+              <p class="visit-prompt-q">Is the site visit complete?</p>
+              <p class="visit-prompt-sub">Log how it went and we will handle the quote and the follow-ups.</p>
+            </div>
+            <div class="visit-prompt-actions">
+              <a href="{% url 'site_visit_start' appointment.pk %}" class="visit-prompt-btn">
+                <i class="fas fa-pen-to-square"></i> Log the visit
+              </a>
+              <a href="{% url 'phone_quote_start' appointment.pk %}"
+                 class="visit-prompt-btn visit-prompt-btn--ghost">
+                <i class="fas fa-phone"></i> Quote on the phone
+              </a>
+              <a href="{% url 'lead_whatsapp_handoff' appointment.pk %}"
+                 class="visit-prompt-btn visit-prompt-btn--ghost">
+                <i class="fab fa-whatsapp"></i> Message them
+              </a>
+          {% comment %}
+              Telling the plumber a visit is booked belongs HERE, in the banner
+              that is on screen whichever tab you are reading. It first went in
+              at the bottom of the Edit Details form, which is a different tab
+              from the conversation you are looking at when you notice the
+              plumber was never told, so in practice it could not be found.
+
+              Its own form: the surrounding markup here is not one, and the
+              Edit Details form would post every field on the page with it.
+          {% endcomment %}
+              {% if appointment.scheduled_datetime and is_platform_owner %}
+              <form method="post"
+                    action="{% url 'notify_plumber_of_booking' appointment.pk %}?{{ request.GET.urlencode }}"
+                    style="display:inline;">
+                {% csrf_token %}
+                <button type="submit"
+                        class="visit-prompt-btn{% if appointment.plumber_contacted_at %} visit-prompt-btn--ghost{% endif %}"
+                        title="{% if appointment.plumber_contacted_at %}Sent {{ appointment.plumber_contacted_at|date:'j M, H:i' }}. Sends again.{% else %}The plumber has not been told about this booking.{% endif %}">
+                  <i class="fas fa-envelope"></i>
+                  {% if appointment.plumber_contacted_at %}Resend to plumber{% else %}Email the plumber{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
 
 
           {# ── Job at a glance: when / where / what / who, readable in five seconds ── #}
@@ -2664,9 +2636,9 @@
                     {% if not appointment.site_visit_completed %}
                     {% comment %}
                     No "Complete Site Visit" button here any more. Logging the
-                    visit is the pinned banner at the TOP of this pane, which is
-                    the same tokenized form the plumber gets by email, so there
-                    is exactly one way to do it and one place it can be done.
+                    visit is the banner at the TOP of this tab, which opens the
+                    same tokenized form the plumber gets by email, so there is
+                    exactly one way to do it and one place it can be done.
                     This card only reports where the job stands.
                     {% endcomment %}
                     <div class="empty-block" style="padding:0; text-align:left;">
@@ -3368,17 +3340,9 @@
     document.querySelectorAll('.appt-tab-pane').forEach(function (pane) {
       pane.classList.toggle('is-active', pane.id === 'tab-' + tabName);
     });
-    // Every tab but Chat scrolls as one document, so the banner above the tabs
-    // travels with the content instead of sitting over it. Chat keeps its own
-    // shape: the transcript scrolls internally under a pinned composer.
-    var detailPane = document.querySelector('.appt-detail-pane');
-    if (detailPane) {
-      detailPane.classList.toggle('is-flow-scroll', tabName !== 'chat');
-      // A new tab starts at ITS top. Without this the pane keeps the scroll
-      // position of the tab before it, so a short pane can open part-scrolled
-      // with the banner already gone.
-      detailPane.scrollTop = 0;
-    }
+    // Each pane scrolls its own content, so there is no pane-level scroller to
+    // reset and no class to swap: a tab keeps its own position, and the
+    // site-visit banner scrolls with the Details pane it now belongs to.
     if (tabName === 'chat') {
       scrollChatBottom();
     }

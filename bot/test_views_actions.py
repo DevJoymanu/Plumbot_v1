@@ -5451,20 +5451,20 @@ class PostVisitFormTests(StaffClientTestCase):
         self.assertIn('Second bathroom, geyser move', body)
 
 
-class VisitBannerIsNotPinnedTests(StaffClientTestCase):
-    """The site-visit banner scrolls with the page; it is not a pinned bar.
+class VisitBannerLivesInTheDetailsTabTests(StaffClientTestCase):
+    """The site-visit banner belongs to the Details tab and scrolls with it.
 
-    It sits above the tabs so it is reachable whichever one you are reading -
-    buried inside the Details pane, anybody on the Chat tab could see none of it
-    (barmak 1144). But "above the tabs" also put it OUTSIDE the only scrolling
-    box on the screen, so it never moved: on a phone it held the top of the
-    Quotes tab permanently, over a list of quotes it has nothing to do with
-    (owner rule, 2026-09-09).
+    It spent a while ABOVE the tab bar, so it would be on screen whichever tab
+    you were reading - the fix for it having been buried where anyone on Chat
+    could miss it (barmak 1144). But above the tab bar is outside the only
+    scrolling box on the screen, so it never moved, and a banner about the site
+    visit sat permanently over the Quotes, WhatsApp and Email tabs, which it has
+    nothing to do with.
 
-    The fix is where the SCROLL is, not where the banner is: the document-style
-    tabs scroll the whole pane, so the banner travels with the content. The Chat
-    tab keeps its own shape - its transcript scrolls internally under a pinned
-    composer, which a document scroll cannot do.
+    So it is back inside Details, at the top, as the first child of the pane
+    that scrolls (owner rule, 2026-09-14). Details is the tab a record opens on,
+    so it is still the first thing seen; and nothing pins it, so it scrolls away
+    like anything else on a page.
     """
 
     def setUp(self):
@@ -5478,6 +5478,20 @@ class VisitBannerIsNotPinnedTests(StaffClientTestCase):
         self.assertEqual(response.status_code, 200)
         return response.content.decode()
 
+    def test_the_banner_sits_inside_the_details_pane(self):
+        """Between the Details pane opening and the next pane after it - not
+        before the tab bar, which is what put it over every other tab."""
+        body = self._body()
+        banner = body.index('Is the site visit complete?')
+        self.assertLess(body.index('id="tab-details"'), banner,
+                        'the banner is still outside the Details pane')
+        self.assertLess(banner, body.index('id="tab-quotes"'),
+                        'the banner has escaped past the end of Details')
+
+    def test_the_banner_is_rendered_once(self):
+        """Moving it must not leave a copy above the tabs."""
+        self.assertEqual(self._body().count('Is the site visit complete?'), 1)
+
     def test_the_banner_is_never_pinned_to_the_viewport(self):
         body = self._body()
         self.assertIn('Is the site visit complete?', body, 'the banner is gone')
@@ -5487,38 +5501,19 @@ class VisitBannerIsNotPinnedTests(StaffClientTestCase):
             self.assertNotIn('position:sticky', rule)
             self.assertNotIn('position:fixed', rule)
 
-    def test_the_pane_scrolls_as_one_document_so_the_banner_travels(self):
-        """The banner is outside every tab pane, so the ONLY way it can move is
-        for the pane itself to be the scroller."""
+    def test_each_pane_scrolls_its_own_content(self):
+        """The banner moves because the pane holding it is the scroller. A
+        pane-level scroller over the tabs is the arrangement this replaced, so
+        the class that did it must be gone rather than merely unused."""
         body = self._body()
-        self.assertIn('appt-detail-pane is-flow-scroll', body,
-                      'a record opens on Details, which is a document tab')
-        self.assertIn('.appt-detail-pane.is-flow-scroll { overflow-y: auto; }', body)
-        # The pane's own tab must stop being the scroller, or the banner stays
-        # put above it exactly as before. Asserted with the ID in the selector:
-        # the rule being beaten is `#tab-quotes.is-active { overflow-y: auto }`,
-        # and an id outranks any number of classes, so a class-only override
-        # would parse fine, read correctly, and do nothing at all.
+        self.assertNotIn('is-flow-scroll', body)
         self.assertRegex(
-            body,
-            r'\.appt-detail-pane\.is-flow-scroll #tab-quotes\.is-active[^{]*\{'
-            r'\s*overflow: visible;')
+            body, r'#tab-details\.is-active,[^{]*\{\s*overflow-y: auto;')
 
-    def test_the_tab_bar_is_what_stays_behind(self):
-        """Losing the way back to the chat to a flick would be worse than the
-        banner ever was."""
+    def test_the_switcher_no_longer_moves_a_pane_level_scroller(self):
         body = self._body()
-        self.assertRegex(
-            body,
-            r'\.appt-detail-pane\.is-flow-scroll \.appt-tabbar \{'
-            r'\s*position: sticky;')
-
-    def test_the_chat_tab_is_the_one_exception_and_the_switcher_knows(self):
-        body = self._body()
-        self.assertIn("classList.toggle('is-flow-scroll', tabName !== 'chat')", body)
-        # A new tab starts at its own top, or a short pane opens part-scrolled
-        # with the banner already gone.
-        self.assertIn('detailPane.scrollTop = 0;', body)
+        self.assertNotIn("classList.toggle('is-flow-scroll'", body)
+        self.assertNotIn('detailPane.scrollTop = 0;', body)
 
 
 class PostVisitSchedulerTests(TestCase):
