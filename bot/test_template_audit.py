@@ -482,3 +482,73 @@ class WideTableTests(TestCase):
         self.assertEqual(offenders, [], (
             'Wrap these in <div class="pb-table-scroll"> or give the table a '
             'fixed layout:\n  ' + '\n  '.join(offenders)))
+
+
+class ChatComposerTests(TestCase):
+    """The Chat tab must show the conversation, not just the controls.
+
+    Stacked on a phone the composer runs to about 500px - five action pills,
+    then a PDF form that becomes three full-width rows, then the message box.
+    The transcript above is the flex child that gives way, so it collapsed to a
+    sliver: the tab showed a screenful of buttons and no conversation (owner
+    report, 2026-09-14, on a phone at 100% zoom).
+
+    The extras fold behind one tap on mobile. The message box and Send are
+    never inside the fold, and desktop never collapses at all.
+    """
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='chat-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=self.user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
+        self.client.force_login(self.user)
+        self.lead = Appointment.objects.create(
+            phone_number='whatsapp:+15550007777', customer_name='Chat Lead')
+
+    def _body(self):
+        response = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_the_bulky_controls_are_behind_the_fold(self):
+        body = self._body()
+        extras = body.index('id="composeExtras"')
+        self.assertLess(extras, body.index('class="appt-quick-actions"'),
+                        'the action pills are not inside the fold')
+        self.assertLess(extras, body.index('id="sendPdfChatForm"'),
+                        'the PDF form is not inside the fold')
+
+    def test_the_message_box_is_never_folded_away(self):
+        """Typing a reply is the one thing this tab exists for."""
+        body = self._body()
+        self.assertLess(body.index('id="sendPdfChatForm"'),
+                        body.index('id="followup_message"'),
+                        'the message box is inside the collapsible section')
+
+    def test_the_toggle_is_mobile_only(self):
+        """Desktop has the room, so it shows everything and never renders a
+        control that would do nothing."""
+        body = self._body()
+        self.assertIn('id="composeMore"', body)
+        self.assertRegex(body, r'\.appt-compose-toggle \{ display: none; \}')
+        self.assertRegex(body, r'\.appt-compose-toggle \{\s*display: inline-flex;')
+
+    def test_the_composer_can_never_take_the_whole_pane(self):
+        """A backstop under the fold: whatever the extras grow into, they
+        scroll inside themselves rather than pushing the transcript out."""
+        body = self._body()
+        self.assertRegex(
+            body,
+            r'\.appt-chat-compose \{\s*max-height: 55%;\s*overflow-y: auto;')
+
+    def test_the_transcript_can_still_shrink_and_scroll(self):
+        """Both min-height:0 declarations are load-bearing - without them the
+        flex children refuse to shrink and the pane overflows instead."""
+        body = self._body()
+        pane = body.split('.appt-chat-pane {')[1].split('}')[0]
+        scroll = body.split('.appt-chat-scroll {')[1].split('}')[0]
+        self.assertIn('min-height: 0', pane)
+        self.assertIn('min-height: 0', scroll)
+        self.assertIn('overflow-y: auto', scroll)

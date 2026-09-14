@@ -1172,6 +1172,9 @@
     border-top: 1px solid rgba(0, 101, 145, 0.06);
   }
 
+  /* Desktop never collapses the extras, so the toggle does not exist there. */
+  .appt-compose-toggle { display: none; }
+
   .appt-quick-actions {
     display: flex;
     flex-wrap: wrap;
@@ -2027,6 +2030,42 @@
     .chat-bubble {
       max-width: 88%;
     }
+
+    /* ── The transcript is what this tab is for ─────────────────────────────
+       Stacked, the extras run to about 500px. The transcript is the flex child
+       that gives way, so it collapsed to a sliver and the tab showed controls
+       and no conversation. They fold behind one tap here; the message box and
+       Send never move. */
+    .appt-compose-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      justify-content: center;
+      margin-bottom: 10px;
+      padding: 10px 14px;
+      min-height: 44px;
+      border: 1px solid rgba(0, 101, 145, 0.12);
+      border-radius: var(--radius-pill);
+      background: var(--color-surface-lowest);
+      color: var(--color-text-2);
+      font-family: var(--font-label);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .appt-compose-extras { display: none; }
+    .appt-chat-compose.is-expanded .appt-compose-extras { display: block; }
+
+    /* Backstop: whatever the extras grow into, they never take more than half
+       the pane, and they scroll inside themselves rather than pushing the
+       transcript out. */
+    .appt-chat-compose {
+      max-height: 55%;
+      overflow-y: auto;
+      padding: 10px 14px 14px;
+    }
   }
 </style>
 {% endblock %}
@@ -2217,40 +2256,54 @@
           </div>
 
           <div class="appt-chat-compose">
-            <div class="appt-quick-actions">
-              {% if appointment.chatbot_paused %}
-              <form method="post" action="{% url 'resume_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
+            {% comment %}
+            The extras collapse on a phone. Stacked, they are five action pills
+            plus a three-row PDF form - about 500px - and the transcript above
+            is the flex child that gives way, so the conversation collapsed to a
+            sliver while the controls took the screen. Desktop never sees the
+            toggle and never collapses; one tap on a phone, so nothing is lost.
+            {% endcomment %}
+            <button type="button" class="appt-compose-toggle" id="composeMore"
+                    aria-expanded="false" aria-controls="composeExtras">
+              <i class="fas fa-plus"></i> Actions and files
+            </button>
+
+            <div class="appt-compose-extras" id="composeExtras">
+              <div class="appt-quick-actions">
+                {% if appointment.chatbot_paused %}
+                <form method="post" action="{% url 'resume_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
+                  {% csrf_token %}
+                  <button type="submit"><i class="fas fa-play"></i> Resume chatbot</button>
+                </form>
+                {% else %}
+                <form method="post" action="{% url 'pause_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
+                  {% csrf_token %}
+                  <button type="submit"><i class="fas fa-pause"></i> Pause chatbot</button>
+                </form>
+                {% endif %}
+                <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
+                <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
+                <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
+                <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
+                  {% csrf_token %}
+                  <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
+                </form>
+              </div>
+
+              <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}?{{ request.GET.urlencode }}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
                 {% csrf_token %}
-                <button type="submit"><i class="fas fa-play"></i> Resume chatbot</button>
-              </form>
-              {% else %}
-              <form method="post" action="{% url 'pause_chatbot' appointment.pk %}?{{ request.GET.urlencode }}">
-                {% csrf_token %}
-                <button type="submit"><i class="fas fa-pause"></i> Pause chatbot</button>
-              </form>
-              {% endif %}
-              <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
-              <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
-              <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
-              <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
-                {% csrf_token %}
-                <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
+                <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
+                <label class="appt-pdf-picker" for="pdf_document_chat">
+                  <i class="fas fa-file-pdf"></i>
+                  <span class="js-pdf-name">Choose PDF</span>
+                </label>
+                <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
+                <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
+                  <i class="fab fa-whatsapp"></i>
+                  <span>Send PDF</span>
+                </button>
               </form>
             </div>
-
-            <form method="post" action="{% url 'send_pdf_to_lead' appointment.pk %}?{{ request.GET.urlencode }}" enctype="multipart/form-data" class="appt-pdf-form" id="sendPdfChatForm">
-              {% csrf_token %}
-              <input type="file" id="pdf_document_chat" class="appt-pdf-input js-pdf-input" name="document" accept="application/pdf,.pdf" onchange="updatePdfSendState(this.form)" required>
-              <label class="appt-pdf-picker" for="pdf_document_chat">
-                <i class="fas fa-file-pdf"></i>
-                <span class="js-pdf-name">Choose PDF</span>
-              </label>
-              <input type="text" class="appt-pdf-caption" name="caption" placeholder="Caption" maxlength="1024">
-              <button type="submit" class="appt-pdf-send-btn js-pdf-send" aria-label="Send PDF" disabled>
-                <i class="fab fa-whatsapp"></i>
-                <span>Send PDF</span>
-              </button>
-            </form>
 
             <form method="post" action="{% url 'send_followup' appointment.pk %}" id="followupForm">
               {% csrf_token %}
@@ -3353,6 +3406,19 @@
       showAppointmentTab(btn.getAttribute('data-tab'));
     });
   });
+
+  // Composer extras, mobile only. The button does not exist on desktop, where
+  // the extras are always shown, so there is nothing to wire up there.
+  (function () {
+    var toggle = document.getElementById('composeMore');
+    var compose = toggle && toggle.closest('.appt-chat-compose');
+    if (!toggle || !compose) return;
+    toggle.addEventListener('click', function () {
+      var open = compose.classList.toggle('is-expanded');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.querySelector('i').className = open ? 'fas fa-minus' : 'fas fa-plus';
+    });
+  })();
 
   // Embed/deep-link support: ?tab=<name> opens that pane on load; ?hidetabs=1
   // hides the internal tab bar (used when the Conversations workspace drives the
