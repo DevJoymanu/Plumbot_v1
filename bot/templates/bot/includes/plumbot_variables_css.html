@@ -111,7 +111,12 @@ a { color: inherit; text-decoration: none; }
 /* ── Shell ── */
 .pb-shell {
     display: flex;
+    /* 100vh on a phone is the viewport with the URL bar HIDDEN, so while it is
+       showing the shell is taller than the screen - and the shell does not
+       scroll, so that surplus is simply unreachable. dvh tracks the bar as it
+       comes and goes; the vh line above it is the fallback. */
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -129,6 +134,7 @@ a { color: inherit; text-decoration: none; }
     position: sticky;
     top: 0;
     height: 100vh;
+    height: 100dvh;
     box-shadow: 40px 0 40px -15px rgba(14, 165, 233, 0.08);
     z-index: 50;
 }
@@ -355,7 +361,11 @@ a { color: inherit; text-decoration: none; }
     position: fixed;
     inset: auto 0 0 0;
     z-index: 100;
-    height: var(--bottom-nav-h);
+    /* The bar sits over the home indicator on a gesture-nav phone, so its
+       bottom row of taps lands in the system's swipe area. Pad past it and
+       grow the bar by the same amount. */
+    height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--glass-bg);
     border-top: var(--glass-border);
     backdrop-filter: blur(var(--glass-blur)) saturate(160%);
@@ -475,6 +485,14 @@ body.pb-sheet-lock { overflow: hidden; }
     cursor: pointer;
 }
 
+/* A wide table scrolls inside its OWN box, never the page's. No min-width is
+   forced, so a table that already fits is left alone and only the ones that
+   genuinely overflow become scrollable. */
+.pb-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .pb-sheet__label {
     font-family: var(--font-label);
     font-size: 10px;
@@ -483,6 +501,33 @@ body.pb-sheet-lock { overflow: hidden; }
     text-transform: uppercase;
     color: var(--color-muted);
     padding: 10px 12px 4px;
+}
+
+/* Workspace switcher in the mobile sheet. The sidebar's copy styles its
+   select inline at 0.8rem; here it is a class so the 16px minimum below can
+   reach it - an inline font-size would outrank the stylesheet and iOS would
+   zoom the page the moment the operator opened the list. */
+.pb-sheet__switch {
+    padding: 4px 14px 10px;
+}
+
+.pb-sheet__switch label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--color-muted);
+    margin-bottom: 6px;
+}
+
+.pb-sheet__switch select {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(0, 101, 145, 0.18);
+    background: var(--color-surface);
+    color: var(--color-text);
 }
 
 .pb-sheet__item {
@@ -1125,7 +1170,16 @@ body.pb-sheet-lock { overflow: hidden; }
     .pb-sidenav { display: none; }
     .pb-bottomnav { display: block; }
 
-    .pb-content { padding-bottom: var(--bottom-nav-h); }
+    /* iOS zooms the whole page in when a focused field is under 16px, and it
+       does not zoom back out - the operator is left pinching to find the rest
+       of the form. This was JS: one pass over the inputs at DOMContentLoaded,
+       stamping an inline font-size. It could not reach a field added later, so
+       every quote item row the plumber added zoomed the page the moment they
+       typed in it. As a rule it covers whatever is on the page now. */
+    input, select, textarea { font-size: 16px; }
+
+
+    .pb-content { padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)); }
 
     .pb-page,
     .pb-content .container,

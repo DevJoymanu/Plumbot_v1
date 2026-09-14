@@ -26,7 +26,7 @@
         Every destination behind More lights it up - `gallery` and the whole
         quotes group were missing, so those pages showed nothing selected.
         {% endcomment %}
-        <button type="button" class="pb-bottomnav__item pb-bottomnav__more {% if active_nav == 'jobs' or active_nav == 'gallery' or nav_group_quotes or active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}"
+        <button type="button" class="pb-bottomnav__item pb-bottomnav__more {% if active_nav == 'jobs' or active_nav == 'gallery' or nav_group_quotes or active_nav == 'platform' or active_nav == 'settings' or active_nav == 'profile' %}active{% endif %}"
                 aria-haspopup="true" aria-expanded="false" aria-controls="pbMobileSheet" data-sheet-toggle>
             <i class="fas fa-ellipsis-h nav-icon"></i>
             More
@@ -64,6 +64,31 @@
         <a href="{% url 'offer' %}" class="pb-sheet__item {% if active_nav == 'offer' %}active{% endif %}">
             <i class="fas fa-bullhorn"></i> My Offer
         </a>
+        {% comment %}
+        Platform and the workspace switcher were desktop-only, so an operator on
+        a phone was stuck in whatever tenant they last picked at a desk and had
+        no way into the console. Same two gates as the sidebar.
+        {% endcomment %}
+        {% if user.is_superuser %}
+        <div class="pb-sheet__label">Platform</div>
+        <a href="{% url 'platform_console' %}" class="pb-sheet__item {% if active_nav == 'platform' %}active{% endif %}">
+            <i class="fas fa-building"></i> Platform Console
+        </a>
+        {% if platform_tenants|length > 1 %}
+        <form method="post" action="{% url 'switch_tenant' %}" class="pb-sheet__switch">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.path }}">
+            <label for="pb-sheet-tenant"><i class="fas fa-right-left"></i> Workspace</label>
+            {# 16px minimum, or focusing it zooms the page on iOS. #}
+            <select id="pb-sheet-tenant" name="tenant" onchange="this.form.submit()">
+                {% for t in platform_tenants %}
+                <option value="{{ t.slug }}" {% if request.tenant and t.pk == request.tenant.pk %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        {% endif %}
+        {% endif %}
+
         <div class="pb-sheet__label">Account</div>
         {% if user.is_superuser %}
         <a href="{% url 'settings' %}" class="pb-sheet__item {% if active_nav == 'settings' %}active{% endif %}">

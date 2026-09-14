@@ -400,40 +400,42 @@
       <section class="cfg-glass cfg-card">
         <div class="cfg-card__head"><span class="cfg-label">Staff &amp; logins</span></div>
         {% if staff %}
-        <table class="cfg-mini">
-          <thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {% for m in staff %}
-            <tr>
-              <td>
-                <strong>{{ m.user.username }}</strong>
-                {% if m.user.email %}<br><small style="color:var(--color-muted);">{{ m.user.email }}</small>{% endif %}
-                <br><small style="color:var(--color-muted);">Last in: {{ m.user.last_login|date:"j M Y H:i"|default:"never" }}</small>
-              </td>
-              <td>{{ m.get_role_display }}</td>
-              <td>
-                {% if m.user.is_active %}<span class="cfg-pill cfg-pill--ok">Active</span>
-                {% else %}<span class="cfg-pill cfg-pill--off">Off</span>{% endif %}
-              </td>
-              <td>
-                <div class="cfg-actions-cell">
-                  <form method="post" action="{% url 'platform_toggle_staff' tenant.slug m.user_id %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-secondary cfg-btn-sm">
-                      {% if m.user.is_active %}Deactivate{% else %}Reactivate{% endif %}
-                    </button>
-                  </form>
-                  <form method="post" action="{% url 'platform_reset_staff_password' tenant.slug m.user_id %}" class="cfg-share">
-                    {% csrf_token %}
-                    <input type="password" name="password" class="cfg-input" placeholder="new password" required minlength="8" style="flex:0 0 120px;">
-                    <button type="submit" class="btn btn-secondary cfg-btn-sm">Reset</button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        <div class="pb-table-scroll">
+            <table class="cfg-mini">
+              <thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                {% for m in staff %}
+                <tr>
+                  <td>
+                    <strong>{{ m.user.username }}</strong>
+                    {% if m.user.email %}<br><small style="color:var(--color-muted);">{{ m.user.email }}</small>{% endif %}
+                    <br><small style="color:var(--color-muted);">Last in: {{ m.user.last_login|date:"j M Y H:i"|default:"never" }}</small>
+                  </td>
+                  <td>{{ m.get_role_display }}</td>
+                  <td>
+                    {% if m.user.is_active %}<span class="cfg-pill cfg-pill--ok">Active</span>
+                    {% else %}<span class="cfg-pill cfg-pill--off">Off</span>{% endif %}
+                  </td>
+                  <td>
+                    <div class="cfg-actions-cell">
+                      <form method="post" action="{% url 'platform_toggle_staff' tenant.slug m.user_id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-secondary cfg-btn-sm">
+                          {% if m.user.is_active %}Deactivate{% else %}Reactivate{% endif %}
+                        </button>
+                      </form>
+                      <form method="post" action="{% url 'platform_reset_staff_password' tenant.slug m.user_id %}" class="cfg-share">
+                        {% csrf_token %}
+                        <input type="password" name="password" class="cfg-input" placeholder="new password" required minlength="8" style="flex:0 0 120px;">
+                        <button type="submit" class="btn btn-secondary cfg-btn-sm">Reset</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        </div>
         {% else %}
         <div class="cfg-empty">
           <i class="fas fa-user-lock"></i>
@@ -459,28 +461,30 @@
           </form>
         </div>
         {% if intakes %}
-        <table class="cfg-mini">
-          <thead><tr><th>Created</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {% for intake in intakes %}
-            <tr>
-              <td>{{ intake.created_at|date:"j M Y H:i" }}</td>
-              <td>{{ intake.get_status_display }}</td>
-              <td>
-                {% if intake.status == 'pending' %}
-                <span class="share-group cfg-share" data-token="{{ intake.token }}">
-                  <button type="button" class="btn btn-secondary cfg-btn-sm" onclick="copyIntake(this)"><i class="fas fa-copy"></i> Copy</button>
-                  <a class="btn btn-secondary cfg-btn-sm share-wa" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i></a>
-                  <a class="btn btn-secondary cfg-btn-sm share-email" href="#"><i class="fas fa-envelope"></i></a>
-                </span>
-                {% else %}
-                <a class="cfg-edit" href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        <div class="pb-table-scroll">
+            <table class="cfg-mini">
+              <thead><tr><th>Created</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>
+                {% for intake in intakes %}
+                <tr>
+                  <td>{{ intake.created_at|date:"j M Y H:i" }}</td>
+                  <td>{{ intake.get_status_display }}</td>
+                  <td>
+                    {% if intake.status == 'pending' %}
+                    <span class="share-group cfg-share" data-token="{{ intake.token }}">
+                      <button type="button" class="btn btn-secondary cfg-btn-sm" onclick="copyIntake(this)"><i class="fas fa-copy"></i> Copy</button>
+                      <a class="btn btn-secondary cfg-btn-sm share-wa" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i></a>
+                      <a class="btn btn-secondary cfg-btn-sm share-email" href="#"><i class="fas fa-envelope"></i></a>
+                    </span>
+                    {% else %}
+                    <a class="cfg-edit" href="{% url 'platform_review_intake' intake.pk %}">Open review</a>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        </div>
         {% else %}
         <p class="cfg-note">No intake links yet. Generate one to let the owner fill their own details (draft → review → approve).</p>
         {% endif %}

@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# No maximum-scale: capping pinch zoom is the browser's call, not ours. #}
     <title>{% block title %}Plumbot{% endblock %}</title>
     {% include "bot/includes/head_assets.html" %}
     <style>

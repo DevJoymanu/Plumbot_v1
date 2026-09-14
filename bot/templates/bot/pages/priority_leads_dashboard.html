@@ -1038,14 +1038,9 @@
             el.style.webkitOverflowScrolling = 'touch';
         });
 
-        // Prevent zoom on form inputs
-        document.querySelectorAll('select, textarea').forEach(input => {
-            input.addEventListener('touchstart', function (e) {
-                if (window.innerWidth <= 768) {
-                    this.style.fontSize = '16px';
-                }
-            });
-        });
+        // (The 16px minimum that stops iOS zooming a focused field is a CSS
+        // rule in the mobile layer now. It fired on touchstart here, which is
+        // before focus and so a race, and it missed <input> entirely.)
     });
 
     // Keyboard navigation for chips

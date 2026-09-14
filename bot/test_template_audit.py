@@ -315,3 +315,170 @@ class AccessDeniedHandlerTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn('do not have permission', response.content.decode())
+
+
+class MobileParityTests(TestCase):
+    """Anything reachable on the desktop must be reachable on a phone.
+
+    The sidebar is hidden outright below 768px, so every destination in it has
+    to have a counterpart in the bottom bar or its More sheet. Two did not:
+    the platform console and the workspace switcher were desktop-only, which
+    left an operator on a phone locked into whichever tenant they last picked
+    at a desk, with no way into the console at all.
+    """
+
+    NAV = 'bot/templates/bot/includes/main_nav.html'
+    MOBILE = 'bot/templates/bot/includes/mobile_nav.html'
+
+    @staticmethod
+    def _route_names(path):
+        src = (pathlib.Path(settings.BASE_DIR) / path).read_text(encoding='utf-8')
+        return set(re.findall(r"{%\s*url\s+'([a-z_]+)'", src))
+
+    def test_the_sidebar_is_hidden_on_a_phone(self):
+        """The premise of the test below: if this stops being true, parity is
+        no longer the mobile nav's job alone."""
+        css = (pathlib.Path(settings.BASE_DIR)
+               / 'bot/templates/bot/includes/plumbot_variables_css.html'
+               ).read_text(encoding='utf-8')
+        self.assertRegex(css, r'\.pb-sidenav\s*\{\s*display:\s*none')
+
+    def test_every_desktop_destination_is_reachable_on_mobile(self):
+        missing = self._route_names(self.NAV) - self._route_names(self.MOBILE)
+        self.assertEqual(missing, set(), (
+            'These are in the sidebar but nowhere in the bottom bar or its '
+            'More sheet, so a phone cannot reach them: %s' % sorted(missing)))
+
+    def test_the_switcher_really_renders_for_an_operator(self):
+        """The static check above only proves the tag is written. Both navs
+        gate on `platform_tenants`, so a context that never supplies it would
+        satisfy that check while the control silently never appeared."""
+        Tenant.objects.get_or_create(slug='second-co',
+                                     defaults={'name': 'Second Co'})
+        root = get_user_model().objects.create_superuser(
+            username='op', password='pass12345', email='op@example.com')
+        self.client.force_login(root)
+
+        body = self.client.get(reverse('dashboard')).content.decode()
+
+        sheet = body.split('id="pbMobileSheet"', 1)[1]
+        self.assertIn(reverse('switch_tenant'), sheet,
+                      'the workspace switcher is missing from the mobile sheet')
+        self.assertIn(reverse('platform_console'), sheet,
+                      'the platform console is missing from the mobile sheet')
+
+    def test_a_plain_staff_phone_gets_neither(self):
+        """Same two gates as the sidebar - the sheet must not widen them."""
+        user = get_user_model().objects.create_user(
+            username='phone-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(
+            user=user, tenant=Tenant.objects.get(slug='homebase'), role='staff')
+        self.client.force_login(user)
+
+        body = self.client.get(reverse('dashboard')).content.decode()
+
+        sheet = body.split('id="pbMobileSheet"', 1)[1]
+        self.assertNotIn(reverse('switch_tenant'), sheet)
+        self.assertNotIn(reverse('platform_console'), sheet)
+
+
+class MobileZoomTests(TestCase):
+    """Zoom must not cost the operator anything - neither the ability to use
+    it, nor control of when it happens."""
+
+    @staticmethod
+    def _templates():
+        root = pathlib.Path(settings.BASE_DIR) / 'bot' / 'templates'
+        return root, sorted(root.rglob('*.html'))
+
+    def test_no_page_caps_pinch_zoom(self):
+        """maximum-scale and user-scalable=no take zoom away from someone who
+        may need it to read the screen at all. The three staff layouts capped
+        it at 5x; nothing needs to cap it."""
+        root, paths = self._templates()
+        offenders = []
+        for path in paths:
+            src = path.read_text(encoding='utf-8')
+            for lineno, line in enumerate(src.splitlines(), 1):
+                if 'name="viewport"' not in line and "name='viewport'" not in line:
+                    continue
+                if 'maximum-scale' in line or 'user-scalable' in line:
+                    offenders.append(f'{path.relative_to(root).as_posix()}:{lineno}')
+        self.assertEqual(offenders, [], (
+            'These viewport tags restrict zoom:\n  ' + '\n  '.join(offenders)))
+
+    def test_form_controls_are_sixteen_px_on_a_phone(self):
+        """Under 16px, iOS zooms the page in when a field takes focus and does
+        not zoom back out. As a CSS rule this covers fields added after load;
+        the JS pass it replaced ran once at DOMContentLoaded and so missed
+        every quote item row the plumber added."""
+        css = (pathlib.Path(settings.BASE_DIR)
+               / 'bot/templates/bot/includes/plumbot_variables_css.html'
+               ).read_text(encoding='utf-8')
+        block = css.split('@media (max-width: 767px) {')[-1]
+        self.assertIn('input, select, textarea { font-size: 16px; }', block)
+
+    def test_no_template_stamps_a_font_size_from_javascript(self):
+        """An inline style outranks the mobile layer, so a JS pass does not
+        reinforce that rule - it overrides it, and only for what existed when
+        it ran."""
+        root, paths = self._templates()
+        offenders = []
+        for path in paths:
+            src = path.read_text(encoding='utf-8')
+            for lineno, line in enumerate(src.splitlines(), 1):
+                if re.search(r'style\.fontSize\s*=', line):
+                    offenders.append(f'{path.relative_to(root).as_posix()}:{lineno}')
+        self.assertEqual(offenders, [], (
+            'Set the size in the mobile CSS layer instead:\n  '
+            + '\n  '.join(offenders)))
+
+    def test_the_shell_tracks_the_mobile_url_bar(self):
+        """100vh on a phone is the viewport with the URL bar hidden, and the
+        shell does not scroll, so while the bar shows that surplus is
+        unreachable."""
+        css = (pathlib.Path(settings.BASE_DIR)
+               / 'bot/templates/bot/includes/plumbot_variables_css.html'
+               ).read_text(encoding='utf-8')
+        shell = css.split('.pb-shell {')[1].split('}')[0]
+        self.assertIn('100dvh', shell)
+        self.assertIn('100vh', shell, 'keep the fallback for older browsers')
+
+    def test_the_bottom_bar_clears_the_home_indicator(self):
+        """Otherwise its lowest row of taps lands in the system swipe area."""
+        css = (pathlib.Path(settings.BASE_DIR)
+               / 'bot/templates/bot/includes/plumbot_variables_css.html'
+               ).read_text(encoding='utf-8')
+        bar = css.split('.pb-bottomnav {')[1].split('}')[0]
+        self.assertIn('safe-area-inset-bottom', bar)
+
+
+class WideTableTests(TestCase):
+    """A table wider than the screen must scroll inside its own box.
+
+    The page's own scroller is not an acceptable answer: on these screens it
+    drags the header and every other card sideways with it.
+    """
+
+    #: Layouts that constrain themselves and need no scroll box.
+    SELF_CONSTRAINED = ('pbq-table--stack', 'pbq-table--edit', 'bq-table', 'bq-totals')
+
+    def test_every_table_is_either_constrained_or_scrollable(self):
+        root = pathlib.Path(settings.BASE_DIR) / 'bot' / 'templates'
+        offenders = []
+        for path in sorted(root.rglob('*.html')):
+            src = path.read_text(encoding='utf-8')
+            for m in re.finditer(r'<table\b[^>]*>', src):
+                tag = m.group(0)
+                if any(c in tag for c in self.SELF_CONSTRAINED):
+                    continue
+                before = src[max(0, m.start() - 400):m.start()]
+                if ('pb-table-scroll' in before or 'table-responsive' in before
+                        or 'overflow-x' in before or 'overflow: auto' in before):
+                    continue
+                lineno = src[:m.start()].count('\n') + 1
+                offenders.append(f'{path.relative_to(root).as_posix()}:{lineno} '
+                                 f'{" ".join(tag.split())[:60]}')
+        self.assertEqual(offenders, [], (
+            'Wrap these in <div class="pb-table-scroll"> or give the table a '
+            'fixed layout:\n  ' + '\n  '.join(offenders)))

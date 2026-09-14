@@ -44,30 +44,32 @@
         <button class="tl-btn tl-danger" id="purge">Delete all test leads ({{ total }})</button>
     </div>
 
-    <table class="tl-table">
-        <thead>
-            <tr>
-                <th>Number</th><th>Status</th><th>Project</th>
-                <th>Description</th><th>Area</th><th>Turns</th><th>Updated</th><th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for r in rows %}
-            <tr>
-                <td><span class="tl-num">+{{ r.number }}</span></td>
-                <td><span class="tl-chip {{ r.status }}">{{ r.status }}</span></td>
-                <td>{{ r.project }}</td>
-                <td class="tl-desc" title="{{ r.description }}">{{ r.description }}</td>
-                <td>{{ r.area }}</td>
-                <td>{{ r.turns }}</td>
-                <td>{{ r.updated_at|date:"j M H:i" }}</td>
-                <td><a href="{% url 'appointment_detail' r.id %}">open</a></td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="8" class="tl-empty">No test leads right now.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="pb-table-scroll">
+        <table class="tl-table">
+            <thead>
+                <tr>
+                    <th>Number</th><th>Status</th><th>Project</th>
+                    <th>Description</th><th>Area</th><th>Turns</th><th>Updated</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td><span class="tl-num">+{{ r.number }}</span></td>
+                    <td><span class="tl-chip {{ r.status }}">{{ r.status }}</span></td>
+                    <td>{{ r.project }}</td>
+                    <td class="tl-desc" title="{{ r.description }}">{{ r.description }}</td>
+                    <td>{{ r.area }}</td>
+                    <td>{{ r.turns }}</td>
+                    <td>{{ r.updated_at|date:"j M H:i" }}</td>
+                    <td><a href="{% url 'appointment_detail' r.id %}">open</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="tl-empty">No test leads right now.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script>

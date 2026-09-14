@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# No maximum-scale: capping pinch zoom is the browser's call, not ours. #}
     <title>{% block title %}Plumbot Admin{% endblock %}</title>
     {% include "bot/includes/head_assets.html" %}
     {% block extra_css %}{% endblock %}
@@ -36,13 +37,6 @@
                 }
             });
         });
-
-        // Mobile input font size (prevents iOS zoom)
-        if (window.innerWidth <= 768) {
-            document.querySelectorAll('input, select, textarea').forEach(function (input) {
-                input.style.fontSize = '16px';
-            });
-        }
 
         // Press-scale feedback on interactive rows
         var pressTargets = '.pb-sched-row, .pb-followup-row, .inbox-row, .delayed-row';
