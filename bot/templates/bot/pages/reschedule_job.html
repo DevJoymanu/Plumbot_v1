@@ -1,9 +1,11 @@
-{% extends "bot/layouts/base.html" %}
+{% extends base_template|default:"bot/layouts/base.html" %}
 
 {% block title %}Reschedule Job — Plumbot{% endblock %}
 
 {% block extra_css %}
 <style>
+    /* Scroll inside the chromeless panel when shown in the workspace iframe. */
+    .pb-panel-root { overflow-y: auto; }
     .rj-page { padding: 24px 32px 40px; max-width: 1000px; margin: 0 auto; }
     .rj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
     .current-job-info p { margin: 10px 0; font-size: 14px; color: var(--color-text-2); }
@@ -108,7 +110,7 @@
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-calendar-check"></i> Reschedule Job
                         </button>
-                        <a href="{% url 'appointment_detail' job_appointment.pk %}" class="btn btn-secondary">
+                        <a href="{% url 'appointment_detail' job_appointment.pk %}?{{ request.GET.urlencode }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Cancel
                         </a>
                     </div>

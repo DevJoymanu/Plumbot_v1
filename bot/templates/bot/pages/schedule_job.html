@@ -1,6 +1,11 @@
-{% extends "bot/layouts/base.html" %}
+{% extends base_template|default:"bot/layouts/base.html" %}
 
 {% block title %}Schedule Job Appointment{% endblock %}
+
+{% block extra_css %}
+{# In the workspace iframe this renders in the chromeless panel (overflow:hidden root); let the form scroll inside it. #}
+<style>.pb-panel-root { overflow-y: auto; }</style>
+{% endblock %}
 
 {% block content %}
 
@@ -115,7 +120,7 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-calendar-check"></i> Schedule Job Appointment
                             </button>
-                            <a href="{% url 'appointment_detail' site_visit.pk %}" class="btn btn-secondary">
+                            <a href="{% url 'appointment_detail' site_visit.pk %}?{{ request.GET.urlencode }}" class="btn btn-secondary">
                                 <i class="fas fa-arrow-left"></i> Back to Site Visit
                             </a>
                         </div>

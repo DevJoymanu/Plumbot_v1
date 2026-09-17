@@ -2754,7 +2754,7 @@
                       <div class="mini-stat-label">Site Visit Completed</div>
                       <div class="mini-stat-value">{{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</div>
                     </div>
-                    <a href="{% url 'schedule_job' appointment.pk %}" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
+                    <a href="{% url 'schedule_job' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
                     {% elif appointment.get_job_appointments %}
                     <div class="job-link-list">
                       {% for job in appointment.get_job_appointments %}
@@ -2783,7 +2783,7 @@
                     <div class="detail-actions">
                       {% if appointment.job_status == 'scheduled' %}
                       <button type="button" class="action-btn warning js-job-status" data-pk="{{ appointment.pk }}" data-status="in_progress"><i class="fas fa-play"></i> Start Job</button>
-                      <a href="{% url 'reschedule_job' appointment.pk %}" class="action-btn ghost"><i class="fas fa-calendar-alt"></i> Reschedule</a>
+                      <a href="{% url 'reschedule_job' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn ghost"><i class="fas fa-calendar-alt"></i> Reschedule</a>
                       {% elif appointment.job_status == 'in_progress' %}
                       <button type="button" class="action-btn success js-job-status" data-pk="{{ appointment.pk }}" data-status="completed"><i class="fas fa-check"></i> Complete Job</button>
                       {% endif %}

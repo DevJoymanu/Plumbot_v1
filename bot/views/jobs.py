@@ -55,6 +55,23 @@ from ..plumber_notifications import send_plumber_notification_email
 logger = logging.getLogger(__name__)
 
 
+def _detail_url(request, pk):
+    """appointment_detail URL that stays inside the conversations workspace
+    iframe when the caller was in it — `frame=1` and `source` carried through,
+    so a redirect from a job screen doesn't break out into the full page."""
+    url = reverse('appointment_detail', args=[pk])
+    params = {}
+    if request.GET.get('frame') == '1':
+        params['frame'] = '1'
+    source = request.GET.get('source')
+    if source:
+        params['source'] = source
+    if params:
+        from urllib.parse import urlencode
+        url += '?' + urlencode(params)
+    return url
+
+
 @staff_required
 def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
@@ -72,13 +89,23 @@ def schedule_job(request, pk):
     # logged manually without the bot ever pinning a slot.
     if site_visit.appointment_type != 'site_visit':
         messages.error(request, 'Cannot schedule a job for this appointment')
-        return redirect('appointment_detail', pk=site_visit.pk)
+        return redirect(_detail_url(request, site_visit.pk))
 
     if not site_visit.site_visit_completed:
         messages.error(request, 'Mark the site visit complete before scheduling the job')
-        return redirect('appointment_detail', pk=site_visit.pk)
+        return redirect(_detail_url(request, site_visit.pk))
 
-    _page_ctx = {'site_visit': site_visit, 'today': timezone.localdate()}
+    # This screen is opened inside the conversations workspace iframe, which
+    # already carries the app chrome. `frame=1` (carried through from the
+    # detail link) renders the chromeless panel layout instead, so the page
+    # doesn't stack a SECOND nav bar inside the frame.
+    is_frame = request.GET.get('frame') == '1'
+    _page_ctx = {
+        'site_visit': site_visit,
+        'today': timezone.localdate(),
+        'base_template': 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html',
+        'is_frame': is_frame,
+    }
 
     if request.method == 'POST':
         try:
@@ -131,7 +158,7 @@ def schedule_job(request, pk):
                 )
             except ValueError:
                 messages.error(request, 'Mark the site visit complete before scheduling the job')
-                return redirect('appointment_detail', pk=site_visit.pk)
+                return redirect(_detail_url(request, site_visit.pk))
 
             # Send notifications
             try:
@@ -147,7 +174,7 @@ def schedule_job(request, pk):
             else:
                 _msg = f'Job scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
             messages.success(request, _msg)
-            return redirect('appointment_detail', pk=job_appointment.pk)
+            return redirect(_detail_url(request, job_appointment.pk))
             
         except ValueError as e:
             messages.error(request, f'Invalid date/time format: {str(e)}')
@@ -414,17 +441,25 @@ def reschedule_job(request, pk):
     
     if job_appointment.appointment_type != 'job_appointment':
         messages.error(request, 'This is not a job appointment')
-        return redirect('appointment_detail', pk=job_appointment.pk)
-    
+        return redirect(_detail_url(request, job_appointment.pk))
+
+    # Chromeless panel when opened inside the workspace iframe (see schedule_job).
+    is_frame = request.GET.get('frame') == '1'
+    _page_ctx = {
+        'job_appointment': job_appointment,
+        'base_template': 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html',
+        'is_frame': is_frame,
+    }
+
     if request.method == 'POST':
         try:
             # Get new datetime
             job_date = request.POST.get('job_date')
             job_time = request.POST.get('job_time')
-            
+
             job_datetime_str = f"{job_date} {job_time}"
             new_datetime = datetime.strptime(job_datetime_str, '%Y-%m-%d %H:%M')
-            
+
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             new_datetime = sa_timezone.localize(new_datetime)
 
@@ -446,26 +481,24 @@ def reschedule_job(request, pk):
 
             if not is_available:
                 messages.error(request, 'Selected time slot is not available')
-                return render(request, 'bot/pages/reschedule_job.html', {'job_appointment': job_appointment})
+                return render(request, 'bot/pages/reschedule_job.html', _page_ctx)
 
             # Update appointment
             job_appointment.job_scheduled_datetime = new_datetime
             if new_end is not None:
                 job_appointment.job_end_datetime = new_end
             job_appointment.save()
-            
+
             # Send notifications
             send_job_reschedule_notification(job_appointment, old_datetime, new_datetime)
-            
+
             messages.success(request, f'Job rescheduled to {new_datetime.strftime("%B %d, %Y at %I:%M %p")}')
-            return redirect('appointment_detail', pk=job_appointment.pk)
-            
+            return redirect(_detail_url(request, job_appointment.pk))
+
         except Exception as e:
             messages.error(request, f'Error rescheduling job: {str(e)}')
-    
-    return render(request, 'bot/pages/reschedule_job.html', {
-        'job_appointment': job_appointment
-    })
+
+    return render(request, 'bot/pages/reschedule_job.html', _page_ctx)
 
 
 def send_job_reschedule_notification(job_appointment, old_datetime, new_datetime):

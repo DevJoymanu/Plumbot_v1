@@ -4839,6 +4839,21 @@ class JobSchedulingTests(StaffClientTestCase):
         self.assertContains(response, 'Site Visit Lead')
         self.assertNotContains(response, 'Untouched Lead')
 
+    def test_schedule_job_in_frame_has_no_second_navbar(self):
+        """Opened inside the conversations workspace iframe (frame=1), the page
+        renders the chromeless panel layout, not the full app shell — otherwise
+        a second bottom nav stacks inside the frame."""
+        framed = self.client.get(
+            reverse('schedule_job', args=[self.site_visit.pk]) + '?frame=1')
+        self.assertEqual(framed.status_code, 200)
+        # The nav ELEMENT (not the CSS rule, which ships in the shared stylesheet
+        # either way) must be absent inside the frame.
+        self.assertNotContains(framed, '<nav class="pb-bottomnav"')
+        self.assertContains(framed, '<div class="pb-panel-root">')
+
+        full = self.client.get(reverse('schedule_job', args=[self.site_visit.pk]))
+        self.assertContains(full, '<nav class="pb-bottomnav"')   # full page keeps its nav
+
     def test_a_completed_visit_on_an_unconfirmed_lead_still_schedules(self):
         """The "nothing happens, the page just refreshes" report. The Schedule
         Job button shows on `can_schedule_job` (a logged visit), but the view
