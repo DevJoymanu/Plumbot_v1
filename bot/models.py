@@ -4040,3 +4040,118 @@ class TenantSetting(models.Model):
         cls.objects.update_or_create(
             tenant_id=cls._tenant_id(tenant), key=key,
             defaults={'value': bool(enabled)})
+
+
+class SentEmail(models.Model):
+    """A record of one outbound email actually attempted at the send chokepoint.
+
+    There was no persistent record of email we send — the "Email" tab only
+    PROJECTS scheduled sends from state flags, holding no copy of what went out.
+    This stores the sent copy (full HTML), who it went to, which flow raised it,
+    and its status, so the Sent-Emails dashboard can show the content, delivery
+    result and whether it was opened.
+
+    Written once at `plumber_notifications.send_email_to_recipients` — the single
+    choke point every send passes through — so a new caller cannot bypass it.
+    Delivery here means "accepted by the provider" (sent) or "the send call
+    failed" (failed); a first-party 1x1 pixel (see `track_email_open`) stamps
+    `opened_at`. Open tracking is best-effort and imperfect by nature: an image
+    proxy can pre-fetch the pixel (false open) and a client that blocks images
+    never fetches it (false unopened).
+    """
+
+    class Category(models.TextChoices):
+        POST_VISIT_CONFIRM = 'post_visit_confirm', 'Post-visit confirmation'
+        POST_VISIT_ASK = 'post_visit_ask', 'Post-visit follow-up'
+        POST_VISIT_HANDBACK = 'post_visit_handback', 'Post-visit handback'
+        QUOTE_SENT = 'quote_sent', 'Quote sent'
+        QUOTE_FOLLOWUP = 'quote_followup', 'Quote follow-up'
+        PLAN_QUOTE_PLUMBER = 'plan_quote_plumber', 'Plan to quote (plumber)'
+        VISIT_CHECKIN = 'visit_checkin', 'Site-visit check-in'
+        SITE_VISIT_FORM = 'site_visit_form', 'Site-visit debrief form'
+        REMINDER = 'reminder', 'Appointment reminder'
+        DELAY = 'delay', 'Delay re-engagement'
+        BOOKING = 'booking', 'Booking confirmation'
+        PLUMBER_ALERT = 'plumber_alert', 'Plumber alert'
+        OTHER = 'other', 'Other'
+
+    # The categories the Sent-Emails dashboard shows by default: post-visit,
+    # quote, and site-visit mail — the flows the owner asked to see.
+    DASHBOARD_CATEGORIES = (
+        Category.POST_VISIT_CONFIRM, Category.POST_VISIT_ASK,
+        Category.POST_VISIT_HANDBACK, Category.QUOTE_SENT,
+        Category.QUOTE_FOLLOWUP, Category.PLAN_QUOTE_PLUMBER,
+        Category.VISIT_CHECKIN, Category.SITE_VISIT_FORM,
+    )
+
+    class Status(models.TextChoices):
+        QUEUED = 'queued', 'Queued'
+        SENT = 'sent', 'Sent'
+        DELIVERED = 'delivered', 'Delivered'
+        OPENED = 'opened', 'Opened'
+        FAILED = 'failed', 'Failed'
+        BOUNCED = 'bounced', 'Bounced'
+
+    class ToRole(models.TextChoices):
+        CUSTOMER = 'customer', 'Customer'
+        PLUMBER = 'plumber', 'Plumber'
+        OPERATOR = 'operator', 'Operator'
+        OTHER = 'other', 'Other'
+
+    tenant = models.ForeignKey('Tenant', on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_emails')
+    appointment = models.ForeignKey('Appointment', on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_emails')
+    category = models.CharField(max_length=32, choices=Category.choices, default=Category.OTHER, db_index=True)
+    to_role = models.CharField(max_length=16, choices=ToRole.choices, default=ToRole.OTHER)
+    recipients = models.JSONField(default=list, blank=True)  # visible To addresses
+    subject = models.CharField(max_length=500, blank=True)
+    html_body = models.TextField(blank=True)
+    text_body = models.TextField(blank=True)
+    provider = models.CharField(max_length=20, blank=True)  # brevo / sendgrid / smtp
+    provider_message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True)
+    error = models.TextField(blank=True)
+    open_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
+    open_count = models.PositiveIntegerField(default=0)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    opened_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['tenant', 'category', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_category_display()} -> {', '.join(self.recipients or [])} [{self.status}]"
+
+    def mark_sent(self, provider='', message_id=''):
+        self.provider = provider or self.provider
+        self.provider_message_id = message_id or self.provider_message_id
+        self.status = self.Status.SENT
+        self.sent_at = timezone.now()
+
+    def mark_failed(self, error=''):
+        self.status = self.Status.FAILED
+        self.error = (error or '')[:2000]
+
+    def mark_opened(self):
+        """Stamp an open from the tracking pixel. Idempotent on first-open time;
+        never downgrades a failed row, and leaves a later delivered/bounced
+        state's meaning intact by only advancing status to 'opened'."""
+        now = timezone.now()
+        self.open_count = (self.open_count or 0) + 1
+        if not self.opened_at:
+            self.opened_at = now
+        if self.status in (self.Status.SENT, self.Status.DELIVERED, self.Status.QUEUED):
+            self.status = self.Status.OPENED
+        self.save(update_fields=['open_count', 'opened_at', 'status'])
+
+    @property
+    def was_opened(self):
+        return bool(self.opened_at)
+
+    @property
+    def recipient_display(self):
+        return ', '.join(self.recipients or []) or '(none)'

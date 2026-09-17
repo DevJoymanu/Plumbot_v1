@@ -10298,3 +10298,130 @@ class InterceptAndLiveTests(StaffClientTestCase):
         lead.clear_pending_send(token='newer-token')  # the owning thread finishing
         lead.refresh_from_db()
         self.assertIsNone(lead.pending_send)
+
+
+# ======================================================================
+# Sent-Emails dashboard: logging at the send chokepoint, the open pixel,
+# and the detail view (content / delivery / opened state)
+# ======================================================================
+class SentEmailDashboardTests(StaffClientTestCase):
+    """Every send is recorded at plumber_notifications.send_email_to_recipients;
+    a first-party pixel stamps opens; the Follow-ups 'Sent Emails' tab and the
+    detail view read those rows. See bot/views/sent_emails.py + SentEmail."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Tenant
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.lead = make_lead(8100, tenant=self.homebase,
+                              customer_name='Ada Lovelace',
+                              customer_email='ada@example.com')
+
+    def _send(self, **extra):
+        from .plumber_notifications import send_email_to_recipients
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=(True, 'brevo-msg-1')) as brevo, \
+             self.settings(BREVO_API_KEY='x'):
+            ok = send_email_to_recipients(
+                ['ada@example.com'], 'Your quote for the bathroom',
+                'plain body', html_message='<html><body>Hello</body></html>',
+                tenant=self.homebase, **extra)
+        return ok, brevo
+
+    def test_chokepoint_logs_a_sent_email(self):
+        from .models import SentEmail
+        ok, brevo = self._send(category='quote_sent', appointment=self.lead,
+                               to_role='customer', track_opens=True)
+        self.assertTrue(ok)
+        row = SentEmail.objects.get(subject='Your quote for the bathroom')
+        self.assertEqual(row.status, SentEmail.Status.SENT)
+        self.assertEqual(row.category, 'quote_sent')
+        self.assertEqual(row.provider, 'brevo')
+        self.assertEqual(row.provider_message_id, 'brevo-msg-1')
+        self.assertEqual(row.appointment_id, self.lead.pk)
+        self.assertEqual(row.recipients, ['ada@example.com'])
+        # The pixel for THIS row's token was embedded in the HTML that went out.
+        sent_html = brevo.call_args.kwargs['html_message']
+        self.assertIn(f'/e/{row.open_token}.gif', sent_html)
+
+    def test_failed_send_is_recorded_failed(self):
+        from .models import SentEmail
+        from .plumber_notifications import send_email_to_recipients
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=(False, '')), self.settings(BREVO_API_KEY='x'):
+            ok = send_email_to_recipients(
+                ['ada@example.com'], 'Broken send', 'body',
+                tenant=self.homebase, category='quote_sent')
+        self.assertFalse(ok)
+        self.assertEqual(SentEmail.objects.get(subject='Broken send').status,
+                         SentEmail.Status.FAILED)
+
+    def test_appointment_linked_from_message_id_when_not_passed(self):
+        from .models import SentEmail
+        from .plumber_notifications import send_email_to_recipients
+        with patch('bot.plumber_notifications._send_via_brevo',
+                   return_value=(True, '')), self.settings(BREVO_API_KEY='x'):
+            send_email_to_recipients(
+                ['ada@example.com'], 'Tagged', 'body', tenant=self.homebase,
+                message_id=f'<apt-{self.lead.pk}.123@x>')
+        self.assertEqual(SentEmail.objects.get(subject='Tagged').appointment_id,
+                         self.lead.pk)
+
+    def test_open_pixel_stamps_opened(self):
+        from .models import SentEmail
+        row = SentEmail.objects.create(
+            tenant=self.homebase, appointment=self.lead,
+            category='quote_sent', to_role='customer',
+            recipients=['ada@example.com'], subject='Quote',
+            status=SentEmail.Status.SENT)
+        resp = self.client.get(reverse('track_email_open', args=[row.open_token]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'image/gif')
+        row.refresh_from_db()
+        self.assertIsNotNone(row.opened_at)
+        self.assertEqual(row.status, SentEmail.Status.OPENED)
+        self.assertEqual(row.open_count, 1)
+
+    def test_open_pixel_unknown_token_is_ok(self):
+        import uuid as _uuid
+        resp = self.client.get(reverse('track_email_open', args=[_uuid.uuid4()]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'image/gif')
+
+    def test_detail_view_renders_and_raw_strips_pixel(self):
+        from .models import SentEmail
+        from .plumber_notifications import _open_pixel_tag
+        row = SentEmail.objects.create(
+            tenant=self.homebase, appointment=self.lead, category='quote_sent',
+            to_role='customer', recipients=['ada@example.com'], subject='Quote',
+            status=SentEmail.Status.SENT,
+            html_body='<html><body>Body text ' + _open_pixel_tag(SentEmail().open_token) + '</body></html>')
+        # Detail page
+        resp = self.client.get(reverse('sent_email_detail', args=[row.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Quote')
+        # Raw preview strips any tracking pixel so viewing never fires an open.
+        raw = self.client.get(reverse('sent_email_detail', args=[row.pk]) + '?raw=1')
+        self.assertEqual(raw.status_code, 200)
+        self.assertIn(b'Body text', raw.content)
+        self.assertNotIn(b'/e/', raw.content)
+
+    def test_detail_is_workspace_scoped(self):
+        from .models import SentEmail, Tenant
+        other = Tenant.objects.create(name='Other Co', slug='other-co')
+        row = SentEmail.objects.create(
+            tenant=other, category='quote_sent', recipients=['x@y.com'],
+            subject='Someone elses quote', status=SentEmail.Status.SENT)
+        self.assertEqual(
+            self.client.get(reverse('sent_email_detail', args=[row.pk])).status_code, 404)
+
+    def test_followup_dashboard_sent_tab(self):
+        from .models import SentEmail
+        SentEmail.objects.create(
+            tenant=self.homebase, appointment=self.lead, category='quote_sent',
+            to_role='customer', recipients=['ada@example.com'],
+            subject='Dashboard-visible quote', status=SentEmail.Status.SENT)
+        resp = self.client.get(reverse('followup_dashboard') + '?tab=sent&se_group=quote')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Dashboard-visible quote')
+        self.assertContains(resp, 'Sent Emails')

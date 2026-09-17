@@ -254,7 +254,8 @@ def _wrap(body_html, apt=None):
     )
 
 
-def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfolio.pdf"):
+def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfolio.pdf",
+          category=None, to_role='customer', track_opens=True):
     """
     Send email to the customer.
     APT ID is encoded in the Message-ID header (invisible to the customer) rather
@@ -292,6 +293,10 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
         from_name=_from_name(apt),
         message_id=message_id,
         tenant=getattr(apt, 'tenant', None),
+        category=category,
+        appointment=apt,
+        to_role=to_role,
+        track_opens=track_opens,
     )
 
 
@@ -1184,7 +1189,7 @@ def send_post_visit_ask_email(apt, ask_number):
     """Send one Case B ask to the lead. Returns True on a successful send."""
     try:
         subject, html = build_post_visit_ask_email(apt, ask_number)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='post_visit_ask')
         if ok:
             logger.info("Post-visit ask %s sent — apt %s", ask_number, apt.pk)
         return ok
@@ -1225,7 +1230,7 @@ def send_post_visit_confirmation_email(apt, job_date):
     """Send the Case A confirmation. Returns True on a successful send."""
     try:
         subject, html = build_post_visit_confirmation_email(apt, job_date)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='post_visit_confirm')
         if ok:
             logger.info("Post-visit confirmation sent — apt %s (%s)", apt.pk, job_date)
         return ok
@@ -1259,4 +1264,5 @@ def send_quotation_email_to_customer(quotation, pdf_bytes=None, filename=None):
         apt, subject, _wrap(body, apt),
         attachment=pdf_bytes,
         attachment_name=filename or f'Quotation-{quotation.quotation_number}.pdf',
+        category='quote_sent',
     )

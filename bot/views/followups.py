@@ -61,7 +61,18 @@ def followup_dashboard(request):
         response_age = '1w_minus'
     context = _followups_workspace_data(response_age, tenant=getattr(request, 'tenant', None))
     context['active_nav'] = 'followups'
-    
+
+    # Sent-Emails tab: the record of post-visit / quote / site-visit mail.
+    from .sent_emails import sent_email_filters
+    from ..models import SentEmail
+    se_qs, se_group, se_status = sent_email_filters(request)
+    context['sent_emails'] = list(se_qs[:100])
+    context['sent_emails_total'] = se_qs.count()
+    context['se_group'] = se_group
+    context['se_status'] = se_status
+    context['se_status_choices'] = SentEmail.Status.choices
+    context['active_tab'] = request.GET.get('tab', '')
+
     return render(request, 'bot/pages/followup_dashboard.html', context)
 
 

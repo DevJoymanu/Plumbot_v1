@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ email.subject|default:"Sent email" }} — Sent email</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root { --ink:#1a1c1e; --muted:#5b6470; --line:#e4e8ee; --bg:#f6f8fb; --accent:#0ea5e9; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+    .se-wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+    .se-back { display:inline-flex; align-items:center; gap:7px; color:var(--muted); text-decoration:none; font-size:13px; margin-bottom:12px; }
+    .se-back:hover { color:var(--accent); }
+    .se-card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px 20px; margin-bottom:14px; }
+    .se-subject { font-size:18px; font-weight:700; margin:0 0 4px; }
+    .se-sub { color:var(--muted); font-size:13px; margin:0 0 2px; }
+    .se-meta { display:grid; grid-template-columns: 140px 1fr; gap:6px 14px; font-size:13px; margin-top:12px; }
+    .se-meta dt { color:var(--muted); }
+    .se-meta dd { margin:0; word-break:break-word; }
+    .se-pill { display:inline-block; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:700; }
+    .se-pill--sent { background:#e3f0ff; color:#0b5cad; }
+    .se-pill--delivered { background:#e3f0ff; color:#0b5cad; }
+    .se-pill--opened { background:#e6f7ec; color:#137a3b; }
+    .se-pill--queued { background:#eef1f5; color:#5b6470; }
+    .se-pill--failed, .se-pill--bounced { background:#fde8e6; color:#b3261e; }
+    .se-pill--unopened { background:#eef1f5; color:#5b6470; }
+    .se-timeline { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+    .se-step { flex:1; min-width:120px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:#fbfcfe; }
+    .se-step.is-on { border-color:#9ed3f2; background:#f2f9fe; }
+    .se-step.is-off { opacity:.5; }
+    .se-step-h { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); }
+    .se-step-t { font-size:13px; margin-top:3px; }
+    .se-err { background:#fde8e6; color:#7a1912; border-radius:10px; padding:10px 12px; font-size:13px; margin-top:10px; white-space:pre-wrap; }
+    .se-preview-head { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); margin:2px 0 8px; }
+    .se-frame { width:100%; height:70vh; min-height:360px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="se-wrap">
+    <a class="se-back" href="{% url 'followup_dashboard' %}?tab=sent"><i class="fas fa-arrow-left"></i> Back to Sent Emails</a>
+
+    <div class="se-card">
+      <h1 class="se-subject">{{ email.subject|default:"(no subject)" }}</h1>
+      <p class="se-sub">{{ email.get_category_display }} · to {{ email.get_to_role_display|lower }}</p>
+
+      <div class="se-timeline">
+        <div class="se-step {% if email.sent_at %}is-on{% else %}is-off{% endif %}">
+          <div class="se-step-h"><i class="fas fa-paper-plane"></i> Sent</div>
+          <div class="se-step-t">{% if email.sent_at %}{{ email.sent_at|date:"j M Y, H:i" }}{% else %}Not sent{% endif %}</div>
+        </div>
+        <div class="se-step {% if email.delivered_at %}is-on{% else %}is-off{% endif %}">
+          <div class="se-step-h"><i class="fas fa-inbox"></i> Delivered</div>
+          <div class="se-step-t">{% if email.delivered_at %}{{ email.delivered_at|date:"j M Y, H:i" }}{% else %}Not tracked{% endif %}</div>
+        </div>
+        <div class="se-step {% if email.opened_at %}is-on{% else %}is-off{% endif %}">
+          <div class="se-step-h"><i class="far fa-eye"></i> Opened</div>
+          <div class="se-step-t">
+            {% if email.opened_at %}{{ email.opened_at|date:"j M Y, H:i" }}{% if email.open_count > 1 %} · {{ email.open_count }}x{% endif %}
+            {% else %}Not opened{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if email.status == 'failed' or email.status == 'bounced' %}
+      <div class="se-err"><strong>{{ email.get_status_display }}.</strong> {{ email.error|default:"No detail recorded." }}</div>
+      {% endif %}
+
+      <dl class="se-meta">
+        <dt>Status</dt><dd><span class="se-pill se-pill--{{ email.status }}">{{ email.get_status_display }}</span></dd>
+        <dt>To</dt><dd>{{ email.recipient_display }}</dd>
+        {% if email.appointment %}
+        <dt>Lead</dt><dd><a href="{% url 'appointment_detail' email.appointment.pk %}?source=followups" target="_top">{{ email.appointment.customer_name|default:email.appointment.phone_number|cut:"whatsapp:" }}</a></dd>
+        {% endif %}
+        <dt>Provider</dt><dd>{{ email.provider|default:"—" }}{% if email.provider_message_id %} · <span title="Provider message id">{{ email.provider_message_id }}</span>{% endif %}</dd>
+        <dt>Created</dt><dd>{{ email.created_at|date:"j M Y, H:i" }}</dd>
+      </dl>
+    </div>
+
+    <div class="se-card">
+      <div class="se-preview-head"><i class="far fa-envelope-open"></i> Email content</div>
+      {% if email.html_body %}
+      <iframe class="se-frame" sandbox="allow-same-origin"
+              src="{% url 'sent_email_detail' email.pk %}?raw=1"
+              title="Email content"></iframe>
+      {% else %}
+      <div style="white-space:pre-wrap; font-size:14px;">{{ email.text_body|default:"(no content stored)" }}</div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import base64
 import logging
 import re
+import uuid
 from email.utils import parseaddr
 
 import requests
@@ -170,10 +171,77 @@ def _attachment_type(filename: str) -> str:
     return guessed or 'application/pdf'
 
 
+def _open_pixel_tag(open_token):
+    """First-party 1x1 open pixel. Absolute URL because email clients have no
+    page origin to resolve a relative src against."""
+    base = getattr(settings, "SITE_URL", "").rstrip("/")
+    src = f"{base}/e/{open_token}.gif"
+    return (
+        f'<img src="{src}" alt="" width="1" height="1" '
+        f'style="display:none;width:1px;height:1px;border:0;overflow:hidden;">'
+    )
+
+
+def _inject_open_pixel(html, open_token):
+    """Append the pixel just before </body> (or at the end if there is none)."""
+    if not html:
+        return html
+    tag = _open_pixel_tag(open_token)
+    lower = html.lower()
+    idx = lower.rfind("</body>")
+    if idx != -1:
+        return html[:idx] + tag + html[idx:]
+    return html + tag
+
+
+def _appointment_from_message_id(message_id):
+    """Emails encode the appointment PK as <apt-{id}.…> in the Message-ID, so a
+    row can be linked even when the caller did not pass the appointment."""
+    if not message_id:
+        return None
+    m = re.search(r"<apt-(\d+)\.", message_id)
+    if not m:
+        return None
+    try:
+        from .models import Appointment
+        return Appointment.objects.filter(pk=int(m.group(1))).first()
+    except Exception:
+        return None
+
+
+def _log_sent_email(*, recipients, subject, html_body, text_body, tenant,
+                    appointment, category, to_role, provider, message_id,
+                    ok, error):
+    """Best-effort record of one send at the choke point. Never lets a logging
+    failure break the actual send."""
+    try:
+        from .models import SentEmail
+        row = SentEmail(
+            tenant=tenant,
+            appointment=appointment,
+            category=(category or SentEmail.Category.OTHER),
+            to_role=(to_role or SentEmail.ToRole.OTHER),
+            recipients=list(recipients or []),
+            subject=(subject or '')[:500],
+            html_body=html_body or '',
+            text_body=text_body or '',
+        )
+        if ok:
+            row.mark_sent(provider=provider, message_id=message_id or '')
+        else:
+            row.mark_failed(error or 'send failed')
+        row.save()
+        return row
+    except Exception:
+        logger.exception("Could not record SentEmail for '%s'", subject)
+        return None
+
+
 def send_email_to_recipients(
     recipients, subject, message, *, dry_run=False,
     html_message=None, attachment=None, attachment_name="attachment.pdf",
     from_name=None, message_id=None, tenant=None, from_email=None, bcc=None,
+    category=None, appointment=None, to_role=None, track_opens=False,
 ):
     """
     Send email to an explicit list of recipients via the configured SMTP
@@ -227,85 +295,135 @@ def send_email_to_recipients(
     else:
         reply_to = getattr(settings, "EMAIL_REPLY_TO", None) or from_addr_only
 
+    # Record this send at the choke point so the Sent-Emails dashboard has the
+    # content, recipient, flow and result. The open pixel (when requested) is
+    # embedded in the HTML that actually goes out, so its token matches the row.
+    from .models import SentEmail
+    open_token = uuid.uuid4()
+    html_to_send = html_message
+    if track_opens and html_message:
+        html_to_send = _inject_open_pixel(html_message, open_token)
+    link_appt = appointment or _appointment_from_message_id(message_id)
+
     # Primary transport: Brevo HTTP API (port 443). Railway blocks all outbound
     # SMTP, so an HTTPS API is the only path that delivers from production.
     # Precedence: Brevo → SendGrid (legacy fallback) → Django SMTP.
+    provider = ''
+    provider_message_id = ''
+    ok = False
+    error = ''
+
+    def _unpack(res):
+        # Transports return (ok, message_id); tolerate a bare bool so a caller
+        # or test that returns True/False still works.
+        if isinstance(res, tuple):
+            return bool(res[0]), (res[1] if len(res) > 1 else '') or ''
+        return bool(res), ''
+
     brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
-    if brevo_api_key:
-        return _send_via_brevo(
-            brevo_api_key, recipients, subject, message,
-            html_message=html_message, attachment=attachment,
-            attachment_name=attachment_name, from_name=from_name,
-            message_id=message_id, from_email=from_email, reply_to=reply_to,
-            bcc=bcc,
-        )
-
     sendgrid_api_key = getattr(settings, "SENDGRID_API_KEY", "")
-    if sendgrid_api_key:
-        return _send_via_sendgrid(
-            sendgrid_api_key, recipients, subject, message,
-            html_message=html_message, attachment=attachment,
+    if brevo_api_key:
+        provider = 'brevo'
+        ok, provider_message_id = _unpack(_send_via_brevo(
+            brevo_api_key, recipients, subject, message,
+            html_message=html_to_send, attachment=attachment,
             attachment_name=attachment_name, from_name=from_name,
             message_id=message_id, from_email=from_email, reply_to=reply_to,
             bcc=bcc,
-        )
+        ))
+    elif sendgrid_api_key:
+        provider = 'sendgrid'
+        ok, provider_message_id = _unpack(_send_via_sendgrid(
+            sendgrid_api_key, recipients, subject, message,
+            html_message=html_to_send, attachment=attachment,
+            attachment_name=attachment_name, from_name=from_name,
+            message_id=message_id, from_email=from_email, reply_to=reply_to,
+            bcc=bcc,
+        ))
+    else:
+        provider = 'smtp'
+        try:
+            if from_name and from_addr_only:
+                from_email = f"{from_name} <{from_addr_only}>"
 
-    try:
-        if from_name and from_addr_only:
-            from_email = f"{from_name} <{from_addr_only}>"
+            # Reply-To routes replies to a real inbox (and aligns DMARC for
+            # Gmail's Primary-routing heuristic). Falls back to the From address
+            # so we never send without one.
+            reply_to_list = None
+            _, reply_to_addr = parseaddr(reply_to or from_email or "")
+            if reply_to_addr:
+                reply_to_list = [reply_to_addr]
 
-        # Reply-To routes replies to a real inbox (and aligns DMARC for
-        # Gmail's Primary-routing heuristic). Falls back to the From address
-        # so we never send without one.
-        reply_to_list = None
-        _, reply_to_addr = parseaddr(reply_to or from_email or "")
-        if reply_to_addr:
-            reply_to_list = [reply_to_addr]
+            msg = EmailMultiAlternatives(
+                subject, message, from_email, recipients,
+                reply_to=reply_to_list, bcc=bcc or None,
+            )
+            if message_id:
+                msg.extra_headers["Message-ID"] = message_id
+                # X-Entity-Ref-ID gives Gmail a stable per-thread identity tied
+                # to the appointment PK — reads as transactional, not bulk.
+                m = re.search(r"<apt-(\d+)\.", message_id)
+                if m:
+                    msg.extra_headers["X-Entity-Ref-ID"] = f"apt-{m.group(1)}"
+            if html_to_send:
+                msg.attach_alternative(html_to_send, "text/html")
+            if attachment:
+                msg.attach(attachment_name, attachment,
+                           _attachment_type(attachment_name))
+            msg.send(fail_silently=False)
+            ok = True
+        except Exception as exc:
+            logger.exception(
+                "Failed to send email '%s' to %s", subject, ", ".join(recipients)
+            )
+            error = str(exc)
 
-        msg = EmailMultiAlternatives(
-            subject, message, from_email, recipients,
-            reply_to=reply_to_list, bcc=bcc or None,
-        )
-        if message_id:
-            msg.extra_headers["Message-ID"] = message_id
-            # X-Entity-Ref-ID gives Gmail a stable per-thread identity tied
-            # to the appointment PK — reads as transactional, not bulk.
-            m = re.search(r"<apt-(\d+)\.", message_id)
-            if m:
-                msg.extra_headers["X-Entity-Ref-ID"] = f"apt-{m.group(1)}"
-        if html_message:
-            msg.attach_alternative(html_message, "text/html")
-        if attachment:
-            msg.attach(attachment_name, attachment,
-                       _attachment_type(attachment_name))
-        msg.send(fail_silently=False)
-        return True
-    except Exception:
-        logger.exception(
-            "Failed to send email '%s' to %s", subject, ", ".join(recipients)
-        )
-        return False
+    # One record per attempt. Pre-set the open_token so the stored row matches
+    # the pixel embedded above; only overwrite the default when we injected one.
+    row = _log_sent_email(
+        recipients=recipients, subject=subject,
+        html_body=(html_to_send or message), text_body=message,
+        tenant=tenant, appointment=link_appt, category=category,
+        to_role=to_role, provider=provider, message_id=provider_message_id,
+        ok=ok, error=error,
+    )
+    if row is not None and track_opens and html_message:
+        try:
+            row.open_token = open_token
+            row.save(update_fields=['open_token'])
+        except Exception:
+            pass
+    return ok
 
 
 def send_plumber_notification_email(subject, message, *, dry_run=False,
-                                    html_message=None, tenant=None):
+                                    html_message=None, tenant=None,
+                                    category=None, appointment=None,
+                                    to_role='plumber'):
     """
     Send a notification email to the configured plumber team inbox(es).
     Delegates to send_email_to_recipients so all deliverability headers
     (Reply-To, X-Entity-Ref-ID) are applied consistently — and so the tenant's
     outbound-email switch is honoured. Pass the tenant the alert is about.
+
+    category/appointment let a plumber-facing flow tag its send for the
+    Sent-Emails dashboard; both default to a generic plumber alert.
     """
     recipients, hidden = split_notification_recipients(tenant)
     if not recipients:
         logger.warning("No plumber notification email recipients configured.")
         return False
 
+    from .models import SentEmail
     return send_email_to_recipients(
         recipients, subject, message,
         bcc=hidden,
         dry_run=dry_run,
         html_message=html_message,
         tenant=tenant,
+        category=category or SentEmail.Category.PLUMBER_ALERT,
+        appointment=appointment,
+        to_role=to_role,
         # Internal alerts (operator + the tenant's own inbox) always send from
         # the platform subdomain, never the tenant's customer-facing domain.
         from_email=tenant_platform_from_email(tenant),
@@ -381,7 +499,8 @@ def send_plumber_followup_alert(appointment, *, reason, follow_up_date_str=None,
     )
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run,
-        tenant=getattr(appointment, 'tenant', None))
+        tenant=getattr(appointment, 'tenant', None),
+        category='post_visit_handback', appointment=appointment)
 
 
 def _send_via_brevo(
@@ -469,17 +588,21 @@ def _send_via_brevo(
             timeout=getattr(settings, "EMAIL_TIMEOUT", 20),
         )
         if 200 <= response.status_code < 300:
-            return True
+            try:
+                mid = (response.json() or {}).get('messageId', '') or ''
+            except Exception:
+                mid = ''
+            return True, mid
         logger.error(
             "Brevo email send failed for '%s' to %s: %s %s",
             subject, ", ".join(recipients), response.status_code, response.text,
         )
-        return False
+        return False, ''
     except Exception:
         logger.exception(
             "Failed to send Brevo email '%s' to %s", subject, ", ".join(recipients)
         )
-        return False
+        return False, ''
 
 
 def _send_via_sendgrid(
@@ -581,17 +704,17 @@ def _send_via_sendgrid(
             timeout=getattr(settings, "EMAIL_TIMEOUT", 20),
         )
         if 200 <= response.status_code < 300:
-            return True
+            return True, response.headers.get('X-Message-Id', '') or ''
         logger.error(
             "SendGrid email send failed for '%s' to %s: %s %s",
             subject, ", ".join(recipients), response.status_code, response.text,
         )
-        return False
+        return False, ''
     except Exception:
         logger.exception(
             "Failed to send SendGrid email '%s' to %s", subject, ", ".join(recipients)
         )
-        return False
+        return False, ''
 
 
 def send_site_visit_form_email(report, *, dry_run=False):
@@ -649,7 +772,8 @@ def send_site_visit_form_email(report, *, dry_run=False):
     )
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run, html_message=html,
-        tenant=getattr(apt, 'tenant', None))
+        tenant=getattr(apt, 'tenant', None),
+        category='site_visit_form', appointment=apt)
 
 
 def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
@@ -695,7 +819,8 @@ def send_post_visit_handback_email(appointment, *, reason, dry_run=False):
     )
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run,
-        tenant=getattr(appointment, 'tenant', None))
+        tenant=getattr(appointment, 'tenant', None),
+        category='post_visit_handback', appointment=appointment)
 
 
 # ── Plan path: the plumber quotes off the drawing (spec §10.3, §10.4) ────────
@@ -830,6 +955,7 @@ def send_plan_quote_email(row, *, dry_run=False):
         attachment_name=filename or 'plan.pdf',
         tenant=getattr(apt, 'tenant', None),
         from_email=tenant_platform_from_email(getattr(apt, 'tenant', None)),
+        category='plan_quote_plumber', appointment=apt, to_role='plumber',
     )
 
 
@@ -872,7 +998,8 @@ def send_plan_quote_reminder(row, *, number=1, dry_run=False):
     )
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run, html_message=html,
-        tenant=getattr(apt, 'tenant', None))
+        tenant=getattr(apt, 'tenant', None),
+        category='plan_quote_plumber', appointment=apt)
 
 
 # ── Future-dated visits: the two check-ins (spec §11.3) ──────────────────────
@@ -946,6 +1073,8 @@ def send_visit_confirm_email(row, *, number=1, dry_run=False):
         recipients, subject, message,
         html_message=html,
         tenant=getattr(apt, 'tenant', None),
+        category='visit_checkin', appointment=apt, to_role='customer',
+        track_opens=True,
     )
 
 
@@ -1017,7 +1146,8 @@ def send_visit_handoff_email(row, *, number=1, dry_run=False):
     )
     return send_plumber_notification_email(
         subject, message, dry_run=dry_run, html_message=html,
-        tenant=getattr(apt, 'tenant', None))
+        tenant=getattr(apt, 'tenant', None),
+        category='visit_checkin', appointment=apt)
 
 
 # ── Cross-tenant guard ───────────────────────────────────────────────────────

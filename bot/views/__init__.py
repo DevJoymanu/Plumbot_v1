@@ -87,6 +87,10 @@ from .calendar_views import (
     map_project_type_to_service_key,
 )
 
+from .sent_emails import (
+    track_email_open,
+    sent_email_detail,
+)
 from .followups import (
     followup_dashboard,
     mark_lead_inactive,

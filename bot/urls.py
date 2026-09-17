@@ -265,6 +265,9 @@ urlpatterns = [
 
     # Follow-up Management URLs
     path('followups/', views.followup_dashboard, name='followup_dashboard'),
+    # Sent-Emails dashboard detail + the public first-party open pixel.
+    path('followups/emails/<int:pk>/', views.sent_email_detail, name='sent_email_detail'),
+    path('e/<uuid:token>.gif', views.track_email_open, name='track_email_open'),
     path('followups/check/', views.manual_followup_check, name='manual_followup_check'),
     path('appointments/<int:pk>/mark-inactive/', views.mark_lead_inactive, name='mark_lead_inactive'),
     path('appointments/<int:pk>/reactivate/', views.reactivate_lead, name='reactivate_lead'),

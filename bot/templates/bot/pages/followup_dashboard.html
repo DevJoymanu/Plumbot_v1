@@ -156,6 +156,22 @@
   .fd-pane { display: none; }
   .fd-pane.is-active { display: block; }
 
+  /* Sent-emails tab */
+  .se-filters { padding: 4px 2px 10px; border-bottom: 1px solid var(--color-outline-variant, #e4e8ee); margin-bottom: 8px; }
+  .se-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .se-filter-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--color-on-surface-variant, #5b6470); width: 52px; flex-shrink: 0; }
+  .se-chip { display: inline-block; padding: 5px 11px; border-radius: 999px; font-size: 12px; text-decoration: none; color: var(--color-on-surface-variant, #5b6470); background: var(--color-surface-variant, #eef1f5); border: 1px solid transparent; }
+  .se-chip:hover { border-color: #9ed3f2; }
+  .se-chip.is-active { background: #e3f0ff; color: #0b5cad; font-weight: 700; }
+  .se-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-right: 4px; }
+  .se-pill--sent, .se-pill--delivered { background:#e3f0ff; color:#0b5cad; }
+  .se-pill--opened { background:#e6f7ec; color:#137a3b; }
+  .se-pill--queued { background:#eef1f5; color:#5b6470; }
+  .se-pill--failed, .se-pill--bounced { background:#fde8e6; color:#b3261e; }
+  .se-pill--unopened { background:#eef1f5; color:#5b6470; }
+  .fd-chan--customer { background:#e6f7ec; color:#137a3b; }
+  .fd-chan--plumber { background:#fff3e0; color:#8a5300; }
+
   /* Scheduled-status + undelivered pills (channel tabs) */
   .fd-status {
     display: inline-block; margin-top: 5px;
@@ -262,6 +278,7 @@
       <button type="button" class="fd-tab is-active" data-fdtab="leads"><i class="fas fa-users"></i> Leads</button>
       <button type="button" class="fd-tab" data-fdtab="wa"><i class="fab fa-whatsapp"></i> WhatsApp</button>
       <button type="button" class="fd-tab" data-fdtab="email"><i class="fas fa-envelope"></i> Emails</button>
+      <button type="button" class="fd-tab" data-fdtab="sent"><i class="fas fa-paper-plane"></i> Sent Emails</button>
     </div>
 
     <div class="fd-scroll">
@@ -465,6 +482,57 @@
         {% endfor %}
       </div>{# /fdtab-email #}
 
+      {# ════════ SENT EMAILS TAB ════════ #}
+      <div class="fd-pane" id="fdtab-sent">
+        <div class="se-filters">
+          {% with base="?response_age="|add:selected_response_age|add:"&tab=sent" %}
+          <div class="se-filter-row">
+            <span class="se-filter-label">Type</span>
+            <a class="se-chip {% if se_group == 'dashboard' %}is-active{% endif %}" href="{{ base }}&se_group=dashboard&se_status={{ se_status }}">Post-visit + Quote + Site visit</a>
+            <a class="se-chip {% if se_group == 'post_visit' %}is-active{% endif %}" href="{{ base }}&se_group=post_visit&se_status={{ se_status }}">Post-visit</a>
+            <a class="se-chip {% if se_group == 'quote' %}is-active{% endif %}" href="{{ base }}&se_group=quote&se_status={{ se_status }}">Quote</a>
+            <a class="se-chip {% if se_group == 'site_visit' %}is-active{% endif %}" href="{{ base }}&se_group=site_visit&se_status={{ se_status }}">Site visit</a>
+            <a class="se-chip {% if se_group == 'all' %}is-active{% endif %}" href="{{ base }}&se_group=all&se_status={{ se_status }}">All email</a>
+          </div>
+          <div class="se-filter-row">
+            <span class="se-filter-label">Status</span>
+            <a class="se-chip {% if not se_status %}is-active{% endif %}" href="{{ base }}&se_group={{ se_group }}">Any</a>
+            {% for val, label in se_status_choices %}
+            <a class="se-chip {% if se_status == val %}is-active{% endif %}" href="{{ base }}&se_group={{ se_group }}&se_status={{ val }}">{{ label }}</a>
+            {% endfor %}
+          </div>
+          {% endwith %}
+        </div>
+
+        <div class="fd-section-label">Sent emails · showing {{ sent_emails|length }} of {{ sent_emails_total }}</div>
+        {% for e in sent_emails %}
+        <a href="{% url 'sent_email_detail' e.pk %}" class="fd-row" target="fdDetail">
+          <div class="fd-avatar" data-name="{{ e.appointment.customer_name|default:'?' }}">
+            {% if e.to_role == 'plumber' %}<i class="fas fa-user-hard-hat"></i>{% else %}{{ e.appointment.customer_name|default:e.recipient_display|slice:":2"|upper }}{% endif %}
+          </div>
+          <div class="fd-row-main">
+            <div class="fd-row-name">{{ e.subject|default:"(no subject)"|truncatechars:64 }}</div>
+            <div class="fd-row-note">{{ e.get_category_display }} · {{ e.recipient_display|truncatechars:44 }}</div>
+            <div>
+              <span class="se-pill se-pill--{{ e.status }}">{{ e.get_status_display }}</span>
+              {% if e.was_opened %}
+              <span class="se-pill se-pill--opened"><i class="far fa-eye"></i> Opened</span>
+              {% elif e.to_role == 'customer' %}
+              <span class="se-pill se-pill--unopened"><i class="far fa-eye-slash"></i> Not opened</span>
+              {% endif %}
+              <span class="fd-chan fd-chan--{{ e.to_role }}">{{ e.get_to_role_display }}</span>
+            </div>
+          </div>
+          <div class="fd-row-time normal" style="text-align:right;">
+            {{ e.created_at|date:"j M, H:i" }}
+            {% if e.opened_at %}<div class="fd-row-date">Opened {{ e.opened_at|date:"j M, H:i" }}</div>{% endif %}
+          </div>
+        </a>
+        {% empty %}
+        <div class="fd-empty">No sent emails match this filter yet. Post-visit, quote and site-visit emails will appear here as they go out.</div>
+        {% endfor %}
+      </div>{# /fdtab-sent #}
+
     </div>{# /fd-scroll #}
   </div>{# /fd-left #}
 
@@ -502,6 +570,16 @@
       });
     });
   });
+
+  // Open a specific tab on load (e.g. ?tab=sent after a filter change or a
+  // Back link), so the Sent-Emails filters re-render on the right tab.
+  try {
+    var wantTab = new URLSearchParams(window.location.search).get('tab');
+    if (wantTab) {
+      var target = document.querySelector('.fd-tab[data-fdtab="' + wantTab + '"]');
+      if (target) target.click();
+    }
+  } catch (e) {}
 
   // Load a clicked lead into the right panel so the left sidebar/tabs never
   // change. Falls back to normal navigation on narrow screens where the right
