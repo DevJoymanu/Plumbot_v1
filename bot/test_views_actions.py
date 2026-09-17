@@ -5366,6 +5366,51 @@ class DeferredImportTests(TestCase):
         )
 
 
+class DashboardQuickActionsTests(StaffClientTestCase):
+    """The home page's quick-action tiles jump straight to the most recent lead
+    that needs the next step: log a site visit -> create a quote -> log a job.
+    """
+
+    def test_empty_states_link_to_the_lists(self):
+        r = self.client.get(reverse('dashboard'))
+        self.assertContains(r, 'Log a site visit')
+        self.assertContains(r, 'Create a quote')
+        self.assertContains(r, 'Log a job')
+        # With nothing waiting, the job tile offers a brand-new job.
+        self.assertContains(r, reverse('create_job'))
+
+    def test_quote_and_job_tiles_point_at_the_ready_lead(self):
+        lead = make_lead(
+            800, customer_name='Ready Rita', appointment_type='site_visit',
+            site_visit_completed=True, site_visit_completed_at=timezone.now(),
+            job_status='pending_schedule', status='confirmed')
+        r = self.client.get(reverse('dashboard'))
+        self.assertContains(r, reverse('create_quotation', args=[lead.pk]))
+        self.assertContains(r, reverse('schedule_job', args=[lead.pk]))
+        self.assertContains(r, 'Ready Rita')
+
+    def test_site_visit_tile_points_at_an_unlogged_past_visit(self):
+        past = timezone.now() - timedelta(hours=3)
+        lead = make_lead(
+            801, customer_name='Visited Vic', appointment_type='site_visit',
+            site_visit_completed=False, status='confirmed', scheduled_datetime=past)
+        r = self.client.get(reverse('dashboard'))
+        self.assertContains(
+            r, reverse('appointment_detail', args=[lead.pk]) + '?source=dashboard')
+        self.assertContains(r, 'Visited Vic')
+
+    def test_a_lead_that_already_has_a_quote_is_not_offered_for_quoting(self):
+        lead = make_lead(
+            802, customer_name='Quoted Quinn', appointment_type='site_visit',
+            site_visit_completed=True, site_visit_completed_at=timezone.now(),
+            job_status='pending_schedule', status='confirmed')
+        Quotation.objects.create(appointment=lead, tenant=lead.tenant)
+        r = self.client.get(reverse('dashboard'))
+        # Quote tile falls back to the list; the job tile still points at it.
+        self.assertNotContains(r, reverse('create_quotation', args=[lead.pk]))
+        self.assertContains(r, reverse('schedule_job', args=[lead.pk]))
+
+
 class DashboardScheduleTests(StaffClientTestCase):
     """The dashboard is the plumber's diary, so what it shows has to be what is
     actually in the diary. Three bugs pinned here:

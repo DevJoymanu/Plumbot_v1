@@ -499,6 +499,45 @@ def _appointments_sidebar_context(sidebar_filter='all', response_age='all', tena
     }
 
 
+def _quick_action_targets(tenant):
+    """The three jobs a plumber does the moment they log in, each pointing at
+    the MOST RECENT lead that needs it — so the home page is one tap from the
+    work in hand. The flow is: log the site visit -> create the quote -> log
+    the job, and each button jumps straight to the lead at that stage.
+
+    Returns the target lead and a pending count for each action; a None target
+    means nothing is waiting and the tile links to the relevant list instead.
+    """
+    base = Appointment.objects.for_tenant_or_seed(tenant).real()
+    now = timezone.now()
+
+    # 1) A site visit to LOG: a visit that has happened (its slot is in the
+    #    past) but hasn't been written up yet — newest first. Falls back to any
+    #    confirmed, unlogged visit for leads that never had a slot pinned.
+    visits = base.filter(appointment_type='site_visit', site_visit_completed=False)
+    due_visits = visits.filter(scheduled_datetime__isnull=False,
+                               scheduled_datetime__lte=now).order_by('-scheduled_datetime')
+    visit = due_visits.first() or visits.filter(status='confirmed').order_by('-updated_at').first()
+
+    # 2) A quote to CREATE: a visit that went ahead but carries no quote yet.
+    quotes_pending = base.filter(site_visit_completed=True, quotations__isnull=True)
+    quote = quotes_pending.order_by('-site_visit_completed_at').first()
+
+    # 3) A job to LOG: a completed visit that is ready to be booked as a job.
+    jobs_pending = base.filter(appointment_type='site_visit', site_visit_completed=True,
+                               job_status='pending_schedule')
+    job = jobs_pending.order_by('-site_visit_completed_at').first()
+
+    return {
+        'qa_visit': visit,
+        'qa_visit_count': due_visits.count(),
+        'qa_quote': quote,
+        'qa_quote_count': quotes_pending.count(),
+        'qa_job': job,
+        'qa_job_count': jobs_pending.count(),
+    }
+
+
 @method_decorator(staff_required, name='dispatch')
 class DashboardView(TemplateView):
     template_name = 'bot/pages/dashboard.html'
@@ -514,6 +553,7 @@ class DashboardView(TemplateView):
         context.update({
             'active_nav': 'dashboard',
             **workspace,
+            **_quick_action_targets(getattr(self.request, 'tenant', None)),
             # This workspace's own mark in the top bar. One reader
             # (bot/branding) for all four surfaces, so the fallback here is the
             # same one the quote and the email use.
