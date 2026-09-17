@@ -675,6 +675,14 @@ class ExtractionMixin:
                         print(f"✅ Updated area: {self.appointment.customer_area}")
     
                 # ── Availability / DateTime ───────────────────────────────────────────
+                # The unified classifier's verdict on "they gave us the choice",
+                # seeded into extracted_data by generate_response. None means it
+                # said nothing, which is what lets the keyword fallback run —
+                # never a definite False (see uc_datetime_flexible).
+                _flexible = extracted_data.get('datetime_flexible')
+                if _flexible is not None:
+                    _flexible = bool(_flexible)
+
                 if (extracted_data.get('availability') and
                         extracted_data.get('availability') != 'null'):
                     try:
@@ -694,6 +702,45 @@ class ExtractionMixin:
                     except ValueError as e:
                         print(f"❌ Failed to parse AI datetime: {extracted_data['availability']} — {e}")
     
+                elif (
+                    next_question == 'availability_date' and
+                    not self.appointment.scheduled_datetime and
+                    not extracted_data.get('availability') and
+                    self.lead_has_no_time_preference(
+                        incoming_message,
+                        classification={'datetime_flexible': _flexible}
+                        if _flexible is not None else None,
+                    )
+                ):
+                    # They handed us the choice. Deciding FOR them is the close:
+                    # a lead who says "anytime is fine" has already agreed to
+                    # the visit, and coming back with "so when suits you?" asks
+                    # the question they just answered. This used to fall through
+                    # to the retry machinery with nothing captured — same ask
+                    # paraphrased four times, then a human handoff that silences
+                    # every follow-up, on a lead who had said yes.
+                    #
+                    # The MODEL judged the flexibility; the slot itself is
+                    # deterministic, because a day and a time the customer has
+                    # to trust is never something the model invents.
+                    picked = self.resolve_flexible_slot()
+                    if picked:
+                        self.appointment.scheduled_datetime = picked
+                        self._mark_time_confirmed()
+                        updated_fields.append('availability')
+                        self.appointment.save(
+                            update_fields=['scheduled_datetime', 'internal_notes'])
+                        # Per-turn only, never a column: the booking reply says
+                        # the slot back when WE chose it, because the lead has
+                        # no idea what we picked until the written-up
+                        # confirmation lands a minute or two later.
+                        self._slot_was_our_choice = picked
+                        print(f"🗓️ No preference given — took {picked}")
+                    else:
+                        # Nothing free to offer. Never invent a slot; the flow
+                        # asks for a day as it would have anyway.
+                        print("🗓️ No preference given but the diary has nothing free")
+
                 elif (
                     next_question == 'availability_date' and
                     not self.appointment.scheduled_datetime and
@@ -721,6 +768,22 @@ class ExtractionMixin:
                         self._mark_time_confirmed()
                         updated_fields.append('availability')
                         print(f"âœ… Time selection captured: {old_dt} -> {self.appointment.scheduled_datetime}")
+                    elif self.lead_has_no_time_preference(
+                        incoming_message,
+                        classification={'datetime_flexible': _flexible}
+                        if _flexible is not None else None,
+                    ):
+                        # "Any time on that day" is an ANSWER, not a missing
+                        # time: they named the day and left the hour to us.
+                        picked = self.resolve_flexible_slot()
+                        if picked:
+                            self.appointment.scheduled_datetime = picked
+                            self._mark_time_confirmed()
+                            updated_fields.append('availability')
+                            self._slot_was_our_choice = picked
+                            print(f"🗓️ Any time on {picked.date()} — took {picked}")
+                        else:
+                            self._maybe_alert_plumber_date_no_time()
                     else:
                         # Lead was asked for a time but gave none — they've committed
                         # a date with no time. Hand it to the plumber once so a human

@@ -1437,6 +1437,124 @@ class ResponseMixin:
             return f"{day} {joiner}{_clock_label(slot_dt)}"
 
 
+        def _availability_ask(self, is_shona: bool = False) -> str:
+            """THE availability ask, whatever shape the diary is in.
+
+            Two free slots is the normal case and keeps its approved script:
+            the first ask of an early-flow question is hardcoded, because
+            consistency on first contact converts and a scripted sentence
+            cannot go wrong.
+
+            The AWKWARD shapes are handed to DeepSeek (`bot.availability_ask`,
+            owner request 2026-09-17) because they had no script and the two
+            literals standing in for one were both wrong:
+
+              one free slot -> "tomorrow at 9am or the day after", a real slot
+                  ORed with a vague phrase carrying no time, so picking the
+                  second option costs the extra turn this ask exists to save
+              nothing free -> "tomorrow or the day after", two invented days
+                  that ignore whether the tenant is open then
+              two slots, one day -> "tomorrow at 9am or tomorrow at 2pm",
+                  repeating a day no person repeats
+
+            The model NEVER chooses a slot: code resolves them here and hands
+            them over as fixed strings, and a fence rejects any composition
+            naming a day or time we did not supply. Every branch below is a
+            correct sentence on its own, because that is what goes out when
+            the composer is off, down, or rejected.
+            """
+            slots = self._visit_slot_labels(is_shona)
+            purpose = self._describe_project_context()
+
+            composed = None
+            if self._ask_needs_composing(slots):
+                try:
+                    from bot.availability_ask import compose_availability_ask
+                    composed = compose_availability_ask(
+                        slots,
+                        purpose=purpose,
+                        is_shona=is_shona,
+                        job_noun=_visit_job_noun(self.appointment, is_shona),
+                    )
+                except Exception:
+                    logger.warning("Availability ask composer blew up; using "
+                                   "the scripted sentence", exc_info=True)
+            if composed:
+                # The hours are OURS to state, never the model's: that sentence
+                # carries day names and clock times, and a fence loose enough
+                # to let it through would let an invented slot through too.
+                if not slots:
+                    composed = f"{composed}{_open_hours_clause(self)}"
+                return composed
+
+            return self._scripted_availability_ask(slots, purpose, is_shona)
+
+        def _ask_needs_composing(self, slots) -> bool:
+            """Is this a shape the approved script does not cover?
+
+            Two slots on two different days is the script's own case and is
+            never sent to the model. Everything else is: one slot, no slots,
+            or two slots that share a day.
+            """
+            if len(slots) != 2:
+                return True
+            first, second = slots
+
+            def day_of(label):
+                # Either joiner: English labels read "tomorrow at 9am", Shona
+                # ones "mangwana na9am".
+                for splitter in (' at ', ' na'):
+                    if splitter in label:
+                        return label.split(splitter)[0].strip().lower()
+                return label.strip().lower()
+
+            # Same day means the day word is about to be said twice.
+            return day_of(first) == day_of(second)
+
+        def _scripted_availability_ask(self, slots, purpose,
+                                       is_shona: bool = False) -> str:
+            """The deterministic ask. Correct for every shape on its own.
+
+            This is what goes out when the composer is off, down or rejected,
+            so no branch here may lean on the model having run.
+            """
+            if len(slots) >= 2 and slots[0] != slots[1]:
+                # "kana" is the house word for "or" in Shona copy — the
+                # pricing-followup ask has always used it.
+                joiner = 'kana' if is_shona else 'or'
+                splitter = ' na' if is_shona else ' at '
+                day_a = slots[0].split(splitter)[0].strip()
+                day_b = slots[1].split(splitter)[0].strip()
+                if day_a.lower() == day_b.lower():
+                    # Say the day once: "tomorrow at 9am or 2pm".
+                    tail = slots[1].split(splitter, 1)
+                    second = tail[1].strip() if len(tail) > 1 else slots[1]
+                    offer = f"{slots[0]} {joiner} {second}"
+                else:
+                    offer = f"{slots[0]} {joiner} {slots[1]}"
+                if is_shona:
+                    return (f"Zvakanaka, {offer}, ndeipi inokukodzerai, "
+                            f"kuti tiuye tione nzvimbo?")
+                return (f"Great, what works better for you, {offer}, "
+                        f"for us to come through and {purpose}?")
+
+            if len(slots) == 1:
+                # ONE option: offer the one we have and ask if it works. Never
+                # pad it with a second vague day.
+                if is_shona:
+                    return (f"Zvakanaka, {slots[0]} zvinokubatsira here, "
+                            f"kuti tiuye tione nzvimbo?")
+                return (f"Great, would {slots[0]} work for us to come through "
+                        f"and {purpose}?")
+
+            # Nothing free. Say so honestly and ask, rather than offering a day
+            # we may not even be open on.
+            hours = _open_hours_clause(self)
+            if is_shona:
+                return f"Ndeipi zuva nenguva inokukodzerai?{hours}"
+            return (f"When would suit you for us to come through and "
+                    f"{purpose}?{hours}")
+
         def _visit_slot_labels(self, is_shona: bool = False) -> list:
             """
             THE resolver for the two options at the availability ask, each
@@ -3870,10 +3988,7 @@ class ResponseMixin:
                         print(f"🎯 Customer selecting alternative time: {selected_time}")
                         booking_result = self.book_appointment_with_selected_time(selected_time)
                         if booking_result['success']:
-                            reply = (
-                                "One last thing, what name should we put on the booking? "
-                                "If you'd rather not share it, just say no."
-                            )
+                            reply = self._name_ask_after_booking()
                         else:
                             alternatives = booking_result.get('alternatives', [])
                             if alternatives:
@@ -3895,7 +4010,9 @@ class ResponseMixin:
                 # Use precomputed data from the unified classifier when available,
                 # so we don't pay for a second DeepSeek call for the same message.
                 if precomputed_classification:
-                    from bot.unified_classifier import uc_extracted, uc_service_type
+                    from bot.unified_classifier import (
+                        uc_datetime_flexible, uc_extracted, uc_service_type,
+                    )
                     _pre = uc_extracted(precomputed_classification)
                     # Seed extracted_data with the unified result.
                     # extract_all_available_info_with_ai still runs but only for
@@ -3906,6 +4023,11 @@ class ResponseMixin:
                         "area":                 _pre.get("area"),
                         "availability":         _pre.get("availability"),
                         "customer_name":        _pre.get("customer_name"),
+                        # Not a field — the classifier's verdict on "any time is
+                        # fine", read by the availability branch of
+                        # update_appointment_with_extracted_info. None when the
+                        # model said nothing, so the keyword fallback still runs.
+                        "datetime_flexible":    uc_datetime_flexible(precomputed_classification),
                         # Fields not in unified call — let existing extractor fill these
                         "plan_status":          None,
                         "timeline":             None,
@@ -3941,6 +4063,7 @@ class ResponseMixin:
                             next_question,
                             ['plan_status'],
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                         reply = "Perfect! You can send your plan whenever you're ready. " + reply
                         return reply
@@ -4017,10 +4140,13 @@ class ResponseMixin:
                 if booking_status['ready_to_book'] and self.appointment.status != 'confirmed':
                     booking_result = self.book_appointment(incoming_message)
                     if booking_result['success']:
-                        reply = (
-                            "One last thing, what name should we put on the booking? "
-                            "If you'd rather not share it, just say no."
-                        )
+                        reply = self._name_ask_after_booking()
+                        # When the lead left the slot to us, say it back before
+                        # asking for anything else — see _slot_said_back.
+                        _ours = getattr(self, '_slot_was_our_choice', None)
+                        if _ours:
+                            reply = (f"Perfect, let's say {self._slot_said_back(_ours)} "
+                                     f"then.{MESSAGE_SPLIT_MARKER}{reply}")
                     else:
                         error        = booking_result.get('error', '')
                         reason       = (booking_result.get('reason') or '').lower()
@@ -4094,6 +4220,7 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                     elif (self._is_facebook_price_ref(incoming_message)
                             and not _asks_figure):
@@ -4119,6 +4246,7 @@ class ResponseMixin:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
                     elif ((self._asks_for_quote(incoming_message)
                             or self._is_job_quote_request(
@@ -4190,11 +4318,13 @@ class ResponseMixin:
                             reply = self.generate_contextual_response(
                                 incoming_message, next_question, updated_fields,
                                 quoted_context=quoted_context,
+                                classification=precomputed_classification,
                             )
                     else:
                         reply = self.generate_contextual_response(
                             incoming_message, next_question, updated_fields,
                             quoted_context=quoted_context,
+                            classification=precomputed_classification,
                         )
 
                 # Guard: never return None or empty — send a safe fallback instead
@@ -4213,9 +4343,16 @@ class ResponseMixin:
                 return "Sorry, dropped that on our end. Could you send that again?"
 
 
-        def generate_contextual_response(self, incoming_message, next_question, updated_fields, quoted_context=None):
+        def generate_contextual_response(self, incoming_message, next_question,
+                                         updated_fields, quoted_context=None,
+                                         classification=None):
             """
             Generate the next bot message.
+
+            `classification` is the turn's already-computed unified result,
+            optional so every existing caller keeps working: it is read only by
+            `lead_has_no_time_preference`, which falls back to its keyword list
+            when nothing is passed.
 
             retry_count == 0  → exact hardcoded first-pass question, no DeepSeek call.
             retry_count >= 1  → DeepSeek rephrases to match the customer's tone.
@@ -4267,15 +4404,16 @@ class ResponseMixin:
                         reply += "Could you please choose a different day that works for you?"
                     return reply
 
-                all_day_phrases = [
-                    'available all day', 'whole day', 'all day', 'anytime',
-                    'any time', 'free all day', 'i am free', 'im free',
-                ]
-                if (
-                    next_question in ('availability_time', 'area', 'complete') and
-                    self.appointment.scheduled_datetime and
-                    any(p in incoming_message.lower() for p in all_day_phrases)
-                ):
+                # The lead gave us the choice of when to come. Extraction
+                # normally takes the slot before we get here; this is the
+                # backstop for the turns it did not see — and it no longer
+                # requires a day to already be on file, which is why "anytime
+                # is fine" at the availability ask used to fall through to the
+                # retry machinery and get the same question back four times.
+                if (next_question in ('availability_date', 'availability_time',
+                                      'area', 'complete') and
+                        self.lead_has_no_time_preference(
+                            incoming_message, classification)):
                     return self._handle_all_day_response()
 
                 if next_question == "name":
@@ -4339,7 +4477,14 @@ class ResponseMixin:
               accepted_offered  – user chose one of the offered days
               suggested_new_day – user mentioned a completely different day
               rejected_both     – user rejected / is unavailable on both days
+              no_preference     – user gave us the choice ("anytime is fine")
               unclear           – cannot determine
+
+            `no_preference` is the one the bot had no answer for. It is an
+            ANSWER, not an unclear reply: the lead has agreed to the visit and
+            left the day to us, and the old `unclear` route came back with
+            "when would work best for you?" — the question they had just
+            answered — four times before handing off to a human.
             """
             offered_str = (
                 ", ".join(self._format_day(d) for d in offered_days)
@@ -4356,6 +4501,8 @@ class ResponseMixin:
     - accepted_offered  : customer accepted or chose one of the two offered days
     - suggested_new_day : customer mentioned a different day (e.g. "Tuesday", "Monday", "next week")
     - rejected_both     : customer said not available on either day, or rejected/declined both
+    - no_preference     : customer is happy with ANY day or time and named none — they
+                          have given us the choice
     - unclear           : none of the above is clear
 
     Also extract the day name if mentioned (e.g. "Tuesday", null if none).
@@ -4364,10 +4511,18 @@ class ResponseMixin:
     - "Tues", "tues", "tue", "Tuesday" → suggested_new_day, day_mentioned="Tuesday"
     - "not available", "can't do either", "neither works", "those don't work" → rejected_both
     - Picks one of the offered days → accepted_offered
+    - "anytime", "anytime is fine", "any day", "all day", "whole day", "I'm free
+      whenever", "whenever suits you", "you choose", "whatever works for you",
+      "I'm flexible", Shona "chero nguva" / "chero zuva" / "imi sarudzai"
+      → no_preference, day_mentioned=null, confidence=HIGH
+    - "any time on Tuesday" names a DAY → suggested_new_day, day_mentioned="Tuesday"
+      (the open time is not a lack of preference about the day)
+    - "not right now", "next month", "I'll get back to you" is a DELAY, not a free
+      hand → unclear
     - Vague "ok" with no day mentioned → unclear
 
     Return ONLY valid JSON (no markdown):
-    {{"intent": "accepted_offered|suggested_new_day|rejected_both|unclear", "day_mentioned": "DayName or null", "confidence": "HIGH|LOW"}}"""
+    {{"intent": "accepted_offered|suggested_new_day|rejected_both|no_preference|unclear", "day_mentioned": "DayName or null", "confidence": "HIGH|LOW"}}"""
 
             try:
                 from bot.services.clients import deepseek_call
@@ -4377,7 +4532,7 @@ class ResponseMixin:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.1,
-                    max_tokens=60,
+                    max_tokens=80,
                     json_response=True,
                 )
                 raw = raw.replace("```json", "").replace("```", "").strip()
@@ -4402,6 +4557,11 @@ class ResponseMixin:
             intent = classification.get("intent", "unclear")
             day_mentioned = classification.get("day_mentioned")
             confidence = classification.get("confidence", "LOW")
+
+            if intent == "no_preference" and confidence == "HIGH":
+                # An ANSWER, not an unclear reply. They agreed to the visit and
+                # left the day to us, so take one — see _handle_all_day_response.
+                return self._handle_all_day_response()
 
             if intent == "rejected_both" and confidence == "HIGH":
                 # Clear stored datetime so we don't re-offer the same days next turn
@@ -4948,15 +5108,7 @@ class ResponseMixin:
                 return f"Got it! {self._get_contextual_description_question()}"
 
             if next_question == "availability_date":
-                # Day AND time in the one ask — see _get_two_visit_slots.
-                slots = self._visit_slot_labels()
-                slot_a = slots[0] if len(slots) > 0 else "tomorrow"
-                slot_b = slots[1] if len(slots) > 1 else "the day after"
-                visit_desc = self._describe_project_context()
-                return (
-                    f"Great, what works better for you, {slot_a} or {slot_b}, "
-                    f"for us to come through and {visit_desc}?"
-                )
+                return self._availability_ask()
 
             if next_question == "availability_time":
                 # Only reached when the lead named a day and no time.
@@ -5233,15 +5385,33 @@ class ResponseMixin:
                 )
 
             if next_question == "availability_date":
+                # The options are whatever is REALLY free. This used to fall
+                # back to the literal "the day after", so a busy diary handed
+                # the model a day nobody had checked and the paraphrase offered
+                # it — the retry path inventing a slot is worse than the script
+                # doing it, because the model then writes it in its own words.
                 slots = self._visit_slot_labels()
-                slot_a = slots[0] if len(slots) > 0 else "tomorrow"
-                slot_b = slots[1] if len(slots) > 1 else "the day after"
                 visit_desc = self._describe_project_context()
+                if len(slots) >= 2:
+                    return (
+                        f"Ask whether {slots[0]} or {slots[1]} works better for a free "
+                        f"on-site visit to {visit_desc}. Frame it as offering two specific "
+                        f"options, and keep the day and the time together exactly as "
+                        f"written — the lead should be able to book by picking one, without "
+                        f"a second question about the time. Offer NOTHING else: those two "
+                        f"are the only slots we have."
+                    )
+                if len(slots) == 1:
+                    return (
+                        f"Ask whether {slots[0]} works for a free on-site visit to "
+                        f"{visit_desc}. That is the ONLY slot we have free, so offer it "
+                        f"alone and keep the day and the time together exactly as written. "
+                        f"Do not invent a second option."
+                    )
                 return (
-                    f"Ask whether {slot_a} or {slot_b} works better for a free on-site visit "
-                    f"to {visit_desc}. Frame it as offering two specific options, and keep "
-                    f"the day and the time together exactly as written — the lead should be "
-                    f"able to book by picking one, without a second question about the time."
+                    f"Ask when would suit them for a free on-site visit to {visit_desc}. "
+                    f"We have nothing free to offer them, so name NO day and NO time at "
+                    f"all — ask them openly."
                 )
 
             if next_question == "availability_time":
@@ -7291,14 +7461,12 @@ class ResponseMixin:
                         reply += "Could you please choose a different day that works for you?"
                     return reply
     
-                # ── "Available all day" guard ─────────────────────────────────────────
-                all_day_phrases = [
-                    'available all day', 'whole day', 'all day', 'anytime',
-                    'any time', 'free all day', 'i am free', 'im free',
-                ]
-                if (next_question in ('availability_time', 'area', 'complete') and
-                        self.appointment.scheduled_datetime and
-                        any(p in incoming_message.lower() for p in all_day_phrases)):
+                # ── "Any time is fine" guard ──────────────────────────────────────────
+                # One resolver, shared with the live path (this method is the
+                # legacy copy) — two phrase lists had already drifted apart.
+                if (next_question in ('availability_date', 'availability_time',
+                                      'area', 'complete') and
+                        self.lead_has_no_time_preference(incoming_message)):
                     return self._handle_all_day_response()
                 #
                 if next_question == "name":
@@ -7317,15 +7485,10 @@ class ResponseMixin:
                         return f"Got it! {self._get_contextual_description_question()}"
 
                     if next_question == "availability_date":
-                        # Day AND time in the one ask — see _get_two_visit_slots.
-                        slots      = self._visit_slot_labels()
-                        slot_a     = slots[0] if len(slots) > 0 else "tomorrow"
-                        slot_b     = slots[1] if len(slots) > 1 else "the day after"
-                        visit_desc = self._describe_project_context()
-                        return (
-                            f"Great, what works better for you, {slot_a} or {slot_b}, "
-                            f"for us to come through and {visit_desc}?"
-                        )
+                        # One builder, shared with the live path — see
+                        # _availability_ask. Two copies of this answered the
+                        # same diary differently.
+                        return self._availability_ask()
 
                     if next_question == "availability_time":
                         # Only reached when the lead named a day and no time.

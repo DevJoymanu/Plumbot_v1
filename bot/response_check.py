@@ -76,8 +76,12 @@ _PROMISE_WORDS = (
 # The amount only. A trailing comma or full stop is punctuation, not part
 # of the figure: absorbing it made "US$10," and "US$10." read as two
 # different amounts, so re-punctuating a sentence looked like inventing one.
+# The bare R is the rand prefix, and must not match the 'r' ending an
+# ordinary word: "or 2pm" and "for 20 minutes" both matched R\s?\d under
+# IGNORECASE, so a sound sentence read as naming a figure.
 _MONEY = re.compile(
-    r'(?:US\$|USD|\$|R)\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?', re.IGNORECASE)
+    r'(?:US\$|USD|\$|(?<![A-Za-z])R)\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?',
+    re.IGNORECASE)
 
 _SYSTEM = """You check a plumbing company's outgoing WhatsApp reply before it is sent.
 

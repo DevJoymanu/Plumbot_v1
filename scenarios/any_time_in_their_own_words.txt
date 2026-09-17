@@ -1,0 +1,19 @@
+# The same free hand, in words no keyword list would ever hold — this is the
+# half that needs DeepSeek. "whenever suits you" / "you choose" / "I really
+# don't mind" / Shona "imi sarudzai, chero nguva" all mean the lead has handed
+# us the choice, and the keyword fallback only covers the common phrasings.
+#
+# `uc_datetime_flexible` is AI-primary for exactly this reason, and returns
+# None rather than False when the call fails, so a dead API degrades to the
+# phrase list instead of reading as "they named a day".
+
+> Hello, looking for someone to fit a shower cubicle
+expect: what area are you in
+
+> Avondale
+expect: what works better for you
+
+> whenever suits you, I really don't mind
+expect: let's say
+reject: when would work best
+reject: which day suits

@@ -259,6 +259,96 @@ class AvailabilityMixin:
             return results
 
 
+        # Words that hand us the choice of when to come. The KEYWORD half of
+        # `lead_has_no_time_preference` — DeepSeek is asked first (it reads
+        # "whenever suits you" and the Shona equivalents, which no list holds),
+        # and this catches the common phrasings when the call is down. Kept in
+        # ONE place because two copies of it in response_mixin had already
+        # drifted apart.
+        _NO_PREFERENCE_PHRASES = (
+            'available all day', 'free all day', 'whole day', 'all day',
+            'anytime', 'any time', 'any day', 'anyday', 'any date',
+            'i am free', 'im free', "i'm free", 'im flexible', "i'm flexible",
+            'i am flexible', 'whenever', 'you choose', 'you decide',
+            'whatever works', 'whatever suits', 'up to you', 'your choice',
+            'chero nguva', 'chero zuva', 'imi sarudzai', 'ndiripo',
+        )
+
+        def lead_has_no_time_preference(self, message, classification=None) -> bool:
+            """Has the lead handed us the choice of when we come?
+
+            AI-primary with a keyword fallback, the pattern the budget-decline
+            classifiers already use: the unified call reads "whenever suits
+            you", "you choose" and "imi sarudzai", which a phrase list never
+            will, and `uc_datetime_flexible` returns None (not False) when it
+            did not run, so a dead API degrades to the list instead of reading
+            as a definite "they named a day".
+
+            The model is the only thing asked to JUDGE this. Which day and
+            which hour we then offer is resolved deterministically in
+            `resolve_flexible_slot` — a slot the customer has to be able to
+            trust is never something the model invents.
+            """
+            try:
+                from bot.unified_classifier import uc_datetime_flexible
+                flagged = uc_datetime_flexible(classification)
+            except Exception:
+                flagged = None
+            if flagged is not None:
+                return flagged
+            text = (message or '').lower()
+            return any(p in text for p in self._NO_PREFERENCE_PHRASES)
+
+        def resolve_flexible_slot(self):
+            """A real day and hour for a lead who said any time is fine.
+
+            The DAY is whichever one is already on file (they named a day and
+            left the time open), else the first slot we would have offered
+            them — `_get_two_visit_slots` has already rolled past the days
+            this tenant is shut, so the answer can never be a closed day.
+
+            The HOUR starts at noon. A lead with no preference is not sent at
+            8am, and midday leaves the plumber's morning free for the jobs
+            that were booked to a time.
+
+            Returns a timezone-aware datetime, or None when the diary has
+            nothing free — the caller then asks rather than inventing a slot.
+            """
+            from datetime import datetime as _dt
+
+            sa_tz = pytz.timezone('Africa/Johannesburg')
+            date_obj = self._get_selected_local_date()
+            if not date_obj:
+                slots = self._get_two_visit_slots()
+                if slots:
+                    date_obj = slots[0].astimezone(sa_tz).date()
+                else:
+                    days = self._get_next_two_available_days()
+                    date_obj = days[0] if days else None
+            if not date_obj:
+                return None
+
+            for hour in (12, 13, 14, 15, 16, 11, 10, 9):
+                candidate = sa_tz.localize(
+                    _dt.combine(date_obj, _dt.min.time().replace(hour=hour))
+                )
+                if candidate <= timezone.now():
+                    continue
+                is_available, _ = self.check_appointment_availability(candidate)
+                if is_available:
+                    return candidate
+
+            # That day is full. Their words were "any day", so the next day we
+            # work is still an answer to what they said.
+            for day in self._get_next_two_available_days():
+                if day == date_obj:
+                    continue
+                times = self._get_two_available_times_for_date(day)
+                if times:
+                    return times[-1]
+            return None
+
+
         def _get_two_visit_slots(self) -> list:
             """
             The two offers we put at the availability ask, each a real DAY and a

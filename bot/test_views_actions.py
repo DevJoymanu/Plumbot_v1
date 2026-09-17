@@ -10425,3 +10425,263 @@ class SentEmailDashboardTests(StaffClientTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Dashboard-visible quote')
         self.assertContains(resp, 'Sent Emails')
+
+
+class FlexibleAvailabilityTests(TestCase):
+    """"Anytime is fine" is an ANSWER, and it books.
+
+    The lead who hands us the choice has already said yes to the visit. Before
+    this, nothing was captured: the same availability question came back
+    paraphrased on every turn and the fourth retry handed the lead to a human,
+    which also silences every follow-up. The old all-day guard could not see
+    it — it required a day to ALREADY be on file and the flow to have moved
+    past `availability_date`, which is the state the old two-step ask (day
+    first, then time) was in and which the day+time ask never reaches.
+
+    DeepSeek judges the flexibility; the slot is picked deterministically,
+    because a day and a time the customer has to be able to trust is never
+    something the model invents.
+    """
+
+    FLEXIBLE = {
+        'intent': 'in_scope', 'confidence': 'HIGH',
+        'datetime_flexible': True, 'answered_current_question': True,
+        'extracted': {'area': None, 'availability': None,
+                      'customer_name': None, 'project_description': None},
+    }
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+
+    def _lead(self, suffix, **kw):
+        fields = dict(tenant=self.homebase, status='pending',
+                      project_type='bathroom_renovation',
+                      project_description='full bathroom redo',
+                      customer_area='Borrowdale')
+        fields.update(kw)
+        return make_lead(suffix, **fields)
+
+    def _bot(self, lead):
+        from .views.plumbot.base import Plumbot
+        bot = Plumbot(lead.phone_number, tenant=lead.tenant)
+        bot.appointment = lead
+        return bot
+
+    def _answer(self, lead, message, classification=None):
+        """One turn, with every outbound mocked."""
+        with patch('bot.views.plumbot.notification_mixin.send_plumber_notification_email'), \
+             patch('bot.whatsapp_cloud_api.whatsapp_api.send_text_message'), \
+             patch('bot.views.plumbot.base.Plumbot.add_to_google_calendar'), \
+             patch('bot.views.plumbot.base.Plumbot.notify_team'), \
+             patch('bot.views.plumbot.base.Plumbot.send_confirmation_message'):
+            reply = self._bot(lead).generate_response(
+                message, precomputed_classification=classification)
+        lead.refresh_from_db()
+        return reply
+
+    # ── the slot is taken, and the booking closes ─────────────────────────
+    def test_the_slot_is_taken_and_the_lead_is_booked(self):
+        lead = self._lead(9901)
+        reply = self._answer(lead, 'anytime is fine', self.FLEXIBLE)
+
+        self.assertIsNotNone(lead.scheduled_datetime,
+                             'a flexible lead must leave the turn with a slot')
+        self.assertEqual(lead.status, 'confirmed')
+        # The day is a day this tenant actually works, in the future.
+        local = timezone.localtime(lead.scheduled_datetime)
+        self.assertTrue(lead.scheduled_datetime > timezone.now())
+        self.assertNotEqual(local.strftime('%A'), 'Saturday')
+        # Noon onwards: a lead with no preference is not sent an 8am slot.
+        self.assertGreaterEqual(local.hour, 12)
+
+    def test_the_chosen_slot_is_said_back(self):
+        """They do not know what we picked — the written-up confirmation is
+        queued a minute or two later, so the reply has to say it."""
+        lead = self._lead(9902)
+        reply = self._answer(lead, 'anytime is fine', self.FLEXIBLE)
+        self.assertIn("let's say", reply)
+        self.assertRegex(reply, r'\d(am|pm)')
+
+    def test_the_question_is_never_re_asked(self):
+        lead = self._lead(9903)
+        reply = self._answer(lead, 'anytime is fine', self.FLEXIBLE)
+        # The bug: answering "anytime" with "so when works for you?".
+        for asked_again in ('when would work best', 'what works better for you',
+                            'which day', 'what time works'):
+            self.assertNotIn(asked_again, reply.lower())
+
+    def test_a_missing_field_is_asked_for_instead_of_booking(self):
+        lead = self._lead(9904, customer_area='')
+        reply = self._answer(lead, 'whenever suits you', self.FLEXIBLE)
+        self.assertIsNotNone(lead.scheduled_datetime)
+        self.assertEqual(lead.status, 'pending')
+        self.assertIn('what area are you in', reply.lower())
+
+    def test_a_day_on_file_keeps_the_day_and_only_takes_the_hour(self):
+        lead = self._lead(9905)
+        day = self._bot(lead)._get_next_two_available_days()[0]
+        lead.scheduled_datetime = timezone.make_aware(
+            timezone.datetime.combine(day, timezone.datetime.min.time()),
+            timezone.get_current_timezone())
+        lead.save()
+
+        self._answer(lead, 'any time that day', self.FLEXIBLE)
+        self.assertEqual(timezone.localtime(lead.scheduled_datetime).date(), day)
+        self.assertGreaterEqual(timezone.localtime(lead.scheduled_datetime).hour, 12)
+
+    def test_a_full_diary_offers_instead_of_inventing_a_slot(self):
+        """Nothing free means ASK. We never invent a slot to fill a silence,
+        and the reason given is the diary, not the lead."""
+        lead = self._lead(9909)
+        with patch('bot.views.plumbot.availability_mixin.AvailabilityMixin'
+                   '.resolve_flexible_slot', return_value=None):
+            reply = self._answer(lead, 'anytime is fine', self.FLEXIBLE)
+        self.assertIsNone(lead.scheduled_datetime)
+        self.assertNotEqual(lead.status, 'confirmed')
+        self.assertIn('full on our side', reply.lower())
+
+    # ── degrading ─────────────────────────────────────────────────────────
+    def test_it_still_works_with_the_api_down(self):
+        """The keyword half of the resolver carries the common phrasings."""
+        lead = self._lead(9906)
+        with patch('bot.services.clients.deepseek_client.chat.completions.create',
+                   side_effect=RuntimeError('deepseek down')):
+            reply = self._answer(lead, 'anytime is fine')
+        self.assertIsNotNone(lead.scheduled_datetime)
+        self.assertEqual(lead.status, 'confirmed')
+
+    def test_the_models_no_beats_a_flexible_looking_phrase(self):
+        """"anytime tomorrow" names a DAY, so the day question is answered and
+        the time question follows — this is not a free hand."""
+        bot = self._bot(self._lead(9907))
+        self.assertFalse(bot.lead_has_no_time_preference(
+            'anytime tomorrow', classification={'datetime_flexible': False}))
+
+    def test_a_delay_is_not_a_free_hand(self):
+        lead = self._lead(9908)
+        bot = self._bot(lead)
+        for delay in ('not right now', 'next month sometime',
+                      "I'll get back to you"):
+            self.assertFalse(bot.lead_has_no_time_preference(delay), delay)
+
+    # ── the two booking paths share one name ask ──────────────────────────
+    def test_both_booking_paths_read_the_same_name_ask(self):
+        """Two paths book a lead now — the normal flow and the flexible close.
+
+        They share `_name_ask_after_booking` rather than each carrying the
+        sentence, so the two cannot drift. (Five OTHER copies of this line
+        live on paths this change did not touch; consolidating those is its
+        own job.)
+        """
+        import inspect
+
+        from .views.plumbot import booking_mixin, response_mixin
+
+        flow = inspect.getsource(response_mixin.ResponseMixin.generate_response)
+        self.assertIn('_name_ask_after_booking()', flow)
+        self.assertNotIn('what name should we put on the booking', flow)
+
+        close = inspect.getsource(
+            booking_mixin.BookingMixin._close_on_the_taken_slot)
+        self.assertIn('_name_ask_after_booking()', close)
+        self.assertNotIn('what name should we put on the booking', close)
+
+
+class ComposedAvailabilityAskTests(TestCase):
+    """DeepSeek writes the availability ask when the diary is an awkward shape.
+
+    Two free slots on two days keeps its approved script and never spends a
+    call. One slot, nothing free, or two slots sharing a day are composed,
+    because those had no script and the two literals standing in for one were
+    both wrong - a real slot ORed with a vague "the day after", and two
+    invented days on an empty diary.
+
+    The model never chooses a slot: code resolves them and a fence rejects any
+    composition naming a day or time we did not supply.
+    """
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.lead = make_lead(9950, tenant=self.homebase, status='pending',
+                              project_type='bathroom_renovation',
+                              project_description='full bathroom redo',
+                              customer_area='Borrowdale')
+
+    def _bot(self, slots):
+        """A bot whose diary yields exactly `slots`."""
+        from .views.plumbot.base import Plumbot
+        bot = Plumbot(self.lead.phone_number, tenant=self.lead.tenant)
+        bot.appointment = self.lead
+        bot._visit_slot_labels = lambda is_shona=False: list(slots)
+        return bot
+
+    # -- which shapes reach the model ----------------------------------------
+    def test_the_scripted_shape_never_calls_the_model(self):
+        bot = self._bot(['tomorrow at 9am', 'this Sunday at 2pm'])
+        with patch('bot.availability_ask.compose_availability_ask') as composer:
+            ask = bot._availability_ask()
+        composer.assert_not_called()
+        self.assertIn('tomorrow at 9am or this Sunday at 2pm', ask)
+
+    def test_the_awkward_shapes_reach_the_model(self):
+        for slots in (['tomorrow at 9am'],
+                      [],
+                      ['tomorrow at 9am', 'tomorrow at 2pm']):
+            with self.subTest(slots=slots):
+                bot = self._bot(slots)
+                self.assertTrue(bot._ask_needs_composing(slots))
+
+    # -- the composition is used, and fenced ---------------------------------
+    def test_a_clean_composition_is_what_goes_out(self):
+        bot = self._bot(['tomorrow at 9am'])
+        with patch('bot.services.clients.deepseek_call',
+                   return_value='{"ask": "Would tomorrow at 9am suit you for a '
+                                'quick look at the bathroom?"}'):
+            ask = bot._availability_ask()
+        self.assertEqual(
+            ask, 'Would tomorrow at 9am suit you for a quick look at the bathroom?')
+
+    def test_an_invented_slot_is_rejected_and_the_script_goes_out(self):
+        """The whole point of the fence: a slot we do not have is a plumber who
+        does not arrive."""
+        bot = self._bot(['tomorrow at 9am'])
+        with patch('bot.services.clients.deepseek_call',
+                   return_value='{"ask": "Would Tuesday at 7am work for you?"}'):
+            ask = bot._availability_ask()
+        self.assertNotIn('Tuesday', ask)
+        self.assertNotIn('7am', ask)
+        self.assertIn('tomorrow at 9am', ask)
+
+    def test_it_fails_open_when_the_api_is_down(self):
+        bot = self._bot(['tomorrow at 9am'])
+        with patch('bot.services.clients.deepseek_call',
+                   side_effect=RuntimeError('deepseek down')):
+            ask = bot._availability_ask()
+        self.assertIn('tomorrow at 9am', ask)
+        self.assertEqual(ask.count('?'), 1)
+
+    def test_the_switch_turns_it_off_without_a_deploy(self):
+        bot = self._bot(['tomorrow at 9am'])
+        with patch('bot.availability_ask.ASK_COMPOSER_ENABLED', False), \
+             patch('bot.services.clients.deepseek_call') as call:
+            ask = bot._availability_ask()
+        call.assert_not_called()
+        self.assertIn('tomorrow at 9am', ask)
+
+    # -- the hours stay ours -------------------------------------------------
+    def test_the_model_is_never_given_the_opening_hours(self):
+        """That sentence carries day names and clock times, so a fence loose
+        enough to pass it would pass an invented slot too."""
+        import inspect
+
+        from bot import availability_ask
+        src = inspect.getsource(availability_ask.compose_availability_ask)
+        self.assertNotIn('hours_clause', src)
+
+    def test_the_hours_are_appended_to_a_composed_open_ask(self):
+        bot = self._bot([])
+        with patch('bot.services.clients.deepseek_call',
+                   return_value='{"ask": "When would suit you for a quick look?"}'):
+            ask = bot._availability_ask()
+        self.assertIn('When would suit you', ask)
+        self.assertIn('open', ask.lower())

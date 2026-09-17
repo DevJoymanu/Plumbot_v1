@@ -2564,6 +2564,11 @@ try:
             self.appointment.customer_area = area
             self.appointment.plan_file = 'plans/house.jpg' if plan else ''
             self.appointment.plan_status = 'plan_uploaded' if plan else ''
+            self.appointment.project_type = 'new_plumbing_installation'
+            self.appointment.project_description = ''
+            self.appointment.tenant = None
+            from bot.tenant_config import get_config as _gc
+            self.tenant_cfg = _gc(None)
         def get_next_question_to_ask(self):
             return self._nq
         def _capture_named_products_as_description(self, message):
@@ -2579,10 +2584,15 @@ try:
             return "tomorrow"
         def _describe_project_context(self):
             return "have a quick look at the site for the installation"
-        # The availability ask offers a day AND a time now.
+        # The availability ask offers a day AND a time now, through one
+        # builder — this fake has no diary, so it exercises the honest
+        # "nothing free, ask openly" branch.
         _visit_slot_labels = ResponseMixin._visit_slot_labels
         _format_slot = ResponseMixin._format_slot
         _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+        _availability_ask = ResponseMixin._availability_ask
+        _ask_needs_composing = ResponseMixin._ask_needs_composing
+        _scripted_availability_ask = ResponseMixin._scripted_availability_ask
         def _get_two_available_times_for_date(self, day):
             return []
     _jq = _FakeSelfJQ("area")._build_job_quote_reply(
@@ -2596,15 +2606,18 @@ try:
         and "budget" not in _jq.lower(),
         got=repr(_jq_parts),
     )
-    # availability_date: the "Great," opener is dropped and the question capitalised,
-    # matching the desired two-message shape from production.
+    # availability_date: the "Great," opener is dropped and the question
+    # capitalised, matching the desired two-message shape from production.
+    # This fake holds no diary, so the question is the honest open ask rather
+    # than a slot offer - offering "tomorrow or the day after" with nothing
+    # free was the invented-day bug (see the awkward-shape cases below).
     _jq_av = _FakeSelfJQ("availability_date")._build_job_quote_reply(
         "english", "new installation")
     _jq_av_parts = [p.strip() for p in _jq_av.split(_SPLIT)]
     results.log(
-        "job quote reply: availability_date second piece starts 'What works better', no 'Great,'",
+        "job quote reply: availability_date second piece asks for a day, no 'Great,'",
         len(_jq_av_parts) == 2
-        and _jq_av_parts[1].startswith("What works better for you")
+        and _jq_av_parts[1].startswith("When would suit you")
         and not _jq_av_parts[1].lower().startswith("great"),
         got=repr(_jq_av_parts),
     )
@@ -2624,7 +2637,7 @@ try:
         "job quote reply: pitch never repeats — second job message gets only the scripted question",
         _SPLIT not in _jq_dup
         and "all-in figure" not in _jq_dup
-        and "what works better for you" in _jq_dup.lower(),
+        and "when would suit you" in _jq_dup.lower(),
         got=repr(_jq_dup),
     )
     # Shona pitch in history counts too — the guard is language-agnostic.
@@ -10350,11 +10363,21 @@ class _FakeSelfSlots:
     _format_slot = ResponseMixin._format_slot
     _format_day = ResponseMixin._format_day
     _get_first_pass_question = ResponseMixin._get_first_pass_question
+    # The scripted ask goes through one builder now, so the fake needs the
+    # whole chain: _get_first_pass_question delegates to _availability_ask.
+    _availability_ask = ResponseMixin._availability_ask
+    _ask_needs_composing = ResponseMixin._ask_needs_composing
+    _scripted_availability_ask = ResponseMixin._scripted_availability_ask
+    _get_question_instruction = ResponseMixin._get_question_instruction
 
     def __init__(self, days, times_by_day):
+        from bot.tenant_config import get_config as _gc
         self._days = days
         self._times = times_by_day
-        self.appointment = _ty.SimpleNamespace(scheduled_datetime=None)
+        self.tenant_cfg = _gc(None)
+        self.appointment = _ty.SimpleNamespace(
+            scheduled_datetime=None, project_type='bathroom_renovation',
+            project_description='redo', tenant=None)
 
     def _get_next_two_available_days(self):
         return self._days
@@ -10421,6 +10444,286 @@ results.log(
     "availability ask: times read '9am' / '2pm' / '2:30pm', never '09:00AM'",
     _slot_clocks == ('9am', '2pm', '2:30pm', '12pm'),
     got=str(_slot_clocks),
+)
+
+# ── "Anytime is fine" is an ANSWER ────────────────────────────────────────────
+# A lead who hands us the choice has already said yes to the visit. The old
+# guard could not see it: it required a day to ALREADY be on file and the
+# question to have moved past availability_date, which is the state the old
+# two-step ask (day first, then time) was in and the day+time ask never
+# reaches. So nothing was captured, the same question came back paraphrased
+# four times, and at the fourth retry the lead was handed to a human — which
+# also silences every follow-up. Now DeepSeek judges the flexibility and
+# deterministic code picks the slot.
+from bot.unified_classifier import uc_datetime_flexible as _ucf
+
+# The flag's three states. None is load-bearing: "the classifier said nothing"
+# must stay distinguishable from "they named a day", or a dead API reads as a
+# definite answer and the lead gets re-asked.
+results.log("any-time flag: true when the model says so",
+            _ucf({'datetime_flexible': True}) is True)
+results.log("any-time flag: false when the model says so",
+            _ucf({'datetime_flexible': False}) is False)
+results.log("any-time flag: absent is None, never False",
+            _ucf({'intent': 'in_scope'}) is None and _ucf(None) is None,
+            got=repr(_ucf({'intent': 'in_scope'})))
+
+
+class _FakeSelfAnyTime:
+    """The resolver only — no diary, no tenant."""
+    lead_has_no_time_preference = _AvailabilityMixin.lead_has_no_time_preference
+    _NO_PREFERENCE_PHRASES = _AvailabilityMixin._NO_PREFERENCE_PHRASES
+
+
+_anytime = _FakeSelfAnyTime()
+
+# AI-primary: the model's verdict outranks the phrase list in BOTH directions.
+results.log(
+    "any time: the model's yes wins over a message no list would match",
+    _anytime.lead_has_no_time_preference(
+        "i really dont mind, sort it out for me",
+        classification={'datetime_flexible': True}),
+)
+results.log(
+    "any time: the model's no wins over a phrase that looks flexible",
+    _anytime.lead_has_no_time_preference(
+        "anytime tomorrow",
+        classification={'datetime_flexible': False}) is False,
+)
+
+# Keyword fallback, for when the call is down (classification None).
+for _flex in ('anytime is fine', 'any time', 'any day works', 'all day',
+              'the whole day is free', "i'm free whenever", 'you choose',
+              'whatever works for you', 'up to you', 'chero nguva',
+              'imi sarudzai'):
+    results.log(f"any time: keyword fallback catches ({_flex[:30]}...)",
+                _anytime.lead_has_no_time_preference(_flex))
+
+# It must NOT swallow a real day, a real time, or a delay — each of those is
+# its own answer and has its own branch.
+for _not_flex in ('tomorrow at 9am', 'Sunday please', 'the 2pm one',
+                  'not right now', 'next month sometime',
+                  'I will get back to you', 'how much is a shower cubicle'):
+    results.log(f"any time: not a free hand ({_not_flex[:30]}...)",
+                _anytime.lead_has_no_time_preference(_not_flex) is False)
+
+
+# The slot itself is DETERMINISTIC — the model is never asked which day or hour.
+class _FakeSelfPick:
+    resolve_flexible_slot = _AvailabilityMixin.resolve_flexible_slot
+    _get_selected_local_date = _AvailabilityMixin._get_selected_local_date
+    _get_two_visit_slots = _AvailabilityMixin._get_two_visit_slots
+
+    def __init__(self, days, times_by_day, taken=(), selected=None):
+        self._days = days
+        self._times = times_by_day
+        self._taken = set(taken)
+        self.appointment = _ty.SimpleNamespace(scheduled_datetime=selected)
+
+    def _get_next_two_available_days(self):
+        return self._days
+
+    def _get_two_available_times_for_date(self, day):
+        # Mirrors the real mixin, which asks the availability check itself —
+        # a fake that answered from its own list would let a "nothing free"
+        # diary still hand back a slot.
+        return [t for t in self._times.get(day, [])
+                if self.check_appointment_availability(t)[0]]
+
+    def check_appointment_availability(self, when):
+        return (when not in self._taken), ''
+
+
+_pick_times = {
+    _slot_d1: [_slot_at(_slot_d1, h) for h in (9, 10, 11, 12, 13, 14, 15, 16)],
+    _slot_d2: [_slot_at(_slot_d2, h) for h in (9, 10, 11, 12, 13, 14, 15, 16)],
+}
+_pick = _FakeSelfPick([_slot_d1, _slot_d2], _pick_times)
+results.log(
+    "any time: the slot starts at noon, not 8am",
+    _pick.resolve_flexible_slot() == _slot_at(_slot_d1, 12),
+    got=str(_pick.resolve_flexible_slot()),
+)
+# A day already on file means they left only the TIME to us — keep their day.
+_pick_day_on_file = _FakeSelfPick(
+    [_slot_d1, _slot_d2], _pick_times, selected=_slot_at(_slot_d2, 0))
+results.log(
+    "any time: a day the lead named is kept, only the hour is ours",
+    _pick_day_on_file.resolve_flexible_slot() == _slot_at(_slot_d2, 12),
+    got=str(_pick_day_on_file.resolve_flexible_slot()),
+)
+# Noon taken rolls forward through the afternoon rather than back to 9am.
+_pick_noon_gone = _FakeSelfPick([_slot_d1, _slot_d2], _pick_times,
+                                taken=[_slot_at(_slot_d1, 12)])
+results.log(
+    "any time: a taken noon moves to 1pm, never back to the morning",
+    _pick_noon_gone.resolve_flexible_slot() == _slot_at(_slot_d1, 13),
+    got=str(_pick_noon_gone.resolve_flexible_slot()),
+)
+# "Any day" means the next day we work is still an answer.
+_pick_day_full = _FakeSelfPick([_slot_d1, _slot_d2], _pick_times,
+                               taken=_pick_times[_slot_d1])
+results.log(
+    "any time: a full day moves to the next working day, not to a closed one",
+    _pick_day_full.resolve_flexible_slot() in _pick_times[_slot_d2],
+    got=str(_pick_day_full.resolve_flexible_slot()),
+)
+# Nothing free at all: None, so the caller asks rather than inventing a slot.
+class _FakeSelfNothingFree(_FakeSelfPick):
+    def check_appointment_availability(self, when):
+        return False, 'full'
+
+
+results.log(
+    "any time: a diary with nothing free invents nothing",
+    _FakeSelfNothingFree([_slot_d1, _slot_d2],
+                         _pick_times).resolve_flexible_slot() is None,
+    got=str(_FakeSelfNothingFree([_slot_d1, _slot_d2],
+                                 _pick_times).resolve_flexible_slot()),
+)
+# And with no open day to put it on either.
+results.log(
+    "any time: no open day at all invents nothing",
+    _FakeSelfPick([], {}).resolve_flexible_slot() is None,
+)
+# The days come from the availability resolver, which has already rolled past
+# the days this tenant is shut — so a picked slot can never be a closed day.
+import inspect as _insp_any
+results.log(
+    "any time: the day comes from the tenant's own open days",
+    'is_open_on' in _insp_any.getsource(
+        _AvailabilityMixin._get_next_two_available_days),
+)
+
+# -- The awkward diary shapes -------------------------------------------------
+# Two free slots has an approved script and keeps it. The other shapes had no
+# script, and the two literals standing in for one were both wrong:
+#   ONE free slot  -> "tomorrow at 9am or the day after": a real slot ORed with
+#                     a vague phrase carrying no time, so picking the second
+#                     option costs the extra turn this ask exists to save
+#   nothing free   -> "tomorrow or the day after": two invented days that
+#                     ignore whether the tenant is open then
+#   two, one day   -> "tomorrow at 9am or tomorrow at 2pm", a day repeated
+# DeepSeek writes these now, fenced; the sentences below are what goes out when
+# the composer is off, down or rejected, so each has to be right on its own.
+from bot.availability_ask import fences_hold as _fh
+
+
+# One fake for both blocks — _FakeSelfSlots already carries the whole chain.
+_FakeSelfAsk = _FakeSelfSlots
+
+_ask_two = _FakeSelfAsk(
+    [_slot_d1, _slot_d2],
+    {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)],
+     _slot_d2: [_slot_at(_slot_d2, 9), _slot_at(_slot_d2, 14)]})
+_ask_one_day = _FakeSelfAsk(
+    [_slot_d1], {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)]})
+_ask_one_slot = _FakeSelfAsk(
+    [_slot_d1, _slot_d2], {_slot_d1: [_slot_at(_slot_d1, 9)]})
+_ask_nothing = _FakeSelfAsk([], {})
+
+# Only the shapes WITHOUT a script go to the model. The scripted case must
+# never spend a call, and must never be at the mercy of one.
+results.log(
+    "ask shape: two slots on two days keeps the script, no model call",
+    _ask_two._ask_needs_composing(_ask_two._visit_slot_labels()) is False,
+)
+for _label, _fake in (('one slot', _ask_one_slot),
+                      ('two on one day', _ask_one_day),
+                      ('nothing free', _ask_nothing)):
+    results.log("ask shape: %s is composed" % _label,
+                _fake._ask_needs_composing(_fake._visit_slot_labels()) is True)
+
+# The deterministic sentence, per shape.
+_det_one_day = _ask_one_day._scripted_availability_ask(
+    _ask_one_day._visit_slot_labels(), 'have a quick look at the bathroom space')
+results.log(
+    "ask copy: two times on one day say the day ONCE",
+    _det_one_day.count('tomorrow') == 1
+    and 'tomorrow at 9am or 2pm' in _det_one_day,
+    got=repr(_det_one_day),
+)
+_det_one_slot = _ask_one_slot._scripted_availability_ask(
+    _ask_one_slot._visit_slot_labels(), 'have a quick look at the bathroom space')
+results.log(
+    "ask copy: one free slot offers that one slot, never 'the day after'",
+    'the day after' not in _det_one_slot
+    and 'tomorrow at 9am' in _det_one_slot
+    and _det_one_slot.count('?') == 1,
+    got=repr(_det_one_slot),
+)
+_det_nothing = _ask_nothing._scripted_availability_ask(
+    [], 'have a quick look at the bathroom space')
+results.log(
+    "ask copy: nothing free names NO day and NO time, and asks openly",
+    'the day after' not in _det_nothing
+    and 'tomorrow' not in _det_nothing.lower()
+    and _det_nothing.count('?') == 1,
+    got=repr(_det_nothing),
+)
+# Shona joins with "kana", the word the pricing-followup ask has always used.
+_det_shona = _ask_two._scripted_availability_ask(
+    _ask_two._visit_slot_labels(True), 'x', is_shona=True)
+results.log(
+    "ask copy: Shona joins the two offers with 'kana', never 'or'",
+    ' kana ' in _det_shona and ' or ' not in _det_shona,
+    got=repr(_det_shona),
+)
+# A Shona label reads "mangwana na9am", so the same-day test must split on
+# either joiner or it would compare whole labels and miss a repeated day.
+results.log(
+    "ask shape: a repeated day is spotted in Shona labels too",
+    _ask_one_day._ask_needs_composing(
+        _ask_one_day._visit_slot_labels(True)) is True,
+    got=repr(_ask_one_day._visit_slot_labels(True)),
+)
+
+# -- The fence: what makes an LLM safe on a slot the customer must trust -----
+_one = ['tomorrow at 9am']
+results.log("ask fence: a clean composition passes",
+            _fh('Would tomorrow at 9am work for a quick look?', _one)[0])
+for _label, _bad, _slots in (
+    ('invented day', 'Would Tuesday at 9am work for you?', _one),
+    ('invented time', 'Would tomorrow at 7am work for you?', _one),
+    ('a day on an empty diary', 'Would Sunday suit you?', []),
+    ('a time on an empty diary', 'Is 9am any good?', []),
+    ('two questions', 'Free tomorrow at 9am? Or is later better?', _one),
+    ('a promise', 'Would tomorrow at 9am work for your free visit?', _one),
+    ('a figure', 'Tomorrow at 9am, US$20 call-out, alright?', _one),
+    ('no question at all', 'We will come tomorrow at 9am.', _one),
+    ('empty', '', _one),
+    ('an essay', 'Would tomorrow at 9am work? ' + 'x' * 300, _one),
+):
+    results.log("ask fence: rejects %s" % _label, _fh(_bad, _slots)[0] is False,
+                got=repr(_fh(_bad, _slots)))
+# The Shona joiner must not read as an invented time: "mangwana na9am".
+results.log(
+    "ask fence: a Shona slot label passes its own fence",
+    _fh('Mangwana na9am zvinokubatsira here?', ['mangwana na9am'])[0],
+    got=repr(_fh('Mangwana na9am zvinokubatsira here?', ['mangwana na9am'])),
+)
+# The rand prefix must not match the 'r' ending an ordinary word - "or 2pm"
+# and "for 20 minutes" both read as figures before this was fixed, so a sound
+# question was rejected and the awkward sentence went out instead.
+results.log(
+    "ask fence: 'or 2pm' is not a price, and neither is 'for 20 minutes'",
+    _fh('Does tomorrow at 9am or 2pm suit you?',
+        ['tomorrow at 9am', 'tomorrow at 2pm'])[0]
+    and _fh('Would tomorrow at 9am work, for 20 minutes or so?', _one)[0],
+    got=repr(_fh('Does tomorrow at 9am or 2pm suit you?',
+                 ['tomorrow at 9am', 'tomorrow at 2pm'])),
+)
+# The retry INSTRUCTION carried the same invented literal, so a busy diary
+# handed the model a day nobody had checked and it wrote it in its own words.
+for _label, _fake in (('one slot', _ask_one_slot),
+                      ('nothing free', _ask_nothing)):
+    _instr = _fake._get_question_instruction('availability_date', 1)
+    results.log("ask retry: the instruction invents no day (%s)" % _label,
+                'the day after' not in _instr, got=repr(_instr[:90]))
+results.log(
+    "ask retry: with nothing free the model is told to name no day at all",
+    'name NO day' in _ask_nothing._get_question_instruction(
+        'availability_date', 1),
 )
 
 # What counts as asking for a day.

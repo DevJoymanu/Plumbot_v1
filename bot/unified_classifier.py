@@ -117,7 +117,11 @@ availability      Date+time → YYYY-MM-DDTHH:MM  |  Date only → YYYY-MM-DDT00
                     (neChina = on Thursday, neChipiri = on Tuesday).
                   Shona times: mangwanani=morning, masikati=afternoon,
                     manheru=evening. "mangwana"=tomorrow, "nhasi"=today.
-                  "available all day" / "anytime" / "whole day" → null.
+                  A lead with NO preference and NO day named ("anytime",
+                  "any day", "whole day", "whenever suits you") → null,
+                  and set datetime_flexible instead. We never invent a
+                  slot out of a preference they did not express; the flow
+                  picks the day and time deterministically.
 customer_name     Only if explicitly given: "my name is X", "I'm X", "call me X".
 project_description  Verbatim project detail (max 120 chars).
 
@@ -140,6 +144,20 @@ is_plan_later     true if customer says they'll send their plan/blueprint/
                   drawing at a later time ("I'll send the plan later").
 is_repeat_question  true if the customer is asking something that has clearly
                   already been answered earlier in the conversation.
+datetime_flexible true if the customer tells us they have NO preference about
+                  WHEN we come and names no day and no time at all: "anytime",
+                  "anytime is fine", "any day", "all day", "whole day", "I'm
+                  free whenever", "whenever suits you", "you choose", "whatever
+                  works for you", "I'm flexible", "I'm around".
+                  Shona: "chero nguva", "chero zuva", "imi sarudzai",
+                  "zvose zvakanaka kwandiri", "handina basa nezuva".
+                  This means THEY HAVE GIVEN US THE CHOICE — it is an answer, so
+                  answered_current_question is true alongside it.
+                  ⚠ false the moment they name ANY day or time, however loosely:
+                  "anytime tomorrow" names tomorrow, so availability is
+                  tomorrow's date and this stays false. Also false for a delay
+                  ("not right now", "next month") — that is a timeframe, not a
+                  free hand.
 
 ─── QUALIFICATION SIGNALS (judged against next_question) ─────────────────────
 answered_current_question  true if the message actually answers next_question
@@ -280,6 +298,22 @@ Match the pattern, do not copy values blindly.
 "I need a new bathroom in my house"
 {"intent":"in_scope","confidence":"HIGH","service_type":"bathroom_renovation","product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"quote_request","new_build":null,"extracted":{"area":null,"availability":null,"customer_name":null,"project_description":"new bathroom in my house"}}
 
+# NO preference at all — they have handed us the choice. That IS an answer, so
+# answered_current_question is true and availability stays null: the flow picks
+# a real day and time. Coming back with "when suits you?" would re-ask the
+# question they just answered (next_question=availability_date):
+(Appointment: ... | next_question=availability_date)  "anytime is fine"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"datetime_flexible":true,"answered_current_question":true,"speech_act":"booking_answer","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# The same free hand in Shona, and in words no keyword list would hold:
+(Appointment: ... | next_question=availability_date)  "imi sarudzai, chero nguva"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"datetime_flexible":true,"answered_current_question":true,"speech_act":"booking_answer","english":"you choose, any time","extracted":{"area":null,"availability":null,"customer_name":null,"project_description":null}}
+
+# A DAY with an open time is NOT flexible — the day is a real answer, so capture
+# it and let the time question follow (TODAY=2026-06-11, so tomorrow=2026-06-12):
+(Appointment: ... | next_question=availability_date)  "anytime tomorrow"
+{"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"datetime_flexible":false,"answered_current_question":true,"speech_act":"booking_answer","extracted":{"area":null,"availability":"2026-06-12T00:00","customer_name":null,"project_description":null}}
+
 # A suburb whose NAME contains a building word is an area, not a build:
 (Appointment: ... | next_question=area)  "Dzivarasekwa extension"
 {"intent":"in_scope","confidence":"HIGH","service_type":null,"product_intent":"none","is_photo_request":false,"is_plan_later":false,"is_repeat_question":false,"speech_act":"booking_answer","new_build":null,"extracted":{"area":"Dzivarasekwa Extension","availability":null,"customer_name":null,"project_description":null}}
@@ -368,6 +402,7 @@ Do not put any figure in your own text.
   "is_photo_request": false,
   "is_plan_later": false,
   "is_repeat_question": false,
+  "datetime_flexible": false,
   "answered_current_question": false,
   "pivoted_to_timeline": false,
   "offered_date": null,
@@ -644,6 +679,20 @@ def uc_answered_current_question(r: dict | None) -> bool:
 
 def uc_pivoted_to_timeline(r: dict | None) -> bool:
     return bool((r or {}).get("pivoted_to_timeline", False))
+
+
+def uc_datetime_flexible(r: dict | None) -> bool | None:
+    """Did the lead hand us the choice of when we come?
+
+    Returns None when the classifier did not run or said nothing about it,
+    which is the signal for the caller to fall back to its keyword resolver.
+    Never guesses False: "no answer" and a definite "they named a day" must
+    stay distinguishable, or a failed call would read as a real classification
+    and the lead would be re-asked a question they already answered.
+    """
+    if not isinstance(r, dict) or "datetime_flexible" not in r:
+        return None
+    return bool(r.get("datetime_flexible"))
 
 def uc_offered_date(r: dict | None) -> str | None:
     v = (r or {}).get("offered_date")

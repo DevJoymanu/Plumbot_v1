@@ -305,42 +305,90 @@ class BookingMixin:
                 return {'success': False, 'error': str(e)}
 
 
+        def _slot_said_back(self, picked) -> str:
+            """"tomorrow at 12pm" — the slot in the words a person would text.
+
+            Said back whenever WE chose it rather than the lead. A lead who
+            answered "anytime is fine" does not know what we picked, and the
+            written-up confirmation only lands a minute or two later.
+            """
+            from .response_mixin import _clock_label
+
+            local = self.format_datetime_for_display(picked)
+            return f"{self._format_day(local.date())} at {_clock_label(picked)}"
+
+        def _name_ask_after_booking(self) -> str:
+            """The one ask that follows a successful booking.
+
+            Two paths book now — the normal flow and the flexible-lead close —
+            and a second copy of this sentence would drift from the first.
+            """
+            return ("One last thing, what name should we put on the booking? "
+                    "If you'd rather not share it, just say no.")
+
         def _handle_all_day_response(self) -> str:
+            """The lead gave us the choice of when to come.
+
+            ONE handler for it, wherever the signal came from — the unified
+            classifier's `datetime_flexible`, the availability step's own
+            `no_preference` intent, or the keyword fallback. It takes a real
+            slot and then behaves exactly as if the lead had named it, so the
+            booking closes on this turn instead of the lead being asked again.
+
+            Slot resolution is `resolve_flexible_slot` (deterministic, noon
+            onwards, never a day the tenant is shut). Nothing free means we
+            ask — we never invent a slot to fill a silence.
             """
-            Customer said they're available all day.
-            Auto-assign next available time slot at or after 12:00 (noon).
+            picked = self.resolve_flexible_slot()
+            if not picked:
+                # Say what is true: the diary, not the lead, is the problem.
+                slots = self._visit_slot_labels()
+                if len(slots) >= 2:
+                    return (f"That day is looking full on our side. "
+                            f"Would {slots[0]} or {slots[1]} work instead?")
+                return ("That day is looking full on our side. "
+                        "Which other day would suit you?")
+
+            self.appointment.scheduled_datetime = picked
+            self._mark_time_confirmed()
+            self.appointment.save(
+                update_fields=['scheduled_datetime', 'internal_notes'])
+            return self._close_on_the_taken_slot(picked)
+
+        def _close_on_the_taken_slot(self, picked) -> str:
+            """Having picked the slot for them, finish the job on this turn.
+
+            Everything else already in means BOOK it, through the same
+            `book_appointment` the normal flow uses — one booking path, one
+            confirmation, one plumber alert. Anything still missing means say
+            the slot back and ask for that one thing, through the scripted
+            bank, recording the ask so it cannot be re-sent verbatim.
             """
-            import pytz as _pytz
-            from datetime import datetime as dt_cls
-    
-            sa_tz = _pytz.timezone('Africa/Johannesburg')
-            date_obj = self._get_selected_local_date()
-            if not date_obj:
-                return "What time works best for you, 9am or 2pm?"
-    
-            # Try 12:00 first, then 13, 14, 15, 16
-            for h in [12, 13, 14, 15, 16]:
-                candidate = sa_tz.localize(
-                    dt_cls.combine(date_obj, dt_cls.min.time().replace(hour=h))
-                )
-                is_avail, _ = self.check_appointment_availability(candidate)
-                if is_avail:
-                    self.appointment.scheduled_datetime = candidate
-                    self._mark_time_confirmed()
-                    self.appointment.save(update_fields=['scheduled_datetime', 'internal_notes'])
-                    from .response_mixin import _clock_label
-                    hour_str = _clock_label(candidate)
-                    day_label = self._format_day(date_obj)
-                    return (
-                        f"Perfect, please expect us anytime after {hour_str} on {day_label}. "
-                        f"What area are you in?"
-                    )
-    
-            # No slot found — ask them to pick a time
-            return (
-                "We're quite booked that day from noon onwards. "
-                "What time works best for you, 9am or 2pm?"
-            )
+            from .response_mixin import MESSAGE_SPLIT_MARKER
+
+            said_back = self._slot_said_back(picked)
+
+            if (self.smart_booking_check()['ready_to_book']
+                    and self.appointment.status != 'confirmed'):
+                result = self.book_appointment(message=None)
+                if result.get('success'):
+                    return (f"Perfect, let's say {said_back} then."
+                            f"{MESSAGE_SPLIT_MARKER}{self._name_ask_after_booking()}")
+                # The slot went while we were deciding. Offer, never assert.
+                slots = self._visit_slot_labels()
+                if len(slots) >= 2:
+                    return (f"{said_back} just went on our side. "
+                            f"Would {slots[0]} or {slots[1]} work instead?")
+                return (f"{said_back} just went on our side. "
+                        "Which other day would suit you?")
+
+            next_question = self.get_next_question_to_ask()
+            question = self._get_first_pass_question(next_question)
+            if not question:
+                return f"Perfect, let's say {said_back} then."
+            self._set_question_retry_count(next_question, 1)
+            return (f"Perfect, let's say {said_back} then."
+                    f"{MESSAGE_SPLIT_MARKER}{question}")
 
 
         def handle_early_datetime_provision(self, message):

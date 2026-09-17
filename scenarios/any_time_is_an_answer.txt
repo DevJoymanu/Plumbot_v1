@@ -1,0 +1,36 @@
+# "Anytime is fine" is an ANSWER, not an unclear reply.
+#
+# The availability ask offers a day AND a time in one message. A lead who
+# replies "anytime is fine" has said yes to the visit and left the slot to us,
+# and nothing was capturing that: the old all-day guard needed a day to
+# ALREADY be on file and the flow to have moved past availability_date, which
+# is the state the OLD two-step ask (day first, then time) was in and which the
+# day+time ask never reaches. So nothing was stored, the same question came
+# back paraphrased every turn, and the fourth retry handed the lead to a human
+# — which also silences every follow-up. Measured, six turns, dt=None
+# throughout.
+#
+# Fixed by: unified_classifier's `datetime_flexible` (and `no_preference` in
+# the availability step's own classifier) reporting the free hand, and
+# `resolve_flexible_slot` picking the day and hour deterministically — noon
+# onwards, only on days the tenant works. The model judges; code decides the
+# slot, because a time the customer has to trust is never one the model
+# invented.
+
+> Hie
+expect: how may we assist you on plumbing services
+
+> I need my bathroom redone
+expect: what area are you in
+
+> Borrowdale
+expect: what works better for you
+
+# The whole point: the slot gets taken and said back, and the question is NOT
+# asked again.
+> anytime is fine
+expect: let's say
+reject: when would work best
+reject: what works better for you
+reject: which day
+reject: what time works
