@@ -387,6 +387,9 @@ class ConversationDetailView(TemplateView):
                     if isinstance(result, dict):
                         wamid = (result.get('messages') or [{}])[0].get('id', '')
                     appointment.add_conversation_message('assistant', text, message_id=wamid or None)
+                    # Stamp it as sent so an intercept's draft-cleanup can never
+                    # mistake this real reply for an unsent bot draft.
+                    appointment.mark_message_sent('assistant', text, wamid or None)
                     messages.success(request, 'Message sent.')
                 except Exception:
                     messages.error(
@@ -423,6 +426,89 @@ class ConversationDetailView(TemplateView):
             update_fields.append('updated_at')
             appointment.save(update_fields=update_fields)
             messages.success(request, 'Appointment details updated.')
+
+
+@staff_required
+@require_GET
+def conversation_live(request, pk):
+    """Live conversation state for the open thread, polled by the browser.
+
+    Returns only the turns after the caller's cursor (``after`` = the count it
+    last held), the pending-reply state and the bot-paused flag — so the
+    conversation view updates without a page refresh. ``reset`` tells the client
+    to rebuild its transcript, which happens on first load and whenever history
+    has shrunk (an intercepted draft was dropped), so the cursor cannot drift.
+    """
+    appointment = get_object_or_404(
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real(), pk=pk)
+    history = appointment.conversation_history or []
+    count = len(history)
+    try:
+        after = int(request.GET.get('after', -1))
+    except (TypeError, ValueError):
+        after = -1
+    reset = after < 0 or after > count
+    start = 0 if reset else after
+
+    def _fmt(m):
+        return {
+            'role': 'user' if m.get('role') == 'user' else 'assistant',
+            'content': m.get('content') or '',
+            'ts': m.get('timestamp') or '',
+            'sent': bool(m.get('sent_at') or m.get('message_id')),
+        }
+
+    messages_out = [_fmt(m) for m in history[start:] if isinstance(m, dict)]
+    return JsonResponse({
+        'count': count,
+        'reset': reset,
+        'messages': messages_out,
+        'pending': appointment.pending_send_state(),
+        'paused': bool(appointment.chatbot_paused),
+    })
+
+
+@staff_required
+@require_POST
+def intercept_bot_reply(request, pk):
+    """Stop the bot's pending reply to this lead and hand the thread to a human.
+
+    Writes the intercept tombstone the delayed-send loop honours (whether the
+    reply is already waiting out its delay or is still being generated), drops
+    the unsent draft from the transcript, and pauses the bot so no further
+    auto-replies or automated follow-ups fire until it is resumed — the operator
+    then types their own reply in the composer.
+    """
+    appointment = get_object_or_404(
+        Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)).real(), pk=pk)
+    dropped = appointment.intercept_pending_send()
+
+    # Shorten the abort latency within this process; the DB tombstone above is
+    # the reliable cross-worker path.
+    try:
+        from ..whatsapp_webhook import request_intercept
+        sender = (appointment.phone_number or '').replace('whatsapp:', '').lstrip('+')
+        if sender:
+            request_intercept(sender)
+    except Exception:
+        pass
+
+    # Auto-pause: the operator is taking over. Mirrors pause_chatbot — stop
+    # auto-replies (chatbot_paused) and automated follow-ups ([DELAY_SIGNAL]).
+    appointment.pause_chatbot()
+    notes = appointment.internal_notes or ''
+    if '[DELAY_SIGNAL]' not in notes:
+        appointment.internal_notes = (notes + '\n[DELAY_SIGNAL]').strip()
+        appointment.save(update_fields=['internal_notes'])
+    _append_admin_note(
+        appointment,
+        f"{request.user.username}: intercepted the bot's pending reply — bot paused, replying manually.",
+    )
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.GET.get('ajax'):
+        return JsonResponse({'ok': True, 'dropped': dropped, 'paused': True})
+    messages.success(request, 'Bot reply intercepted. Bot paused — you can reply manually.')
+    return redirect('conversation_detail', pk=appointment.pk)
 
 
 @method_decorator(staff_required, name='dispatch')

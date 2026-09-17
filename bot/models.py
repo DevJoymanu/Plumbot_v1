@@ -586,6 +586,15 @@ class Appointment(models.Model):
     # Conversation and Notes
     conversation_history = models.JSONField(default=list, blank=True, help_text="WhatsApp conversation history")
     internal_notes = models.TextField(blank=True, null=True, help_text="Internal team notes")
+
+    # An in-flight bot reply that is composed but still waiting out its send
+    # delay. Carries {token, preview, eta, created} while a send is armed, or an
+    # {intercepted, at} tombstone when an operator has blocked it. Cleared to
+    # None once the reply actually goes out. DB-backed on purpose: it is the
+    # single signal the delayed-send loop honours to abort a send, so it stays
+    # reliable regardless of which web worker fields the intercept request. See
+    # delayed_response and intercept_bot_reply.
+    pending_send = models.JSONField(null=True, blank=True, help_text="In-flight delayed bot reply awaiting send, or an intercept tombstone")
     
     # Click-to-WhatsApp (CTWA) ad attribution. Set when the lead's first message
     # carries a referral object (source_type == 'ad'). ctwa_entry_at marks the start
@@ -1600,6 +1609,87 @@ class Appointment(models.Model):
                     return
         except Exception as e:
             print(f"WARNING Could not stamp sent_at for {role} message: {e}")
+
+    # ── In-flight reply interception ──────────────────────────────────────────
+    # A bot reply is logged the moment it is composed, then sent after a delay
+    # (see whatsapp_webhook.delayed_response). These helpers let an operator
+    # stop that pending send from the conversation view and reply themselves.
+
+    def mark_pending_send(self, token, preview, eta_iso):
+        """Arm the in-flight marker for a reply about to wait out its delay."""
+        self.pending_send = {
+            'token': token,
+            'preview': (preview or '')[:280],
+            'eta': eta_iso,
+            'created': timezone.now().isoformat(),
+        }
+        self.save(update_fields=['pending_send'])
+
+    def clear_pending_send(self, token=None, force=False):
+        """Clear the in-flight marker once a reply has actually gone out.
+
+        Conditional on ``token`` so a just-finished send never wipes a NEWER
+        reply's marker (an ack and the main reply can be in flight for the same
+        lead at once), and never clears an intercept tombstone — unless
+        ``force`` says the tombstone has been consumed.
+        """
+        ps = self.pending_send or {}
+        if not force:
+            if token is not None and ps.get('token') != token:
+                return
+            if ps.get('intercepted'):
+                return
+        if self.pending_send is not None:
+            self.pending_send = None
+            self.save(update_fields=['pending_send'])
+
+    def drop_unsent_draft_turns(self):
+        """Remove trailing assistant turns composed but never sent.
+
+        sent_at/WAMID are stamped only once a reply actually goes out, so a
+        trailing assistant run carrying neither is a draft that will not reach
+        the customer. When a pending reply is intercepted it must not linger in
+        the transcript as if it had been sent. Returns the dropped text.
+        """
+        if not isinstance(self.conversation_history, list):
+            return []
+        dropped = []
+        while self.conversation_history:
+            last = self.conversation_history[-1]
+            if (isinstance(last, dict) and last.get('role') == 'assistant'
+                    and not last.get('sent_at') and not last.get('message_id')):
+                dropped.append(last.get('content'))
+                self.conversation_history.pop()
+            else:
+                break
+        if dropped:
+            self.save(update_fields=['conversation_history'])
+        dropped.reverse()
+        return dropped
+
+    def intercept_pending_send(self):
+        """Operator interception: block the bot's in-flight or next reply.
+
+        Writes an intercept tombstone that delayed_response honours — it aborts
+        whether the reply is already waiting out its delay or is still being
+        generated (within INTERCEPT_ARM_GRACE_SECONDS) — and drops the unsent
+        draft from the transcript. Returns the dropped draft text, if any.
+        """
+        dropped = self.drop_unsent_draft_turns()
+        self.pending_send = {'intercepted': True, 'at': timezone.now().isoformat()}
+        self.save(update_fields=['pending_send'])
+        return dropped
+
+    def pending_send_state(self):
+        """Compact pending-reply state for the live conversation view."""
+        ps = self.pending_send or {}
+        if not ps or ps.get('intercepted'):
+            return {'active': False}
+        return {
+            'active': True,
+            'preview': ps.get('preview') or '',
+            'eta': ps.get('eta'),
+        }
 
     def record_sent_media(self, media_map, summary):
         """Log a batch of sent images with a {wamid: description} index.

@@ -1095,6 +1095,10 @@ def pause_chatbot(request, pk):
 def resume_chatbot(request, pk):
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
     appointment.resume_chatbot()
+    # Clear any intercept tombstone so the next auto-reply is not blocked by a
+    # stale block from an earlier interception (see delayed_response).
+    if appointment.pending_send:
+        appointment.clear_pending_send(force=True)
     # Clear delay signal so automated follow-ups can resume
     notes = appointment.internal_notes or ''
     if '[DELAY_SIGNAL]' in notes:

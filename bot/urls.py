@@ -84,6 +84,9 @@ urlpatterns = [
     # Conversations (lead inbox — formerly the appointments list)
     path('conversations/', views.ConversationsView.as_view(), name='conversations_list'),
     path('conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation_detail'),
+    # Live conversation polling + operator interception of the bot's pending reply.
+    path('conversations/<int:pk>/live/', views.conversation_live, name='conversation_live'),
+    path('conversations/<int:pk>/intercept/', views.intercept_bot_reply, name='intercept_bot_reply'),
 
     # Appointments (month calendar + booked list)
     path('appointments/', AppointmentsListView.as_view(), name='appointments_list'),

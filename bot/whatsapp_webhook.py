@@ -31,6 +31,8 @@ from django.db import IntegrityError
 import threading
 import time
 import random
+import uuid
+from datetime import timedelta
 from pathlib import Path
 from .services.lead_scoring import refresh_lead_score
 from typing import Optional
@@ -78,6 +80,41 @@ MESSAGE_BATCH_WINDOW_SECONDS = 45 # wait this long after the LAST message before
 # instead of sending a now-stale reply. The next batch covers everything.
 _pending_send_events: dict = {}     # sender -> threading.Event
 _pending_send_lock = threading.Lock()
+
+# How long an intercept armed while a reply was still being generated stays
+# live. Generation takes seconds and the send delay starts right after, so this
+# only has to bridge that gap; kept short so a stale tombstone can never block a
+# genuinely new reply minutes later.
+INTERCEPT_ARM_GRACE_SECONDS = 180
+
+
+def _send_intercepted(sender: str, tenant=None) -> bool:
+    """Has an operator intercepted the in-flight reply to this lead?
+
+    Read fresh from the DB each poll so the delayed-send loop honours an
+    intercept whichever web worker fielded the request (the in-memory
+    cancel_event only helps within this process).
+    """
+    try:
+        qs = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
+        qs = qs.for_tenant(tenant) if tenant is not None else qs
+        appt = qs.only('pending_send').first()
+        return bool(appt and (appt.pending_send or {}).get('intercepted'))
+    except Exception:
+        return False
+
+
+def request_intercept(sender: str) -> None:
+    """Best-effort instant abort of an in-flight delayed send in THIS process.
+
+    The DB tombstone (polled every few seconds by delayed_response) is the
+    reliable path; this just shortens the latency when a cancel_event happens to
+    be registered for the sender (the acknowledgement path registers one).
+    """
+    with _pending_send_lock:
+        ev = _pending_send_events.get(sender)
+    if ev is not None:
+        ev.set()
 
 # Reply pacing — we answer at the lead's own tempo. How long they took to reply
 # to our last message sets how long we take to reply to theirs, measured on top
@@ -774,12 +811,48 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         if delay_seconds and not reply_delay_enabled(tenant):
             delay_seconds = 0
 
-        # Sleep in short chunks so a cancel_event can interrupt the wait quickly.
+        # ── Arm the interceptable in-flight marker ────────────────────────────
+        # DB-backed so an operator can stop this send from the conversation view
+        # for the whole delay window, reliably across web workers. Only armed
+        # when there is actually a window to intercept.
+        _pending_token = None
+        if delay_seconds:
+            try:
+                _appt = _leads().first()
+            except Exception:
+                _appt = None
+            if _appt is not None:
+                _ps = _appt.pending_send or {}
+                if _ps.get('intercepted'):
+                    # Intercept armed while we were still generating — honour it,
+                    # drop the draft and bail before waiting on a dead send.
+                    _armed = parse_datetime(_ps.get('at') or '')
+                    if _armed and (timezone.now() - _armed).total_seconds() <= INTERCEPT_ARM_GRACE_SECONDS:
+                        _appt.drop_unsent_draft_turns()
+                        _appt.clear_pending_send(force=True)
+                        print(f"🛑 Send to {sender} intercepted before dispatch")
+                        return
+                _pending_token = uuid.uuid4().hex
+                _preview = ' '.join(
+                    str(p) for p in (reply if isinstance(reply, (list, tuple)) else [reply]) if p
+                )
+                _eta = (timezone.now() + timedelta(seconds=delay_seconds)).isoformat()
+                try:
+                    _appt.mark_pending_send(_pending_token, _preview, _eta)
+                except Exception as _arm_exc:
+                    print(f"⚠️ Could not arm pending-send marker for {sender}: {_arm_exc}")
+                    _pending_token = None
+
+        # Sleep in short chunks so a cancel_event — or an operator intercept —
+        # can interrupt the wait quickly.
         _POLL = 5  # seconds between cancellation checks
         slept = 0
         while slept < delay_seconds:
             if cancel_event and cancel_event.is_set():
                 print(f"🚫 Delayed send cancelled for {sender} — superseded by a new message")
+                return
+            if _pending_token and _send_intercepted(sender, tenant):
+                print(f"🛑 Delayed send to {sender} intercepted by operator")
                 return
             chunk = min(_POLL, delay_seconds - slept)
             time.sleep(chunk)
@@ -787,6 +860,9 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
 
         if cancel_event and cancel_event.is_set():
             print(f"🚫 Delayed send cancelled for {sender} — superseded by a new message")
+            return
+        if _pending_token and _send_intercepted(sender, tenant):
+            print(f"🛑 Delayed send to {sender} intercepted by operator")
             return
 
         # Clear the registry entry now that we're about to send (prevents stale cancellation).
@@ -845,6 +921,16 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
                     appt.mark_message_sent("assistant", part, sent_wamid)
             except Exception as e:
                 print(f"⚠️ Could not record outbound send: {e}")
+
+        # The reply is out — retire the in-flight marker (only ours, and never an
+        # intercept tombstone belonging to a newer send).
+        if _pending_token:
+            try:
+                appt = _leads().first()
+                if appt:
+                    appt.clear_pending_send(token=_pending_token)
+            except Exception as e:
+                print(f"⚠️ Could not clear pending-send marker: {e}")
     except Exception as e:
         print(f"❌ Error in delayed response: {str(e)}")
 

@@ -144,6 +144,22 @@
   }
   .cw-composer input[type="text"] { flex: 1; border: none; background: transparent; padding: 12px 0; font-size: 14px; }
   .cw-composer input[type="text"]:focus { outline: none; }
+  /* Live intercept / paused bar */
+  .cw-livebar { flex-shrink: 0; padding: 0 22px; }
+  .cw-livebar > * { max-width: 900px; margin: 0 auto 10px; }
+  .cw-pending, .cw-paused { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 12px; font-size: 13px; }
+  .cw-pending { background: rgba(0,101,145,0.08); border: 1px solid rgba(0,101,145,0.28); color: var(--color-on-surface, #1a1c1e); }
+  .cw-paused { background: rgba(191,120,0,0.10); border: 1px solid rgba(191,120,0,0.30); color: #7a4e00; }
+  .cw-pending-body { flex: 1; min-width: 0; }
+  .cw-pending-head { font-weight: 700; display: flex; align-items: center; gap: 7px; }
+  .cw-pending-preview { margin-top: 3px; opacity: 0.72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cw-count { font-variant-numeric: tabular-nums; }
+  .cw-intercept-btn, .cw-resume-btn { flex-shrink: 0; border: none; border-radius: 9px; padding: 8px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: transform var(--transition), opacity var(--transition); }
+  .cw-intercept-btn { background: #b3261e; color: #fff; box-shadow: 0 6px 16px -8px rgba(179,38,30,0.6); }
+  .cw-resume-btn { background: var(--color-primary); color: var(--color-on-primary); }
+  .cw-intercept-btn:hover, .cw-resume-btn:hover { opacity: 0.92; }
+  .cw-intercept-btn:active, .cw-resume-btn:active { transform: scale(0.95); }
+  .cw-intercept-btn:disabled { opacity: 0.5; cursor: default; }
   .cw-send { width: 46px; height: 46px; flex-shrink: 0; border-radius: 50%; border: none; background: var(--color-primary); color: var(--color-on-primary); cursor: pointer; box-shadow: 0 8px 20px -8px rgba(0,101,145,0.5); transition: transform var(--transition), opacity var(--transition); }
   .cw-send:hover { opacity: 0.92; }
   .cw-send:active { transform: scale(0.94); }
@@ -240,7 +256,7 @@
       <!-- Chat pane -->
       <div class="cw-pane is-active" id="pane-chat">
         {% if conversation_history %}
-        <div class="cw-scroll" id="chatScroll">
+        <div class="cw-scroll" id="chatScroll" data-count="{{ conversation_history|length }}">
           {% for message in conversation_history %}
           <div class="chat-bubble-row {% if message.role == 'user' %}user{% else %}assistant{% endif %}" data-ts="{{ message.timestamp }}">
             <div class="cw-bubble {% if message.role == 'user' %}in{% else %}out{% endif %}">
@@ -251,13 +267,18 @@
           {% endfor %}
         </div>
         {% else %}
-        <div class="cw-scroll" id="chatScroll">
+        <div class="cw-scroll" id="chatScroll" data-count="0">
           <div class="cw-chat-empty">
             <i class="fas fa-comment-slash"></i>
             <p>No messages logged for this lead yet.</p>
           </div>
         </div>
         {% endif %}
+
+        <!-- Live intercept / paused bar (populated by the polling script) -->
+        <div class="cw-livebar" id="liveBar" hidden
+             data-intercept-url="{% url 'intercept_bot_reply' appointment.pk %}"
+             data-resume-url="{% url 'resume_chatbot' appointment.pk %}"></div>
 
         <div class="cw-composer">
           <form method="post" action="{% url 'conversation_detail' appointment.pk %}">
@@ -294,6 +315,134 @@
     }
     var scroll = document.getElementById('chatScroll');
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
+
+    // ── Live conversation + reply interception ──────────────────────────────
+    // Polls a lightweight JSON endpoint so new customer messages appear without
+    // a refresh, and surfaces the bot's pending reply with an Intercept button
+    // that stops it from going out and hands the thread to the operator.
+    (function () {
+      var liveBar = document.getElementById('liveBar');
+      if (!scroll || !liveBar) return;
+      var liveUrl = '{% url "conversation_live" appointment.pk %}';
+      var interceptUrl = liveBar.getAttribute('data-intercept-url');
+      var resumeUrl = liveBar.getAttribute('data-resume-url');
+      var csrfEl = document.querySelector('input[name="csrfmiddlewaretoken"]');
+      var csrf = csrfEl ? csrfEl.value : '';
+      var cursor = parseInt(scroll.getAttribute('data-count'), 10);
+      if (isNaN(cursor)) cursor = 0;
+      var busy = false, interceptBusy = false;
+
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      function nearBottom() {
+        return (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight) < 120;
+      }
+      function fmtTime(ts) {
+        if (window.PlumbotDates && ts) {
+          var f = PlumbotDates.formatMessageTime(ts);
+          if (f) return f;
+        }
+        return '';
+      }
+      function appendBubble(m) {
+        var empty = scroll.querySelector('.cw-chat-empty');
+        if (empty) empty.remove();
+        var row = document.createElement('div');
+        row.className = 'chat-bubble-row ' + (m.role === 'user' ? 'user' : 'assistant');
+        if (m.ts) row.setAttribute('data-ts', m.ts);
+        row.innerHTML =
+          '<div class="cw-bubble ' + (m.role === 'user' ? 'in' : 'out') + '">' +
+            '<div class="cw-bubble-text">' + esc(m.content || '(no message content)') + '</div>' +
+            '<div class="chat-bubble-time">' + esc(fmtTime(m.ts)) + '</div>' +
+          '</div>';
+        scroll.appendChild(row);
+      }
+      function renderBar(data) {
+        var p = data.pending || {};
+        if (p.active) {
+          var secs = null;
+          if (p.eta) {
+            var d = new Date(p.eta);
+            if (!isNaN(d)) secs = Math.max(0, Math.round((d.getTime() - Date.now()) / 1000));
+          }
+          var when = secs == null ? 'shortly' : ('~' + secs + 's');
+          liveBar.innerHTML =
+            '<div class="cw-pending">' +
+              '<div class="cw-pending-body">' +
+                '<div class="cw-pending-head"><i class="fas fa-robot"></i> Bot reply scheduled ' +
+                  '<span class="cw-count">(sending ' + esc(when) + ')</span></div>' +
+                (p.preview ? '<div class="cw-pending-preview">' + esc(p.preview) + '</div>' : '') +
+              '</div>' +
+              '<button type="button" class="cw-intercept-btn" id="interceptBtn">' +
+                '<i class="fas fa-hand"></i> Intercept</button>' +
+            '</div>';
+          var btn = document.getElementById('interceptBtn');
+          if (btn) btn.addEventListener('click', doIntercept);
+          liveBar.hidden = false;
+        } else if (data.paused) {
+          liveBar.innerHTML =
+            '<div class="cw-paused">' +
+              '<div class="cw-pending-body"><strong>Bot paused</strong> — you are replying to this lead manually.</div>' +
+              '<form method="post" action="' + resumeUrl + '" style="margin:0;">' +
+                '<input type="hidden" name="csrfmiddlewaretoken" value="' + esc(csrf) + '">' +
+                '<button type="submit" class="cw-resume-btn"><i class="fas fa-play"></i> Resume bot</button>' +
+              '</form>' +
+            '</div>';
+          liveBar.hidden = false;
+        } else {
+          liveBar.hidden = true;
+          liveBar.innerHTML = '';
+        }
+      }
+      function doIntercept() {
+        if (interceptBusy) return;
+        interceptBusy = true;
+        var btn = document.getElementById('interceptBtn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Stopping…'; }
+        fetch(interceptUrl + '?ajax=1', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf },
+        }).then(function (r) { return r.json(); }).then(function () {
+          interceptBusy = false;
+          poll();  // refresh transcript (draft dropped) and show the paused bar
+          var input = document.querySelector('.cw-composer input[name="message"]');
+          if (input) input.focus();
+        }).catch(function () {
+          interceptBusy = false;
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-hand"></i> Intercept'; }
+        });
+      }
+      function poll() {
+        if (busy) return;
+        busy = true;
+        fetch(liveUrl + '?after=' + cursor, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            busy = false;
+            var stick = nearBottom();
+            if (data.reset) {
+              scroll.querySelectorAll('.chat-bubble-row').forEach(function (el) { el.remove(); });
+              (data.messages || []).forEach(appendBubble);
+              stick = true;
+            } else {
+              (data.messages || []).forEach(appendBubble);
+            }
+            cursor = data.count;
+            renderBar(data);
+            if (stick) scroll.scrollTop = scroll.scrollHeight;
+          })
+          .catch(function () { busy = false; });
+      }
+
+      var timer = setInterval(poll, 4000);
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) { clearInterval(timer); timer = null; }
+        else if (!timer) { poll(); timer = setInterval(poll, 4000); }
+      });
+      poll();
+    })();
 
     // ── Tabs: Chat pane vs the real appointment-detail panes (in an iframe) ──
     var tabs = Array.prototype.slice.call(document.querySelectorAll('.cw-tab'));

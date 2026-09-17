@@ -10200,3 +10200,101 @@ class QuotesNavGroupTests(StaffClientTestCase):
                                  f'{url} appears twice in the sidebar')
                 self.assertIn(f'href="{url}"', group,
                               f'{url} is still a top-level sidebar item')
+
+
+# ======================================================================
+# Live conversation view + operator interception of the bot's pending reply
+# ======================================================================
+class InterceptAndLiveTests(StaffClientTestCase):
+    """The conversation view polls for new turns and can stop the bot's
+    in-flight reply, dropping the unsent draft and handing the thread to a
+    human (bot paused). See conversation_live / intercept_bot_reply and
+    Appointment.pending_send."""
+
+    def _lead(self):
+        return make_lead(7100, conversation_history=[
+            {'role': 'user', 'content': 'Hi, do you install geysers?',
+             'timestamp': '2026-09-17T06:00:00'},
+        ])
+
+    def test_live_returns_transcript_and_idle_state(self):
+        lead = self._lead()
+        resp = self.client.get(reverse('conversation_live', args=[lead.pk]) + '?after=-1')
+        self.assertEqual(resp.status_code, 200)
+        data = json.loads(resp.content)
+        self.assertEqual(data['count'], 1)
+        self.assertTrue(data['reset'])
+        self.assertEqual(len(data['messages']), 1)
+        self.assertEqual(data['messages'][0]['role'], 'user')
+        self.assertFalse(data['pending']['active'])
+        self.assertFalse(data['paused'])
+
+    def test_live_only_returns_turns_after_cursor(self):
+        lead = self._lead()
+        lead.add_conversation_message('assistant', 'Yes we do — happy to help.')
+        resp = self.client.get(reverse('conversation_live', args=[lead.pk]) + '?after=1')
+        data = json.loads(resp.content)
+        self.assertEqual(data['count'], 2)
+        self.assertFalse(data['reset'])
+        self.assertEqual(len(data['messages']), 1)
+        self.assertEqual(data['messages'][0]['content'], 'Yes we do — happy to help.')
+
+    def test_live_reports_an_armed_pending_reply(self):
+        lead = self._lead()
+        lead.mark_pending_send('tok-1', 'Great, tomorrow at 9am works?', '2026-09-17T06:03:00')
+        data = json.loads(self.client.get(
+            reverse('conversation_live', args=[lead.pk]) + '?after=1').content)
+        self.assertTrue(data['pending']['active'])
+        self.assertEqual(data['pending']['preview'], 'Great, tomorrow at 9am works?')
+
+    def test_intercept_drops_draft_pauses_and_tombstones(self):
+        lead = self._lead()
+        # A composed-but-unsent draft (no sent_at / no WAMID) is the last turn.
+        lead.add_conversation_message('assistant', "Tomorrow at 9am or 2pm?")
+        lead.mark_pending_send('tok-2', 'Tomorrow at 9am or 2pm?', '2026-09-17T06:03:00')
+        self.assertEqual(len(lead.conversation_history), 2)
+
+        resp = self.client.post(reverse('intercept_bot_reply', args=[lead.pk]) + '?ajax=1')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(json.loads(resp.content)['ok'])
+
+        lead.refresh_from_db()
+        # Draft removed, customer turn kept.
+        self.assertEqual(len(lead.conversation_history), 1)
+        self.assertEqual(lead.conversation_history[0]['role'], 'user')
+        # Tombstone armed for the send loop, and the bot handed to a human.
+        self.assertTrue((lead.pending_send or {}).get('intercepted'))
+        self.assertFalse(lead.pending_send_state()['active'])
+        self.assertTrue(lead.chatbot_paused)
+        self.assertIn('[DELAY_SIGNAL]', lead.internal_notes or '')
+
+    def test_intercept_never_drops_a_sent_reply(self):
+        lead = self._lead()
+        lead.add_conversation_message('assistant', 'Yes we do.')
+        lead.mark_message_sent('assistant', 'Yes we do.', 'wamid.SENT')  # really went out
+        self.client.post(reverse('intercept_bot_reply', args=[lead.pk]) + '?ajax=1')
+        lead.refresh_from_db()
+        # The sent reply survives; only unsent drafts are dropped.
+        self.assertEqual([m['content'] for m in lead.conversation_history],
+                         ['Hi, do you install geysers?', 'Yes we do.'])
+
+    def test_resume_clears_the_intercept_tombstone(self):
+        lead = self._lead()
+        lead.intercept_pending_send()
+        lead.pause_chatbot()
+        self.assertTrue((lead.pending_send or {}).get('intercepted'))
+        self.client.post(reverse('resume_chatbot', args=[lead.pk]))
+        lead.refresh_from_db()
+        self.assertIsNone(lead.pending_send)
+        self.assertFalse(lead.chatbot_paused)
+
+    def test_clear_pending_send_is_token_scoped(self):
+        """A finished send must not wipe a newer reply's marker."""
+        lead = self._lead()
+        lead.mark_pending_send('newer-token', 'newer reply', '2026-09-17T06:05:00')
+        lead.clear_pending_send(token='older-token')  # a stale thread finishing
+        lead.refresh_from_db()
+        self.assertEqual((lead.pending_send or {}).get('token'), 'newer-token')
+        lead.clear_pending_send(token='newer-token')  # the owning thread finishing
+        lead.refresh_from_db()
+        self.assertIsNone(lead.pending_send)

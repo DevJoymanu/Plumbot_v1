@@ -43,6 +43,8 @@ from .appointments import (
     AppointmentsListView,
     ConversationsView,
     ConversationDetailView,
+    conversation_live,
+    intercept_bot_reply,
     PriorityLeadsView,
     update_priority_lead_card,
     AppointmentDetailView,
