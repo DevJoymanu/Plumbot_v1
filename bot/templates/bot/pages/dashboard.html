@@ -93,85 +93,97 @@
         50% { opacity: 0.72; }
     }
 
-    /* ── Quick actions (the three things a plumber does on login) ── */
-    .pb-quick {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 24px;
-        margin-bottom: 28px;
-    }
-    .pb-quick__tile {
+    /* ── Quick actions: ONE compact line of dropdowns, dashboard stays visible ── */
+    .pb-quickbar {
         display: flex;
-        flex-direction: column;
-        gap: 14px;
-        min-height: 168px;
-        padding: 22px 24px;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    .pb-quickbar__lead {
+        font-family: var(--font-label);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--color-text-2);
+        margin-right: 4px;
+    }
+    .pb-qa { position: relative; }
+    .pb-qa > summary {
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: var(--radius-pill);
         background: var(--glass-bg);
         backdrop-filter: blur(var(--glass-blur));
         -webkit-backdrop-filter: blur(var(--glass-blur));
         border: 1px solid rgba(0, 101, 145, 0.18);
-        border-radius: var(--radius-lg);
         box-shadow: var(--shadow-glow);
-        text-decoration: none;
-        color: inherit;
-        transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
-    }
-    .pb-quick__tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-glow-lg); border-color: rgba(0, 101, 145, 0.4); }
-    .pb-quick__tile:active { transform: scale(0.98); }
-    .pb-quick__head { display: flex; align-items: center; gap: 12px; }
-    .pb-quick__icon {
-        width: 42px; height: 42px; flex: 0 0 auto;
-        display: inline-flex; align-items: center; justify-content: center;
-        border-radius: 50%;
-        background: rgba(14, 165, 233, 0.12);
-        color: var(--color-primary);
-        font-size: 17px;
-    }
-    .pb-quick__label {
         font-family: var(--font-label);
-        font-size: 12px;
+        font-size: 12.5px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
         color: var(--color-primary);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: border-color var(--transition), background var(--transition);
     }
-    .pb-quick__badge {
-        margin-left: auto;
-        font-family: var(--font-label);
+    .pb-qa > summary::-webkit-details-marker { display: none; }
+    .pb-qa > summary:hover { border-color: rgba(0, 101, 145, 0.4); }
+    .pb-qa > summary .pb-qa__caret { font-size: 10px; transition: transform var(--transition); color: var(--color-text-2); }
+    .pb-qa[open] > summary .pb-qa__caret { transform: rotate(180deg); }
+    .pb-qa__count {
         font-size: 11px;
         font-weight: 700;
         color: var(--color-on-primary);
         background: var(--color-primary);
         border-radius: var(--radius-pill);
-        padding: 3px 10px;
-        line-height: 1.4;
+        padding: 1px 8px;
+        line-height: 1.5;
     }
-    .pb-quick__target {
-        font-size: 20px;
-        font-weight: 400;
+    .pb-qa__menu {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 6px);
+        left: 0;
+        min-width: 260px;
+        max-width: 320px;
+        padding: 8px;
+        background: var(--color-surface-lowest, #fff);
+        border: 1px solid rgba(0, 101, 145, 0.12);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-glow-lg);
+    }
+    .pb-qa__item {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 9px 12px;
+        border-radius: var(--radius-sm, 10px);
+        text-decoration: none;
         color: var(--color-text);
-        line-height: 1.2;
+        transition: background var(--transition);
     }
-    .pb-quick__note { font-size: 12.5px; color: var(--color-text-2); }
-    .pb-quick__cta {
-        margin-top: auto;
-        display: inline-flex; align-items: center; gap: 8px;
+    .pb-qa__item:hover { background: rgba(0, 101, 145, 0.06); }
+    .pb-qa__name { font-size: 13.5px; font-weight: 500; }
+    .pb-qa__meta { font-size: 11.5px; color: var(--color-text-2); }
+    .pb-qa__empty { padding: 10px 12px; font-size: 12.5px; color: var(--color-text-2); }
+    .pb-qa__all {
+        display: block;
+        margin-top: 4px;
+        padding: 9px 12px;
+        border-top: 1px solid rgba(0, 101, 145, 0.08);
         font-family: var(--font-label);
-        font-size: 12.5px;
+        font-size: 11.5px;
         font-weight: 600;
         letter-spacing: 0.03em;
         color: var(--color-primary);
+        text-decoration: none;
     }
-    .pb-quick__cta i { transition: transform var(--transition); }
-    .pb-quick__tile:hover .pb-quick__cta i { transform: translateX(3px); }
-    /* Nothing waiting: quieter, still a way into the list. */
-    .pb-quick__tile--empty {
-        border-color: var(--glass-border-color, rgba(0, 101, 145, 0.1));
-        border-style: dashed;
-    }
-    .pb-quick__tile--empty .pb-quick__icon { background: rgba(0,101,145,0.06); color: var(--color-text-2); }
-    .pb-quick__tile--empty .pb-quick__label { color: var(--color-text-2); }
-    .pb-quick__tile--empty .pb-quick__target { color: var(--color-text-2); font-size: 16px; }
+    .pb-qa__all:hover { text-decoration: underline; }
 
     /* ── Bento metrics ── */
     .pb-stats-grid {
@@ -542,13 +554,14 @@
     /* ── Responsive ── */
     @media (max-width: 1100px) {
         .pb-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
-        .pb-quick { grid-template-columns: 1fr; gap: 16px; }
         .pb-dash-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 767px) {
         .pb-dash { padding: 16px 16px 32px; gap: 16px; }
         .pb-topbar { margin: 0 -16px; padding: 12px 16px; }
-        .pb-quick__tile { min-height: 0; }
+        .pb-qa, .pb-qa > summary { flex: 1 1 auto; }
+        .pb-qa > summary { justify-content: center; }
+        .pb-qa__menu { min-width: 220px; }
         .pb-metric { min-height: 130px; padding: 18px; }
         .pb-sched-row, .pb-followup-row { padding: 12px 16px; }
         .pb-schedule__header { padding: 14px 16px; }
@@ -580,80 +593,85 @@
     </a>
     {% endif %}
 
-    {# ── Quick actions: one tap to the lead that needs the next step ── #}
-    <div class="pb-quick">
+    {# ── Quick actions: one compact line; each opens a short pick-list ── #}
+    <div class="pb-quickbar">
+        <span class="pb-quickbar__lead">Quick actions</span>
+
         {# 1. Log a site visit #}
-        {% if qa_visit %}
-        <a href="{% url 'appointment_detail' qa_visit.pk %}?source=dashboard" class="pb-quick__tile">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-clipboard-check"></i></span>
-                <span class="pb-quick__label">Log a site visit</span>
-                {% if qa_visit_count > 1 %}<span class="pb-quick__badge">{{ qa_visit_count }} waiting</span>{% endif %}
+        <details class="pb-qa">
+            <summary>
+                <i class="fas fa-clipboard-check"></i> Log site visit
+                {% if qa_visit_count %}<span class="pb-qa__count">{{ qa_visit_count }}</span>{% endif %}
+                <i class="fas fa-chevron-down pb-qa__caret"></i>
+            </summary>
+            <div class="pb-qa__menu">
+                {% for l in qa_visits %}
+                <a class="pb-qa__item" href="{% url 'appointment_detail' l.pk %}?source=dashboard">
+                    <span class="pb-qa__name">{{ l.customer_name|default:l.customer_area|default:l.phone_number|cut:"whatsapp:" }}</span>
+                    <span class="pb-qa__meta">{% if l.scheduled_datetime %}Visited {{ l.scheduled_datetime|date:"M d, H:i" }}{% else %}Awaiting write-up{% endif %}{% if l.customer_area %} · {{ l.customer_area }}{% endif %}</span>
+                </a>
+                {% empty %}
+                <div class="pb-qa__empty">No visits waiting to be logged.</div>
+                {% endfor %}
+                <a class="pb-qa__all" href="{% url 'appointments_list' %}">View all appointments</a>
             </div>
-            <div class="pb-quick__target">{{ qa_visit.customer_name|default:qa_visit.customer_area|default:"Latest visit" }}</div>
-            <div class="pb-quick__note">{% if qa_visit.scheduled_datetime %}Visited {{ qa_visit.scheduled_datetime|date:"M d, H:i" }}{% else %}Awaiting write-up{% endif %}</div>
-            <span class="pb-quick__cta">Log the visit <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% else %}
-        <a href="{% url 'appointments_list' %}" class="pb-quick__tile pb-quick__tile--empty">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-clipboard-check"></i></span>
-                <span class="pb-quick__label">Log a site visit</span>
-            </div>
-            <div class="pb-quick__target">Nothing waiting</div>
-            <div class="pb-quick__note">No visits to write up right now</div>
-            <span class="pb-quick__cta">Open appointments <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% endif %}
+        </details>
 
         {# 2. Create a quote #}
-        {% if qa_quote %}
-        <a href="{% url 'create_quotation' qa_quote.pk %}" class="pb-quick__tile">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-file-invoice-dollar"></i></span>
-                <span class="pb-quick__label">Create a quote</span>
-                {% if qa_quote_count > 1 %}<span class="pb-quick__badge">{{ qa_quote_count }} waiting</span>{% endif %}
+        <details class="pb-qa">
+            <summary>
+                <i class="fas fa-file-invoice-dollar"></i> Create quote
+                {% if qa_quote_count %}<span class="pb-qa__count">{{ qa_quote_count }}</span>{% endif %}
+                <i class="fas fa-chevron-down pb-qa__caret"></i>
+            </summary>
+            <div class="pb-qa__menu">
+                {% for l in qa_quotes %}
+                <a class="pb-qa__item" href="{% url 'create_quotation' l.pk %}">
+                    <span class="pb-qa__name">{{ l.customer_name|default:l.customer_area|default:l.phone_number|cut:"whatsapp:" }}</span>
+                    <span class="pb-qa__meta">Visit done{% if l.customer_area %} · {{ l.customer_area }}{% endif %}</span>
+                </a>
+                {% empty %}
+                <div class="pb-qa__empty">No visited leads need a quote.</div>
+                {% endfor %}
+                <a class="pb-qa__all" href="{% url 'create_quotation_standalone' %}">New quote (pick any lead)</a>
+                <a class="pb-qa__all" href="{% url 'quotations_list' %}">View all quotes</a>
             </div>
-            <div class="pb-quick__target">{{ qa_quote.customer_name|default:qa_quote.customer_area|default:"Latest lead" }}</div>
-            <div class="pb-quick__note">Visit done{% if qa_quote.customer_area %} · {{ qa_quote.customer_area }}{% endif %}, needs a quote</div>
-            <span class="pb-quick__cta">Build the quote <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% else %}
-        <a href="{% url 'quotations_list' %}" class="pb-quick__tile pb-quick__tile--empty">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-file-invoice-dollar"></i></span>
-                <span class="pb-quick__label">Create a quote</span>
-            </div>
-            <div class="pb-quick__target">Nothing waiting</div>
-            <div class="pb-quick__note">No visited leads need a quote</div>
-            <span class="pb-quick__cta">Open quotes <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% endif %}
+        </details>
 
         {# 3. Log a job #}
-        {% if qa_job %}
-        <a href="{% url 'schedule_job' qa_job.pk %}?source=dashboard" class="pb-quick__tile">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-hard-hat"></i></span>
-                <span class="pb-quick__label">Log a job</span>
-                {% if qa_job_count > 1 %}<span class="pb-quick__badge">{{ qa_job_count }} waiting</span>{% endif %}
+        <details class="pb-qa">
+            <summary>
+                <i class="fas fa-hard-hat"></i> Log job
+                {% if qa_job_count %}<span class="pb-qa__count">{{ qa_job_count }}</span>{% endif %}
+                <i class="fas fa-chevron-down pb-qa__caret"></i>
+            </summary>
+            <div class="pb-qa__menu">
+                {% for l in qa_jobs %}
+                <a class="pb-qa__item" href="{% url 'schedule_job' l.pk %}?source=dashboard">
+                    <span class="pb-qa__name">{{ l.customer_name|default:l.customer_area|default:l.phone_number|cut:"whatsapp:" }}</span>
+                    <span class="pb-qa__meta">Ready to book{% if l.customer_area %} · {{ l.customer_area }}{% endif %}</span>
+                </a>
+                {% empty %}
+                <div class="pb-qa__empty">No visits waiting to be booked.</div>
+                {% endfor %}
+                <a class="pb-qa__all" href="{% url 'create_job' %}">New job (any customer)</a>
+                <a class="pb-qa__all" href="{% url 'job_appointments_list' %}">View all jobs</a>
             </div>
-            <div class="pb-quick__target">{{ qa_job.customer_name|default:qa_job.customer_area|default:"Latest lead" }}</div>
-            <div class="pb-quick__note">Ready to book the job in</div>
-            <span class="pb-quick__cta">Schedule the job <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% else %}
-        <a href="{% url 'create_job' %}" class="pb-quick__tile pb-quick__tile--empty">
-            <div class="pb-quick__head">
-                <span class="pb-quick__icon"><i class="fas fa-hard-hat"></i></span>
-                <span class="pb-quick__label">Log a job</span>
-            </div>
-            <div class="pb-quick__target">Book one in</div>
-            <div class="pb-quick__note">No visits waiting — start a new job</div>
-            <span class="pb-quick__cta">New job <i class="fas fa-arrow-right"></i></span>
-        </a>
-        {% endif %}
+        </details>
     </div>
+    <script>
+        (function () {
+            var menus = Array.prototype.slice.call(document.querySelectorAll('.pb-quickbar .pb-qa'));
+            menus.forEach(function (d) {
+                d.addEventListener('toggle', function () {
+                    if (d.open) menus.forEach(function (o) { if (o !== d) o.removeAttribute('open'); });
+                });
+            });
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.pb-quickbar')) menus.forEach(function (o) { o.removeAttribute('open'); });
+            });
+        })();
+    </script>
 
     {# ── Bento metrics ── #}
     <div class="pb-stats-grid">

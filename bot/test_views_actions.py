@@ -5371,15 +5371,19 @@ class DashboardQuickActionsTests(StaffClientTestCase):
     that needs the next step: log a site visit -> create a quote -> log a job.
     """
 
-    def test_empty_states_link_to_the_lists(self):
+    def test_the_bar_is_present_with_the_three_actions_and_navigation(self):
         r = self.client.get(reverse('dashboard'))
-        self.assertContains(r, 'Log a site visit')
-        self.assertContains(r, 'Create a quote')
-        self.assertContains(r, 'Log a job')
-        # With nothing waiting, the job tile offers a brand-new job.
+        self.assertContains(r, 'Log site visit')
+        self.assertContains(r, 'Create quote')
+        self.assertContains(r, 'Log job')
+        # Room for navigation beyond the pre-selected leads.
+        self.assertContains(r, reverse('create_quotation_standalone'))
         self.assertContains(r, reverse('create_job'))
+        self.assertContains(r, reverse('appointments_list'))
+        self.assertContains(r, reverse('quotations_list'))
+        self.assertContains(r, reverse('job_appointments_list'))
 
-    def test_quote_and_job_tiles_point_at_the_ready_lead(self):
+    def test_quote_and_job_menus_list_the_ready_lead(self):
         lead = make_lead(
             800, customer_name='Ready Rita', appointment_type='site_visit',
             site_visit_completed=True, site_visit_completed_at=timezone.now(),
@@ -5389,7 +5393,20 @@ class DashboardQuickActionsTests(StaffClientTestCase):
         self.assertContains(r, reverse('schedule_job', args=[lead.pk]))
         self.assertContains(r, 'Ready Rita')
 
-    def test_site_visit_tile_points_at_an_unlogged_past_visit(self):
+    def test_the_menu_offers_several_leads_not_just_one(self):
+        """The plumber must be able to pick another lead, not be locked to a
+        single preset one."""
+        for i in range(3):
+            make_lead(
+                810 + i, customer_name=f'Job Lead {i}', appointment_type='site_visit',
+                site_visit_completed=True,
+                site_visit_completed_at=timezone.now() - timedelta(hours=i),
+                job_status='pending_schedule', status='confirmed')
+        r = self.client.get(reverse('dashboard'))
+        for i in range(3):
+            self.assertContains(r, f'Job Lead {i}')
+
+    def test_site_visit_menu_lists_an_unlogged_past_visit(self):
         past = timezone.now() - timedelta(hours=3)
         lead = make_lead(
             801, customer_name='Visited Vic', appointment_type='site_visit',
@@ -5406,7 +5423,7 @@ class DashboardQuickActionsTests(StaffClientTestCase):
             job_status='pending_schedule', status='confirmed')
         Quotation.objects.create(appointment=lead, tenant=lead.tenant)
         r = self.client.get(reverse('dashboard'))
-        # Quote tile falls back to the list; the job tile still points at it.
+        # Not in the quote menu; still in the job menu.
         self.assertNotContains(r, reverse('create_quotation', args=[lead.pk]))
         self.assertContains(r, reverse('schedule_job', args=[lead.pk]))
 

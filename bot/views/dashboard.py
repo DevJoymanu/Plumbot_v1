@@ -499,41 +499,47 @@ def _appointments_sidebar_context(sidebar_filter='all', response_age='all', tena
     }
 
 
-def _quick_action_targets(tenant):
-    """The three jobs a plumber does the moment they log in, each pointing at
-    the MOST RECENT lead that needs it — so the home page is one tap from the
-    work in hand. The flow is: log the site visit -> create the quote -> log
-    the job, and each button jumps straight to the lead at that stage.
+QUICK_ACTION_CHOICES = 6   # candidate leads offered per action in the dropdown
 
-    Returns the target lead and a pending count for each action; a None target
-    means nothing is waiting and the tile links to the relevant list instead.
+
+def _quick_action_targets(tenant):
+    """The three jobs a plumber does the moment they log in: log the site visit
+    -> create the quote -> log the job. Each action offers a SHORT LIST of the
+    most recent leads at that stage (newest first) so the plumber can pick the
+    right one rather than being locked to a single pre-selected lead — with a
+    'view all' link into the full list for anything past the top few.
+
+    Returns a candidate list and a total pending count per action.
     """
     base = Appointment.objects.for_tenant_or_seed(tenant).real()
     now = timezone.now()
 
-    # 1) A site visit to LOG: a visit that has happened (its slot is in the
-    #    past) but hasn't been written up yet — newest first. Falls back to any
-    #    confirmed, unlogged visit for leads that never had a slot pinned.
+    # 1) Site visits to LOG: a visit whose slot is in the past but hasn't been
+    #    written up yet — newest first. Falls back to any confirmed, unlogged
+    #    visit for leads that never had a slot pinned.
     visits = base.filter(appointment_type='site_visit', site_visit_completed=False)
     due_visits = visits.filter(scheduled_datetime__isnull=False,
                                scheduled_datetime__lte=now).order_by('-scheduled_datetime')
-    visit = due_visits.first() or visits.filter(status='confirmed').order_by('-updated_at').first()
+    if not due_visits.exists():
+        due_visits = visits.filter(status='confirmed').order_by('-updated_at')
 
-    # 2) A quote to CREATE: a visit that went ahead but carries no quote yet.
-    quotes_pending = base.filter(site_visit_completed=True, quotations__isnull=True)
-    quote = quotes_pending.order_by('-site_visit_completed_at').first()
+    # 2) Quotes to CREATE: a visit that went ahead but carries no quote yet.
+    quotes_pending = base.filter(
+        site_visit_completed=True, quotations__isnull=True
+    ).order_by('-site_visit_completed_at')
 
-    # 3) A job to LOG: a completed visit that is ready to be booked as a job.
-    jobs_pending = base.filter(appointment_type='site_visit', site_visit_completed=True,
-                               job_status='pending_schedule')
-    job = jobs_pending.order_by('-site_visit_completed_at').first()
+    # 3) Jobs to LOG: a completed visit ready to be booked as a job.
+    jobs_pending = base.filter(
+        appointment_type='site_visit', site_visit_completed=True,
+        job_status='pending_schedule',
+    ).order_by('-site_visit_completed_at')
 
     return {
-        'qa_visit': visit,
+        'qa_visits': list(due_visits[:QUICK_ACTION_CHOICES]),
         'qa_visit_count': due_visits.count(),
-        'qa_quote': quote,
+        'qa_quotes': list(quotes_pending[:QUICK_ACTION_CHOICES]),
         'qa_quote_count': quotes_pending.count(),
-        'qa_job': job,
+        'qa_jobs': list(jobs_pending[:QUICK_ACTION_CHOICES]),
         'qa_job_count': jobs_pending.count(),
     }
 
