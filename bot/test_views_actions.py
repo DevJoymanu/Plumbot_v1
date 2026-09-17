@@ -4850,9 +4850,14 @@ class JobSchedulingTests(StaffClientTestCase):
         # either way) must be absent inside the frame.
         self.assertNotContains(framed, '<nav class="pb-bottomnav"')
         self.assertContains(framed, '<div class="pb-panel-root">')
+        # The glass styling must reach the framed page too — its component
+        # styles are otherwise scoped under .pb-content, which the panel lacks.
+        self.assertContains(framed, 'class="jobform"')
+        self.assertContains(framed, 'var(--glass-bg)')
 
         full = self.client.get(reverse('schedule_job', args=[self.site_visit.pk]))
         self.assertContains(full, '<nav class="pb-bottomnav"')   # full page keeps its nav
+        self.assertContains(full, 'class="jobform"')
 
     def test_a_completed_visit_on_an_unconfirmed_lead_still_schedules(self):
         """The "nothing happens, the page just refreshes" report. The Schedule

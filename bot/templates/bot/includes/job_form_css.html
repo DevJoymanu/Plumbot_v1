@@ -1,0 +1,197 @@
+{% comment %}
+Glass styling for the job scheduling forms (schedule / reschedule / create),
+scoped to a `.jobform` wrapper so it renders identically in BOTH the full
+layout and the chromeless workspace panel. The shared component styles in
+plumbot_variables_css.html are scoped under `.pb-content`, which the panel
+layout does not provide - so inside the workspace iframe those pages would
+otherwise fall back to raw browser defaults. Same design tokens as the rest of
+the app; no new values.
+{% endcomment %}
+<style>
+    /* Let the form scroll inside the chromeless panel (overflow:hidden root). */
+    .pb-panel-root { overflow-y: auto; }
+
+    .jobform { padding: 24px 32px 40px; max-width: 1000px; margin: 0 auto; }
+
+    .jobform .jf-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        align-items: start;
+    }
+
+    .jobform .card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(var(--glass-blur));
+        -webkit-backdrop-filter: blur(var(--glass-blur));
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-glow);
+        overflow: hidden;
+    }
+    .jobform .card + .card { margin-top: 24px; }
+
+    .jobform .card-header {
+        background: rgba(0, 101, 145, 0.04);
+        color: var(--color-text);
+        border-bottom: 1px solid rgba(0, 101, 145, 0.06);
+        padding: 16px 24px;
+        font-family: var(--font-label);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 12.5px;
+    }
+    .jobform .card-header h3 { margin: 0; font: inherit; }
+    .jobform .card-body { padding: 24px; }
+
+    .jobform .form-group { margin-bottom: 18px; }
+    .jobform .form-group:last-child { margin-bottom: 0; }
+
+    .jobform label,
+    .jobform .form-group label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--color-text-2);
+        font-family: var(--font-label);
+        font-size: 11.5px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .jobform input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    .jobform select,
+    .jobform .form-control {
+        width: 100%;
+        min-height: 44px;
+        padding: 11px 18px;
+        border: 1.5px solid transparent;
+        border-radius: var(--radius-pill);
+        background: var(--color-surface-low);
+        color: var(--color-text);
+        font-family: var(--font-base);
+        font-size: 14px;
+        transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .jobform textarea,
+    .jobform textarea.form-control {
+        width: 100%;
+        min-height: 110px;
+        padding: 14px 18px;
+        border: 1.5px solid transparent;
+        border-radius: var(--radius-md);
+        background: var(--color-surface-low);
+        color: var(--color-text);
+        font-family: var(--font-base);
+        font-size: 14px;
+        resize: vertical;
+        transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+    }
+
+    .jobform input:hover:not(:focus),
+    .jobform select:hover:not(:focus),
+    .jobform textarea:hover:not(:focus) { background: var(--color-surface-mid); }
+
+    .jobform input:focus,
+    .jobform select:focus,
+    .jobform textarea:focus,
+    .jobform .form-control:focus {
+        outline: none;
+        background: var(--color-surface-lowest);
+        border-color: transparent;
+        box-shadow: 0 0 0 3px rgba(0, 101, 145, 0.18);
+    }
+
+    /* The multi-day toggle: a real pill-free checkbox on a soft tinted row. */
+    .jobform .jf-toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        background: var(--color-surface-low);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        font-size: 14px;
+        color: var(--color-text);
+        text-transform: none;
+        letter-spacing: normal;
+        font-family: var(--font-base);
+        margin-bottom: 0;
+    }
+    .jobform .jf-toggle input { width: 18px; height: 18px; min-height: 0; accent-color: var(--color-primary); flex: 0 0 auto; }
+
+    .jobform small,
+    .jobform .text-muted {
+        display: block;
+        margin-top: 6px;
+        color: var(--color-text-2);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
+    /* Info note (mirrors the reschedule page). */
+    .jobform .jf-note {
+        display: flex;
+        gap: 10px;
+        padding: 14px 18px;
+        margin: 4px 0 0;
+        background: var(--color-primary-fixed);
+        border: 1px solid rgba(0, 101, 145, 0.15);
+        border-radius: var(--radius-md);
+        color: var(--color-on-primary-fixed-variant);
+        font-size: 13px;
+    }
+    .jobform .jf-note i { color: var(--color-primary); margin-top: 2px; }
+
+    /* Read-only summary rows (definition list feel, no table). */
+    .jobform .jf-summary p { margin: 0 0 12px; font-size: 14px; color: var(--color-text-2); }
+    .jobform .jf-summary p:last-child { margin-bottom: 0; }
+    .jobform .jf-summary strong { color: var(--color-text); font-weight: 600; }
+
+    .jobform .actions,
+    .jobform .jf-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 22px;
+        flex-wrap: wrap;
+    }
+
+    .jobform .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: none;
+        border-radius: var(--radius-pill);
+        padding: 11px 22px;
+        min-height: 44px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: var(--font-label);
+        letter-spacing: 0.03em;
+        text-decoration: none;
+        cursor: pointer;
+        transition: transform var(--transition), box-shadow var(--transition), background var(--transition), opacity var(--transition), border-color var(--transition);
+    }
+    .jobform .btn:hover { transform: translateY(-1px); opacity: 0.92; }
+    .jobform .btn:active { transform: scale(0.96); opacity: 0.88; }
+
+    .jobform .btn-primary {
+        background: var(--color-primary);
+        color: var(--color-on-primary);
+        box-shadow: 0 8px 20px -6px rgba(0, 101, 145, 0.35);
+    }
+    .jobform .btn-secondary {
+        background: transparent;
+        color: var(--color-primary);
+        border: 1px solid rgba(0, 101, 145, 0.12);
+    }
+    .jobform .btn-secondary:hover { border-color: rgba(0, 101, 145, 0.40); background: rgba(0, 101, 145, 0.04); }
+
+    @media (max-width: 767px) {
+        .jobform { padding: 16px; }
+        .jobform .jf-grid { grid-template-columns: 1fr; }
+    }
+</style>

@@ -1,59 +1,59 @@
-{% extends "bot/layouts/base.html" %}
+{% extends base_template|default:"bot/layouts/base.html" %}
 
 {% block title %}New Job — Plumbot{% endblock %}
 
+{% block extra_css %}
+{% include "bot/includes/job_form_css.html" %}
+{% endblock %}
+
 {% block content %}
+<div class="jobform">
+    <div class="pb-topbar">
+        <h1><i class="fas fa-hard-hat"></i> New Job</h1>
+        <p>Book a job straight in — for a walk-in, a phone booking or a repeat customer</p>
+    </div>
 
-    <div class="container">
-        <div class="header">
-            <h1>
-                <i class="fas fa-hard-hat"></i>
-                New Job
-            </h1>
-            <p>Book a job straight in — for a walk-in, a phone booking or a repeat customer</p>
-        </div>
-
-        <div class="card">
-            <form method="post">
-                {% csrf_token %}
-                <div class="card-header">
-                    <h3>Customer</h3>
-                </div>
+    <form method="post">
+        {% csrf_token %}
+        <div class="jf-grid">
+            {# Customer #}
+            <div class="card">
+                <div class="card-header"><h3>Customer</h3></div>
                 <div class="card-body">
                     <div class="form-group">
                         <label for="customer_name">Customer name</label>
-                        <input type="text" id="customer_name" name="customer_name" class="form-control"
+                        <input type="text" id="customer_name" name="customer_name"
                             value="{{ form.customer_name|default:'' }}" required>
                     </div>
 
                     <div class="form-group">
                         <label for="phone_number">Phone number (WhatsApp)</label>
-                        <input type="tel" id="phone_number" name="phone_number" class="form-control"
-                            placeholder="+263 77 123 4567"
-                            value="{{ form.phone_number|default:'' }}" required>
-                        <small class="text-muted">Reminders and updates go to this number. A number already on file reuses that customer's record.</small>
+                        <input type="tel" id="phone_number" name="phone_number"
+                            placeholder="+263 77 123 4567" value="{{ form.phone_number|default:'' }}" required>
+                        <small>Reminders and updates go to this number. A number already on file reuses that customer's record.</small>
                     </div>
 
                     <div class="form-group">
                         <label for="customer_area">Area / suburb</label>
-                        <input type="text" id="customer_area" name="customer_area" class="form-control"
+                        <input type="text" id="customer_area" name="customer_area"
                             value="{{ form.customer_area|default:'' }}">
                     </div>
                 </div>
+            </div>
 
-                <div class="card-header">
-                    <h3>Job</h3>
-                </div>
+            {# Job #}
+            <div class="card">
+                <div class="card-header"><h3>Job</h3></div>
                 <div class="card-body">
                     <div class="form-group">
                         <label for="job_date">Start date</label>
-                        <input type="date" id="job_date" name="job_date" class="form-control"
+                        <input type="date" id="job_date" name="job_date"
                             min="{{ today|date:'Y-m-d' }}" required>
                     </div>
 
                     <div class="form-group">
                         <label for="job_time">Start time</label>
-                        <select id="job_time" name="job_time" class="form-control" required>
+                        <select id="job_time" name="job_time" required>
                             <option value="">Select time</option>
                             <option value="08:00">8:00 AM</option>
                             <option value="09:00">9:00 AM</option>
@@ -65,12 +65,12 @@
                             <option value="15:00">3:00 PM</option>
                             <option value="16:00">4:00 PM</option>
                         </select>
-                        <small class="text-muted">The business works {{ open_hour }}:00 to {{ close_hour }}:00.</small>
+                        <small>The business works {{ open_hour }}:00 to {{ close_hour }}:00.</small>
                     </div>
 
                     <div class="form-group">
                         <label for="duration_hours">Duration (single-day job)</label>
-                        <select id="duration_hours" name="duration_hours" class="form-control">
+                        <select id="duration_hours" name="duration_hours">
                             <option value="2">2 hours</option>
                             <option value="3">3 hours</option>
                             <option value="4" selected>4 hours</option>
@@ -81,45 +81,44 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="cfg-toggle" style="display:flex;align-items:center;gap:8px;">
+                        <label class="jf-toggle">
                             <input type="checkbox" id="multi_day" name="multi_day">
                             This job runs over multiple days
                         </label>
                     </div>
                     <div class="form-group" id="job_days_group" style="display:none;">
                         <label for="job_days">Total days on site</label>
-                        <input type="number" id="job_days" name="job_days" class="form-control"
-                            min="2" max="60" value="2">
-                        <small class="text-muted">The crew is booked from the start date through to the end of the last day. The duration above is ignored for a multi-day job.</small>
+                        <input type="number" id="job_days" name="job_days" min="2" max="60" value="2">
+                        <small>The crew is booked from the start date through the end of the last day. The duration above is ignored for a multi-day job.</small>
                     </div>
 
                     <div class="form-group">
                         <label for="job_description">Job description</label>
-                        <textarea id="job_description" name="job_description" class="form-control" rows="4"
+                        <textarea id="job_description" name="job_description" rows="4"
                             placeholder="What work is being done...">{{ form.job_description|default:'' }}</textarea>
                     </div>
 
                     <div class="form-group">
                         <label for="materials_needed">Materials needed</label>
-                        <textarea id="materials_needed" name="materials_needed" class="form-control" rows="3"
+                        <textarea id="materials_needed" name="materials_needed" rows="3"
                             placeholder="Materials and tools required...">{{ form.materials_needed|default:'' }}</textarea>
                     </div>
-
-                    <div class="actions">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-calendar-check"></i> Create Job
-                        </button>
-                        <a href="{% url 'job_appointments_list' %}" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Back to Jobs
-                        </a>
-                    </div>
                 </div>
-            </form>
+            </div>
         </div>
-    </div>
+
+        <div class="jf-actions">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-calendar-check"></i> Create Job
+            </button>
+            <a href="{% url 'job_appointments_list' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Jobs
+            </a>
+        </div>
+    </form>
+</div>
 
     <script>
-        // Reveal the day count only for a multi-day job.
         document.addEventListener('DOMContentLoaded', function () {
             var multi = document.getElementById('multi_day');
             var group = document.getElementById('job_days_group');

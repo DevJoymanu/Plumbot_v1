@@ -447,6 +447,14 @@ def reschedule_job(request, pk):
     is_frame = request.GET.get('frame') == '1'
     _page_ctx = {
         'job_appointment': job_appointment,
+        'today': timezone.localdate(),
+        # The same start-time options the schedule form offers, so the dropdown
+        # isn't empty (it used to loop a `time_options` the view never passed).
+        'time_options': [
+            ('08:00', '8:00 AM'), ('09:00', '9:00 AM'), ('10:00', '10:00 AM'),
+            ('11:00', '11:00 AM'), ('12:00', '12:00 PM'), ('13:00', '1:00 PM'),
+            ('14:00', '2:00 PM'), ('15:00', '3:00 PM'), ('16:00', '4:00 PM'),
+        ],
         'base_template': 'bot/layouts/panel.html' if is_frame else 'bot/layouts/base.html',
         'is_frame': is_frame,
     }

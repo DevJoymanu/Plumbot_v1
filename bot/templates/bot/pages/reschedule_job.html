@@ -3,76 +3,38 @@
 {% block title %}Reschedule Job — Plumbot{% endblock %}
 
 {% block extra_css %}
-<style>
-    /* Scroll inside the chromeless panel when shown in the workspace iframe. */
-    .pb-panel-root { overflow-y: auto; }
-    .rj-page { padding: 24px 32px 40px; max-width: 1000px; margin: 0 auto; }
-    .rj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
-    .current-job-info p { margin: 10px 0; font-size: 14px; color: var(--color-text-2); }
-    .current-job-info strong { color: var(--color-text); font-weight: 600; }
-    .job-description {
-        margin-top: 16px;
-        padding: 16px;
-        background: var(--color-surface-low);
-        border-radius: var(--radius-md);
-        border-left: 3px solid var(--color-primary);
-    }
-    .job-description h4 {
-        margin: 0 0 8px;
-        font-family: var(--font-label);
-        font-size: 11.5px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--color-primary);
-    }
-    .rj-note {
-        display: flex;
-        gap: 10px;
-        padding: 14px 18px;
-        margin: 16px 0;
-        background: var(--color-primary-fixed);
-        border: 1px solid rgba(0, 101, 145, 0.15);
-        border-radius: var(--radius-md);
-        color: var(--color-on-primary-fixed-variant);
-        font-size: 13px;
-    }
-    .rj-note i { color: var(--color-primary); margin-top: 2px; }
-    .rj-actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
-    @media (max-width: 767px) {
-        .rj-page { padding: 16px; }
-        .rj-grid { grid-template-columns: 1fr; }
-    }
-</style>
+{% include "bot/includes/job_form_css.html" %}
 {% endblock %}
 
 {% block content %}
-<div class="rj-page">
+<div class="jobform">
     <div class="pb-topbar">
         <h1><i class="fas fa-calendar-alt"></i> Reschedule Job Appointment</h1>
         <p>Change the scheduled time for this job</p>
     </div>
 
-    <div class="rj-grid">
+    <div class="jf-grid">
         {# Current job details #}
         <div class="card">
-            <div class="card-header">Current Job Details</div>
+            <div class="card-header"><h3>Current Job Details</h3></div>
             <div class="card-body">
-                <div class="current-job-info">
-                    <p><strong>Customer:</strong> {{ job_appointment.customer_name }}</p>
-                    <p><strong>Service:</strong> {{ job_appointment.project_type }}</p>
-                    <p><strong>Area:</strong> {{ job_appointment.customer_area }}</p>
-                    <p><strong>Current Schedule:</strong> {{ job_appointment.job_scheduled_datetime|date:"M d, Y H:i" }}</p>
-                    <p><strong>Duration:</strong> {{ job_appointment.job_duration_hours }} hours</p>
-                    <p><strong>Assigned Plumber:</strong> {{ job_appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
-
-                    {% if job_appointment.job_description %}
-                    <div class="job-description">
-                        <h4>Job Description</h4>
-                        <p>{{ job_appointment.job_description|linebreaks }}</p>
-                    </div>
-                    {% endif %}
+                <div class="jf-summary">
+                    <p><strong>Customer:</strong> {{ job_appointment.customer_name|default:"—" }}</p>
+                    <p><strong>Service:</strong> {{ job_appointment.project_type|default:"—" }}</p>
+                    <p><strong>Area:</strong> {{ job_appointment.customer_area|default:"—" }}</p>
+                    <p><strong>Current schedule:</strong> {{ job_appointment.job_scheduled_datetime|date:"M d, Y H:i"|default:"—" }}</p>
+                    <p><strong>Duration:</strong>
+                        {% if job_appointment.is_multiday_job %}{{ job_appointment.job_span_label }} (multi-day){% else %}{{ job_appointment.job_duration_hours }} hours{% endif %}
+                    </p>
+                    <p><strong>Assigned plumber:</strong> {{ job_appointment.assigned_plumber.get_full_name|default:"Unassigned" }}</p>
                 </div>
+
+                {% if job_appointment.job_description %}
+                <div class="jf-note" style="margin-top:16px;">
+                    <i class="fas fa-clipboard-list"></i>
+                    <div><strong>Job description:</strong> {{ job_appointment.job_description }}</div>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -80,18 +42,18 @@
         <div class="card">
             <form method="post">
                 {% csrf_token %}
-                <div class="card-header">New Schedule</div>
+                <div class="card-header"><h3>New Schedule</h3></div>
                 <div class="card-body">
                     <div class="form-group">
-                        <label for="job_date">New Date</label>
-                        <input type="date" id="job_date" name="job_date" class="form-control"
+                        <label for="job_date">New date</label>
+                        <input type="date" id="job_date" name="job_date"
                             min="{{ today|date:'Y-m-d' }}"
                             value="{{ job_appointment.job_scheduled_datetime|date:'Y-m-d' }}" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="job_time">New Time</label>
-                        <select id="job_time" name="job_time" class="form-control" required>
+                        <label for="job_time">New time</label>
+                        <select id="job_time" name="job_time" required>
                             <option value="">Select time</option>
                             {% for hour, display in time_options %}
                             <option value="{{ hour }}" {% if job_appointment.job_scheduled_datetime|date:'H:i' == hour %}selected{% endif %}>
@@ -101,12 +63,12 @@
                         </select>
                     </div>
 
-                    <div class="rj-note">
+                    <div class="jf-note">
                         <i class="fas fa-info-circle"></i>
-                        <div><strong>Note:</strong> Customer will be automatically notified about the schedule change via WhatsApp.</div>
+                        <div><strong>Note:</strong> The customer is notified about the change on WhatsApp.</div>
                     </div>
 
-                    <div class="rj-actions">
+                    <div class="jf-actions">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-calendar-check"></i> Reschedule Job
                         </button>
@@ -119,20 +81,4 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        var dateInput = document.getElementById('job_date');
-        if (!dateInput) return;
-        dateInput.addEventListener('change', function () {
-            var day = new Date(this.value).getDay();
-            if (day === 0 || day === 6) {
-                alert('Please select a weekday (Monday-Friday)');
-                this.value = '';
-            }
-        });
-    });
-</script>
 {% endblock %}
