@@ -25,7 +25,7 @@ from .views import (
     QuotationsListView, StandaloneQuotationView, create_standalone_quotation_api, appointment_search_api,
     quotation_detail_api, duplicate_quotation, delete_quotation,
     # Import job scheduling views
-    schedule_job, job_appointments_list, update_job_status, reschedule_job,
+    schedule_job, create_job, job_appointments_list, update_job_status, reschedule_job,
     login_view, logout_view, profile_view, change_password_view,appointment_detail_api,
     pause_chatbot, resume_chatbot,
     # Import quotation template views
@@ -147,6 +147,7 @@ urlpatterns = [
     # Job scheduling URLs
     path('appointments/<int:pk>/schedule-job/', schedule_job, name='schedule_job'),
     path('jobs/', job_appointments_list, name='job_appointments_list'),
+    path('jobs/new/', create_job, name='create_job'),
     path('jobs/<int:pk>/update-status/', update_job_status, name='update_job_status'),
     path('jobs/<int:pk>/reschedule/', reschedule_job, name='reschedule_job'),
     

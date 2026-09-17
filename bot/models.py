@@ -728,6 +728,16 @@ class Appointment(models.Model):
         default=4,
         help_text="Duration of the job appointment in hours"
     )
+    # Some jobs run over several days. When set, the job spans from
+    # job_scheduled_datetime to this moment (the end of the last day); the
+    # crew is treated as occupied for the whole span. NULL means a single-day
+    # job of `job_duration_hours`, which is every existing job — so nothing
+    # changes for them. `job_end()` is the one resolver everything reads.
+    job_end_datetime = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="End of a multi-day job (blank = single-day job)"
+    )
     job_description = models.TextField(
         blank=True,
         help_text="Detailed description of the job work to be performed"
@@ -889,7 +899,8 @@ class Appointment(models.Model):
         )
     
     def schedule_job_appointment(self, job_datetime, duration_hours=4,
-                                 description="", materials="", plumber=None):
+                                 description="", materials="", plumber=None,
+                                 end_datetime=None):
         """Turn THIS lead into the scheduled job appointment.
 
         One row, not two. The job has to keep the customer's real
@@ -898,6 +909,9 @@ class Appointment(models.Model):
         child row could only hold a synthetic key no reminder could reach.
         Keeping the same row also keeps the tenant, the conversation history
         and the site-visit record with the customer they belong to.
+
+        `end_datetime` is set for a job that runs over several days; left None
+        the job is a single-day one of `duration_hours`.
         """
         if not self.can_schedule_job():
             raise ValueError("Cannot schedule job - site visit not completed")
@@ -905,6 +919,7 @@ class Appointment(models.Model):
         self.appointment_type = 'job_appointment'
         self.job_scheduled_datetime = job_datetime
         self.job_duration_hours = duration_hours
+        self.job_end_datetime = end_datetime
         self.job_description = description or self.job_description
         self.job_materials_needed = materials or self.job_materials_needed
         if plumber is not None:
@@ -914,6 +929,33 @@ class Appointment(models.Model):
         self.save()
 
         return self
+
+    def job_end(self):
+        """When this job finishes — the ONE resolver every overlap, reminder
+        and display reads. A multi-day job ends at `job_end_datetime`; a
+        single-day one ends `job_duration_hours` after it starts. None when the
+        job has no start yet."""
+        if not self.job_scheduled_datetime:
+            return None
+        if self.job_end_datetime and self.job_end_datetime > self.job_scheduled_datetime:
+            return self.job_end_datetime
+        return self.job_scheduled_datetime + timedelta(hours=self.job_duration_hours or 4)
+
+    def is_multiday_job(self) -> bool:
+        """True when the job spans more than the day it starts on."""
+        if not (self.job_scheduled_datetime and self.job_end_datetime):
+            return False
+        return self.job_end_datetime.date() > self.job_scheduled_datetime.date()
+
+    def job_span_label(self) -> str:
+        """'Friday, September 18' for a single day, or 'Sep 18 to Sep 20' for a
+        multi-day job — for reminders, alerts and the detail screen."""
+        start = self.job_scheduled_datetime
+        if not start:
+            return ''
+        if self.is_multiday_job():
+            return f"{start.strftime('%b %d')} to {self.job_end_datetime.strftime('%b %d')}"
+        return start.strftime('%A, %B %d, %Y')
 
     def active_slot_field(self) -> str:
         """WHICH datetime column is "the" appointment on this row.

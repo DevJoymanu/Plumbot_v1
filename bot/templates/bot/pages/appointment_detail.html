@@ -2773,7 +2773,11 @@
                       </div>
                       <div class="mini-stat">
                         <div class="mini-stat-label">Duration</div>
+                        {% if appointment.is_multiday_job %}
+                        <div class="mini-stat-value">{{ appointment.job_span_label }} (multi-day)</div>
+                        {% else %}
                         <div class="mini-stat-value">{{ appointment.job_duration_hours|default:"-" }} hours</div>
+                        {% endif %}
                       </div>
                     </div>
                     <div class="detail-actions">

@@ -74,7 +74,7 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="duration_hours">Duration (hours)</label>
+                            <label for="duration_hours">Duration (single-day job)</label>
                             <select id="duration_hours" name="duration_hours" class="form-control" required>
                                 <option value="2">2 hours</option>
                                 <option value="3">3 hours</option>
@@ -83,6 +83,19 @@
                                 <option value="6">6 hours</option>
                                 <option value="8">Full day (8 hours)</option>
                             </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="cfg-toggle" style="display:flex;align-items:center;gap:8px;">
+                                <input type="checkbox" id="multi_day" name="multi_day">
+                                This job runs over multiple days
+                            </label>
+                        </div>
+                        <div class="form-group" id="job_days_group" style="display:none;">
+                            <label for="job_days">Total days on site</label>
+                            <input type="number" id="job_days" name="job_days" class="form-control"
+                                min="2" max="60" value="2">
+                            <small class="text-muted">The crew is booked from the start date through to the end of the last day. The duration above is ignored for a multi-day job.</small>
                         </div>
 
 
@@ -119,4 +132,18 @@
     as the form refusing to submit. The server validates the date against the
     tenant's real closed days and returns a clear message naming them.
     {% endcomment %}
+
+    <script>
+        // Reveal the day count only for a multi-day job.
+        document.addEventListener('DOMContentLoaded', function () {
+            var multi = document.getElementById('multi_day');
+            var group = document.getElementById('job_days_group');
+            var hours = document.getElementById('duration_hours');
+            if (!multi || !group) return;
+            multi.addEventListener('change', function () {
+                group.style.display = multi.checked ? '' : 'none';
+                if (hours) hours.disabled = multi.checked;
+            });
+        });
+    </script>
 {% endblock %}

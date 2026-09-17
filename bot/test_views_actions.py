@@ -4704,15 +4704,16 @@ class JobSchedulingTests(StaffClientTestCase):
             moment += timedelta(days=1)
         return moment.strftime('%Y-%m-%d'), '10:00'
 
-    def _post_job(self):
+    def _post_job(self, **overrides):
         job_date, job_time = self._job_slot()
+        data = {'job_date': job_date, 'job_time': job_time,
+                'duration_hours': '4', 'job_description': 'Install the tub',
+                'materials_needed': 'Tub, waste kit'}
+        data.update(overrides)
         with patch('bot.views.jobs.get_client_for_tenant'), \
              patch('bot.views.jobs.send_plumber_notification_email'):
             return self.client.post(
-                reverse('schedule_job', args=[self.site_visit.pk]),
-                {'job_date': job_date, 'job_time': job_time,
-                 'duration_hours': '4', 'job_description': 'Install the tub',
-                 'materials_needed': 'Tub, waste kit'},
+                reverse('schedule_job', args=[self.site_visit.pk]), data,
             )
 
     def test_scheduling_a_job_converts_only_that_lead(self):
@@ -4767,6 +4768,66 @@ class JobSchedulingTests(StaffClientTestCase):
         self.site_visit.refresh_from_db()
         self.assertEqual(self.site_visit.appointment_type, 'site_visit')
         self.assertIsNone(self.site_visit.job_scheduled_datetime)
+
+    def _create_job(self, **overrides):
+        job_date, job_time = self._job_slot()
+        data = {'customer_name': 'Walk-in Wendy', 'phone_number': '+263 77 555 0101',
+                'customer_area': 'Msasa', 'job_date': job_date, 'job_time': job_time,
+                'duration_hours': '4', 'job_description': 'Burst pipe repair'}
+        data.update(overrides)
+        with patch('bot.views.jobs.get_client_for_tenant'), \
+             patch('bot.views.jobs.send_plumber_notification_email'):
+            return self.client.post(reverse('create_job'), data)
+
+    def test_the_jobs_tab_offers_a_new_job_button(self):
+        response = self.client.get(reverse('job_appointments_list'))
+        self.assertContains(response, reverse('create_job'))
+
+    def test_the_new_job_form_renders(self):
+        response = self.client.get(reverse('create_job'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="phone_number"')
+        self.assertContains(response, 'name="multi_day"')
+
+    def test_a_job_can_be_created_from_the_jobs_tab(self):
+        """A walk-in / phone booking that never went through the bot's site
+        visit is booked straight in as a job."""
+        response = self._create_job()
+        self.assertEqual(response.status_code, 302)
+        job = Appointment.objects.get(phone_number='whatsapp:+263775550101')
+        self.assertEqual(job.appointment_type, 'job_appointment')
+        self.assertEqual(job.job_status, 'scheduled')
+        self.assertEqual(job.status, 'confirmed')
+        self.assertEqual(job.customer_name, 'Walk-in Wendy')
+        self.assertIsNotNone(job.job_scheduled_datetime)
+
+    def test_creating_a_job_reuses_an_existing_customer_row(self):
+        """A number already on file is not duplicated — the job lands on that
+        customer's own record."""
+        existing = make_lead(720, customer_name='Repeat Rita',
+                             phone_number='whatsapp:+263775550101')
+        self._create_job(customer_name='Repeat Rita')
+        self.assertEqual(
+            Appointment.objects.filter(phone_number='whatsapp:+263775550101').count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.appointment_type, 'job_appointment')
+        self.assertEqual(existing.job_status, 'scheduled')
+
+    def test_creating_a_job_needs_the_core_fields(self):
+        with patch('bot.views.jobs.get_client_for_tenant'), \
+             patch('bot.views.jobs.send_plumber_notification_email'):
+            response = self.client.post(reverse('create_job'), {'customer_name': 'No Phone'})
+        self.assertEqual(response.status_code, 200)  # re-renders with an error
+        self.assertFalse(
+            Appointment.objects.filter(customer_name='No Phone').exists())
+
+    def test_a_created_job_can_span_multiple_days(self):
+        response = self._create_job(multi_day='on', job_days='4')
+        self.assertEqual(response.status_code, 302)
+        job = Appointment.objects.get(phone_number='whatsapp:+263775550101')
+        self.assertTrue(job.is_multiday_job())
+        self.assertEqual(
+            (job.job_end_datetime.date() - job.job_scheduled_datetime.date()).days, 3)
 
     def test_jobs_list_lists_job_appointments(self):
         """The list filtered on appointment_type='job' — a value no correct
@@ -4839,6 +4900,57 @@ class JobSchedulingTests(StaffClientTestCase):
         self.site_visit.refresh_from_db()
         self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
         self.assertIsNotNone(self.site_visit.job_scheduled_datetime)
+
+    def test_a_multiday_job_spans_several_days(self):
+        """Some projects take multiple days: the crew is booked from the start
+        date through the end of the last day, and single-day duration is set
+        aside."""
+        response = self._post_job(multi_day='on', job_days='3', duration_hours='4')
+        self.assertEqual(response.status_code, 302)
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertTrue(self.site_visit.is_multiday_job())
+        start = self.site_visit.job_scheduled_datetime
+        end = self.site_visit.job_end_datetime
+        self.assertIsNotNone(end)
+        self.assertEqual((end.date() - start.date()).days, 2)  # start day + 2
+
+    def test_a_multiday_job_is_not_rejected_for_running_past_closing(self):
+        """The past-closing guard rejects a long SINGLE-day job, but must not
+        touch a job that is deliberately several days long."""
+        # A single 8-hour job from 14:00 would run to 22:00 and be refused.
+        refused = self._post_job(job_time='14:00', duration_hours='8')
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'site_visit')  # blocked
+
+        # The same late start as a multi-day job is accepted.
+        ok = self._post_job(job_time='14:00', multi_day='on', job_days='2')
+        self.assertEqual(ok.status_code, 302)
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertTrue(self.site_visit.is_multiday_job())
+
+    def test_a_job_during_a_multiday_job_is_blocked_by_default(self):
+        """A one-crew business booked on a multi-day job is busy every day of
+        it — a new job on the middle day clashes."""
+        import pytz
+        from datetime import datetime as _dt
+        day, _ = self._job_slot()  # a Wednesday
+        sa = pytz.timezone('Africa/Johannesburg')
+        start = sa.localize(_dt.strptime(f'{day} 10:00', '%Y-%m-%d %H:%M'))
+        end = (start + timedelta(days=2)).replace(hour=18)  # Wed 10:00 → Fri 18:00
+        make_lead(
+            713, customer_name='Multi-day Job',
+            appointment_type='job_appointment', status='confirmed',
+            job_status='scheduled', job_scheduled_datetime=start,
+            job_duration_hours=8, job_end_datetime=end,
+        )
+        # A new single-day job on the Thursday (the day after) falls inside it.
+        thursday = (start + timedelta(days=1)).strftime('%Y-%m-%d')
+        self._post_job(job_date=thursday, job_time='10:00')
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'site_visit')  # blocked
+        self.assertIsNone(self.site_visit.job_scheduled_datetime)
 
 
 class MassJobUpdateRepairTests(StaffClientTestCase):

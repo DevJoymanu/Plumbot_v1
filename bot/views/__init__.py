@@ -72,6 +72,7 @@ from .settings_views import (
 
 from .jobs import (
     schedule_job,
+    create_job,
     update_job_status,
     check_job_availability,
     send_job_appointment_notifications,

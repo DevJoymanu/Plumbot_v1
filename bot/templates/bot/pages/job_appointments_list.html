@@ -5,6 +5,8 @@
 {% block extra_css %}
 <style>
     .jp-page { padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 24px; }
+    .jp-page .pb-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .jp-new-job { white-space: nowrap; }
 
     /* ── Bento metrics ── */
     .jp-stats {
@@ -117,8 +119,13 @@
 <div class="jp-page">
 
     <div class="pb-topbar">
-        <h1><i class="fas fa-hard-hat"></i> Job Appointments</h1>
-        <p>{{ job_appointments.count }} job{{ job_appointments.count|pluralize }} in view</p>
+        <div>
+            <h1><i class="fas fa-hard-hat"></i> Job Appointments</h1>
+            <p>{{ job_appointments.count }} job{{ job_appointments.count|pluralize }} in view</p>
+        </div>
+        <a href="{% url 'create_job' %}" class="btn btn-primary jp-new-job">
+            <i class="fas fa-plus"></i> New Job
+        </a>
     </div>
 
     {# ── Bento metrics (real counts, unfiltered totals) ── #}

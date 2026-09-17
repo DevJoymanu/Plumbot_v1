@@ -88,7 +88,11 @@ def schedule_job(request, pk):
             duration_hours = int(request.POST.get('duration_hours', 4))
             job_description = request.POST.get('job_description', '')
             materials_needed = request.POST.get('materials_needed', '')
-            
+            # Some jobs run over several days. The plumber ticks "multiple days"
+            # and gives the number of days (2+); a single-day job leaves it off
+            # and behaves exactly as before.
+            multi_day, job_days = _parse_job_days(request)
+
             # Validate required fields
             if not job_date or not job_time:
                 messages.error(request, 'Please provide both date and time')
@@ -102,49 +106,14 @@ def schedule_job(request, pk):
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             job_datetime = sa_timezone.localize(job_datetime)
 
-            # Check if time is in the future
-            if job_datetime <= timezone.now():
-                messages.error(request, 'Job time must be in the future')
-                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
-
-            # Check business days/hours against THIS tenant's own schedule
+            # One validator for every job-scheduling path: future, open day,
+            # inside hours, fits the day (single) and within the crew's limit.
             _cfg = site_visit._schedule_cfg()
-            if not _cfg.is_open_on(job_datetime.weekday()):
-                _phrase = _cfg.closed_days_phrase() or 'that day'
-                messages.error(request, f'Jobs cannot be scheduled on {_phrase} — the business is closed')
-                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
-
-            if job_datetime.hour < _cfg.open_hour() or job_datetime.hour >= _cfg.close_hour():
-                messages.error(request, f'Jobs must be scheduled between {_cfg.open_hour()}:00 and {_cfg.close_hour()}:00')
-                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
-
-            # A job that would run past closing is out of hours too — check it
-            # here so the overlap message below only ever means a real clash.
-            job_end = job_datetime + timedelta(hours=duration_hours)
-            close_boundary = job_datetime.replace(
-                hour=_cfg.close_hour(), minute=0, second=0, microsecond=0)
-            if job_end > close_boundary:
-                messages.error(request, f'A {duration_hours}-hour job from that time would run past closing ({_cfg.close_hour()}:00). Start earlier or shorten it')
-                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
-
-            # Respect how many jobs this business can run at once. A small
-            # operation (the default, one job at a time) is stopped from
-            # double-booking the crew; a business that has said it can handle
-            # several concurrent jobs is allowed up to its own limit. This
-            # check never ran on the scheduling path before, so overlaps were
-            # only caught on RESCHEDULE — a first booking could stack freely.
-            if not check_job_availability(
-                job_datetime, duration_hours,
-                exclude_appointment_id=site_visit.id, appointment=site_visit,
-            ):
-                _cap = _cfg.max_concurrent_jobs()
-                _clash = (
-                    'The business is already at its limit of '
-                    f'{_cap} job{"s" if _cap != 1 else ""} at that time. Pick another slot'
-                    if _cap > 1 else
-                    'That time clashes with a job already booked. Pick another slot'
-                )
-                messages.error(request, _clash)
+            job_end, error = _validate_job_slot(
+                _cfg, job_datetime, duration_hours, job_days,
+                appointment=site_visit, exclude_id=site_visit.id)
+            if error:
+                messages.error(request, error)
                 return render(request, 'bot/pages/schedule_job.html', _page_ctx)
 
             # This lead BECOMES the job appointment (see
@@ -158,6 +127,7 @@ def schedule_job(request, pk):
                     duration_hours=duration_hours,
                     description=job_description,
                     materials=materials_needed,
+                    end_datetime=job_end if job_days > 1 else None,
                 )
             except ValueError:
                 messages.error(request, 'Mark the site visit complete before scheduling the job')
@@ -169,10 +139,14 @@ def schedule_job(request, pk):
             except Exception as notify_error:
                 print(f"WARNING Notification error: {notify_error}")
 
-            messages.success(
-                request, 
-                f'Job scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
-            )
+            if job_days > 1:
+                _msg = (f'Multi-day job scheduled from '
+                        f'{job_datetime.strftime("%B %d")} to '
+                        f'{job_end.strftime("%B %d, %Y")} '
+                        f'(starting {job_datetime.strftime("%I:%M %p")})')
+            else:
+                _msg = f'Job scheduled for {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
+            messages.success(request, _msg)
             return redirect('appointment_detail', pk=job_appointment.pk)
             
         except ValueError as e:
@@ -216,15 +190,18 @@ def update_job_status(request, pk):
 
 
 def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=None,
-                           appointment=None):
+                           appointment=None, job_end=None):
     """Check if job time slot is available.
 
     `appointment` supplies the tenant whose diary and working week we check
     against (it used to reach for a `request` that isn't in scope here, so every
-    call raised NameError and reported 'not available')."""
+    call raised NameError and reported 'not available').
+
+    `job_end` is the real end of a multi-day job; without it the job is a
+    single-day one ending `duration_hours` after it starts."""
     try:
-        # Calculate job end time
-        job_end_time = job_datetime + timedelta(hours=duration_hours)
+        # Calculate job end time — a multi-day job carries its own end.
+        job_end_time = job_end or (job_datetime + timedelta(hours=duration_hours))
 
         tenant = getattr(appointment, 'tenant', None)
 
@@ -248,7 +225,7 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         max_jobs = cfg.max_concurrent_jobs()
         overlap_count = 0
         for job in overlapping_jobs:
-            existing_end = job.job_scheduled_datetime + timedelta(hours=job.job_duration_hours)
+            existing_end = job.job_end() or job.job_scheduled_datetime
             if (job_datetime < existing_end and job_end_time > job.job_scheduled_datetime):
                 overlap_count += 1
                 if overlap_count >= max_jobs:
@@ -272,13 +249,75 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         return False
 
 
+def _validate_job_slot(cfg, job_datetime, duration_hours, job_days,
+                       appointment, exclude_id):
+    """The one validator every job-scheduling path shares: future, on an open
+    day, inside hours, fits the working day (single-day) and within the crew's
+    concurrent-job limit.
+
+    Returns ``(job_end, None)`` when the slot is good — ``job_end`` is the real
+    end of the job (a multi-day job's last day at closing, else start + hours) —
+    or ``(None, message)`` with a plumber-facing reason when it is not."""
+    if job_datetime <= timezone.now():
+        return None, 'Job time must be in the future'
+
+    if not cfg.is_open_on(job_datetime.weekday()):
+        phrase = cfg.closed_days_phrase() or 'that day'
+        return None, f'Jobs cannot be scheduled on {phrase} — the business is closed'
+
+    if job_datetime.hour < cfg.open_hour() or job_datetime.hour >= cfg.close_hour():
+        return None, f'Jobs must be scheduled between {cfg.open_hour()}:00 and {cfg.close_hour()}:00'
+
+    if job_days > 1:
+        end_day = job_datetime + timedelta(days=job_days - 1)
+        job_end = end_day.replace(hour=cfg.close_hour(), minute=0, second=0, microsecond=0)
+    else:
+        job_end = job_datetime + timedelta(hours=duration_hours)
+        close_boundary = job_datetime.replace(
+            hour=cfg.close_hour(), minute=0, second=0, microsecond=0)
+        if job_end > close_boundary:
+            return None, (f'A {duration_hours}-hour job from that time would run past '
+                          f'closing ({cfg.close_hour()}:00). Start earlier, shorten it, '
+                          f'or mark it a multi-day job')
+
+    if not check_job_availability(
+        job_datetime, duration_hours, exclude_appointment_id=exclude_id,
+        appointment=appointment, job_end=job_end if job_days > 1 else None,
+    ):
+        cap = cfg.max_concurrent_jobs()
+        clash = (f'The business is already at its limit of {cap} jobs at that '
+                 f'time. Pick another slot') if cap > 1 else \
+            'That time clashes with a job already booked. Pick another slot'
+        return None, clash
+
+    return job_end, None
+
+
+def _parse_job_days(request):
+    """(multi_day, job_days) from a schedule/create-job POST. A single-day job
+    is 1 whatever number is in the field; multi-day is at least 2."""
+    if not request.POST.get('multi_day'):
+        return False, 1
+    try:
+        days = max(2, int(request.POST.get('job_days') or 2))
+    except (TypeError, ValueError):
+        days = 2
+    return True, days
+
+
 def send_job_appointment_notifications(job_appointment):
     """Send notifications about new job appointment - UPDATED"""
     try:
         job_date = job_appointment.job_scheduled_datetime.strftime('%A, %B %d, %Y')
         job_time = job_appointment.job_scheduled_datetime.strftime('%I:%M %p')
-        duration = job_appointment.job_duration_hours
-        
+        # A multi-day job reports its span; a single-day one its hours.
+        if job_appointment.is_multiday_job():
+            date_line = f"📅 Dates: {job_appointment.job_span_label()}"
+            duration_line = "⏱️ Duration: several days (we'll work through until it's done)"
+        else:
+            date_line = f"📅 Date: {job_date}"
+            duration_line = f"⏱️ Duration: {job_appointment.job_duration_hours} hours"
+
         # Customer notification
         customer_message = f"""🔧 JOB APPOINTMENT SCHEDULED
 
@@ -286,9 +325,9 @@ Hi {job_appointment.customer_name or 'Customer'},
 
 Your plumbing job has been scheduled:
 
-📅 Date: {job_date}
-🕐 Time: {job_time}
-⏱️ Duration: {duration} hours
+{date_line}
+🕐 Start time: {job_time}
+{duration_line}
 📍 Location: {job_appointment.customer_area}
 🔨 Work: {job_appointment.job_description or job_appointment.project_type}
 
@@ -312,7 +351,7 @@ Questions? Reply to this message.
 Customer: {job_appointment.customer_name}
 Phone: {job_appointment.phone_number.replace('whatsapp:', '')}
 Date/Time: {job_date} at {job_time}
-Duration: {duration} hours
+Duration: {job_appointment.job_span_label() if job_appointment.is_multiday_job() else f"{job_appointment.job_duration_hours} hours"}
 Location: {job_appointment.customer_area}
 Assigned to: {plumber_name}
 
@@ -388,22 +427,31 @@ def reschedule_job(request, pk):
             
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             new_datetime = sa_timezone.localize(new_datetime)
-            
+
+            # A multi-day job keeps its length when it moves — shift the end by
+            # the same delta so a three-day job stays three days.
+            old_datetime = job_appointment.job_scheduled_datetime
+            new_end = None
+            if job_appointment.is_multiday_job() and old_datetime:
+                new_end = job_appointment.job_end_datetime + (new_datetime - old_datetime)
+
             # Check availability (excluding current appointment)
             is_available = check_job_availability(
-                new_datetime, 
+                new_datetime,
                 job_appointment.job_duration_hours,
                 exclude_appointment_id=job_appointment.id,
                 appointment=job_appointment,
+                job_end=new_end,
             )
-            
+
             if not is_available:
                 messages.error(request, 'Selected time slot is not available')
                 return render(request, 'bot/pages/reschedule_job.html', {'job_appointment': job_appointment})
-            
+
             # Update appointment
-            old_datetime = job_appointment.job_scheduled_datetime
             job_appointment.job_scheduled_datetime = new_datetime
+            if new_end is not None:
+                job_appointment.job_end_datetime = new_end
             job_appointment.save()
             
             # Send notifications
@@ -493,3 +541,101 @@ def job_appointments_list(request):
     }
     
     return render(request, 'bot/pages/job_appointments_list.html', context)
+
+
+@staff_required
+def create_job(request):
+    """Create a job directly from the Jobs tab.
+
+    Not every job comes through the bot's site-visit flow: a walk-in, a phone
+    booking or a repeat customer is booked straight in. This creates (or reuses,
+    for a number already on file) the customer's row and schedules the job on
+    it, going through the SAME `_validate_job_slot` every other path uses, so a
+    directly-booked job respects the working week, the hours and the crew's
+    concurrent-job limit exactly like a converted one."""
+    from ..tenant_config import get_config
+    tenant = getattr(request, 'tenant', None)
+    cfg = get_config(tenant)
+    page_ctx = {
+        'today': timezone.localdate(),
+        'open_hour': cfg.open_hour(),
+        'close_hour': cfg.close_hour(),
+        # Echo the submitted values back on an error so nothing is retyped.
+        'form': {},
+    }
+
+    if request.method == 'POST':
+        page_ctx['form'] = request.POST
+        name = (request.POST.get('customer_name') or '').strip()
+        phone_raw = (request.POST.get('phone_number') or '').strip()
+        area = (request.POST.get('customer_area') or '').strip()
+        description = (request.POST.get('job_description') or '').strip()
+        materials = (request.POST.get('materials_needed') or '').strip()
+        job_date = request.POST.get('job_date')
+        job_time = request.POST.get('job_time')
+        try:
+            duration_hours = int(request.POST.get('duration_hours') or 4)
+        except (TypeError, ValueError):
+            duration_hours = 4
+        multi_day, job_days = _parse_job_days(request)
+
+        digits = re.sub(r'\D', '', phone_raw)
+        if not name or not digits or not job_date or not job_time:
+            messages.error(request, 'Enter at least a customer name, phone number, date and time.')
+            return render(request, 'bot/pages/create_job.html', page_ctx)
+
+        try:
+            job_datetime = pytz.timezone('Africa/Johannesburg').localize(
+                datetime.strptime(f"{job_date} {job_time}", '%Y-%m-%d %H:%M'))
+        except ValueError:
+            messages.error(request, 'That date or time is not valid.')
+            return render(request, 'bot/pages/create_job.html', page_ctx)
+
+        # The row we will book onto — found by number (so a repeat customer is
+        # not duplicated) or created. It supplies the tenant for the overlap
+        # check, so validate AFTER we have it.
+        phone_stored = format_phone_number_for_storage(digits)
+        lead, _created = Appointment.objects.get_or_create_lead(
+            phone_stored, tenant=tenant,
+            defaults={'status': 'pending', 'customer_name': name})
+
+        job_end, error = _validate_job_slot(
+            cfg, job_datetime, duration_hours, job_days,
+            appointment=lead, exclude_id=lead.id)
+        if error:
+            messages.error(request, error)
+            return render(request, 'bot/pages/create_job.html', page_ctx)
+
+        # Book the job onto the row. A directly-created job needs no prior site
+        # visit, so we write the fields rather than going through
+        # `schedule_job_appointment` (which gates on a completed visit).
+        if name:
+            lead.customer_name = name
+        if area:
+            lead.customer_area = area
+        if description:
+            lead.job_description = description
+        if materials:
+            lead.job_materials_needed = materials
+        lead.appointment_type = 'job_appointment'
+        lead.job_scheduled_datetime = job_datetime
+        lead.job_duration_hours = duration_hours
+        lead.job_end_datetime = job_end if multi_day else None
+        lead.job_status = 'scheduled'
+        lead.status = 'confirmed'
+        lead.save()
+
+        try:
+            send_job_appointment_notifications(lead)
+        except Exception as notify_error:
+            print(f"WARNING Notification error: {notify_error}")
+
+        if multi_day:
+            msg = (f'Job created for {name} from {job_datetime.strftime("%B %d")} '
+                   f'to {job_end.strftime("%B %d, %Y")}')
+        else:
+            msg = f'Job created for {name} on {job_datetime.strftime("%B %d, %Y at %I:%M %p")}'
+        messages.success(request, msg)
+        return redirect('appointment_detail', pk=lead.pk)
+
+    return render(request, 'bot/pages/create_job.html', page_ctx)

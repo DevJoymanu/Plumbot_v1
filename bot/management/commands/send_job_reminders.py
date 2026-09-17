@@ -171,7 +171,7 @@ Date: {job_date}
 Time: {job_time}
 Location: {job.customer_area}
 Plumber: {plumber_name}
-Expected duration: {job.job_duration_hours} hours
+Expected duration: {job.job_span_label() if job.is_multiday_job() else f"{job.job_duration_hours} hours"}
 
 {work_line}Please make sure someone can let us in at the property.
 

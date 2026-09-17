@@ -487,7 +487,11 @@ class AvailabilityMixin:
                         job_start = job.job_scheduled_datetime
                         if job_start.tzinfo is None:
                             job_start = sa_timezone.localize(job_start)
-                        job_end = job_start + timedelta(hours=job.job_duration_hours or 4)
+                        # job_end() spans a multi-day job, so a visit anywhere
+                        # inside a several-day job is caught, not just day one.
+                        job_end = job.job_end() or job_start
+                        if job_end.tzinfo is None:
+                            job_end = sa_timezone.localize(job_end)
                         if requested_datetime < job_end and requested_end > job_start:
                             print(f"Visit clashes with job {job.id} and this business can't do both")
                             return False, "job_conflict"
