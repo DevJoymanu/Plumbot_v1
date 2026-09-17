@@ -4816,6 +4816,35 @@ class JobSchedulingTests(StaffClientTestCase):
         self.assertFalse(
             Appointment.objects.filter(phone_number='whatsapp:+263775550101').exists())
 
+    def test_scheduling_a_job_accepts_the_lead_quote(self):
+        q = Quotation.objects.create(
+            appointment=self.site_visit, tenant=self.site_visit.tenant, status='sent')
+        self._post_job()
+        q.refresh_from_db()
+        self.assertEqual(q.status, 'accepted')
+
+    def test_creating_a_job_accepts_the_picked_lead_quote(self):
+        lead = make_lead(
+            750, customer_name='Accept Ann', appointment_type='site_visit',
+            site_visit_completed=False, status='confirmed')
+        q = Quotation.objects.create(appointment=lead, tenant=lead.tenant, status='draft')
+        self._create_job(lead_id=str(lead.pk), customer_name='Accept Ann')
+        q.refresh_from_db()
+        self.assertEqual(q.status, 'accepted')
+
+    def test_completing_a_job_accepts_the_quote(self):
+        lead = make_lead(
+            751, customer_name='Done Dan', appointment_type='job_appointment',
+            job_status='scheduled', status='confirmed',
+            job_scheduled_datetime=timezone.now() + timedelta(days=1))
+        q = Quotation.objects.create(appointment=lead, tenant=lead.tenant, status='sent')
+        with patch('bot.views.jobs.send_job_status_update_notification'):
+            resp = self.client.post(
+                reverse('update_job_status', args=[lead.pk]), {'status': 'completed'})
+        self.assertEqual(resp.status_code, 200)
+        q.refresh_from_db()
+        self.assertEqual(q.status, 'accepted')
+
     def test_creating_a_quote_completes_the_site_visit(self):
         """A 'code' being done means the site visit is complete, and the job
         step opens."""

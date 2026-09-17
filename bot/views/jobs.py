@@ -55,6 +55,19 @@ from ..plumber_notifications import send_plumber_notification_email
 logger = logging.getLogger(__name__)
 
 
+def _accept_quotes_for_job(appointment):
+    """A job being booked or done means the customer went ahead, so the lead's
+    quote(s) move to 'accepted'. Best effort: a job must never fail because
+    this bookkeeping did. Already-accepted quotes are left alone."""
+    if appointment is None:
+        return
+    try:
+        appointment.quotations.exclude(status='accepted').update(status='accepted')
+    except Exception:
+        logger.exception("Could not accept quotes for job on apt %s",
+                         getattr(appointment, 'pk', None))
+
+
 def _detail_url(request, pk):
     """appointment_detail URL that stays inside the conversations workspace
     iframe when the caller was in it — `frame=1` and `source` carried through,
@@ -160,6 +173,9 @@ def schedule_job(request, pk):
                 messages.error(request, 'Mark the site visit complete before scheduling the job')
                 return redirect(_detail_url(request, site_visit.pk))
 
+            # The lead went ahead — its quote is accepted.
+            _accept_quotes_for_job(job_appointment)
+
             # Send notifications
             try:
                 send_job_appointment_notifications(job_appointment)
@@ -204,9 +220,14 @@ def update_job_status(request, pk):
     # If marking as completed, set completion time
     if new_status == 'completed':
         job_appointment.job_completed_at = timezone.now()
-    
+
     job_appointment.save()
-    
+
+    # A started or completed job means the quote was accepted — catch any job
+    # that predates the booking-time update above.
+    if new_status in ('in_progress', 'completed'):
+        _accept_quotes_for_job(job_appointment)
+
     # Send notification to customer about status change
     send_job_status_update_notification(job_appointment, new_status)
     
@@ -679,6 +700,9 @@ def create_job(request):
             lead.site_visit_completed = True
             lead.site_visit_completed_at = timezone.now()
         lead.save()
+
+        # The lead went ahead — its quote is accepted.
+        _accept_quotes_for_job(lead)
 
         try:
             send_job_appointment_notifications(lead)
