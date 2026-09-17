@@ -59,12 +59,27 @@ logger = logging.getLogger(__name__)
 def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
     site_visit = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
-    
-    # Check if this appointment can have a job scheduled
-    if site_visit.appointment_type != 'site_visit' or site_visit.status != 'confirmed':
-        messages.error(request, 'Cannot schedule job for this appointment')
+
+    # Gate the screen on the SAME question the "Schedule Job" button asks
+    # (`can_schedule_job`): a site visit that has been logged as complete.
+    # It used to also demand `status == 'confirmed'`, which the button never
+    # checks — so a visit logged through the banner on a lead the bot never
+    # formally confirmed (status still 'pending') showed the button, then got
+    # bounced straight back here with an error the moment it was pressed. That
+    # is the "nothing happens, the page just refreshes" report: a real visit
+    # that could not be turned into a job. Whether the LEAD was confirmed says
+    # nothing about whether the VISIT happened, and plenty of real visits are
+    # logged manually without the bot ever pinning a slot.
+    if site_visit.appointment_type != 'site_visit':
+        messages.error(request, 'Cannot schedule a job for this appointment')
         return redirect('appointment_detail', pk=site_visit.pk)
-    
+
+    if not site_visit.site_visit_completed:
+        messages.error(request, 'Mark the site visit complete before scheduling the job')
+        return redirect('appointment_detail', pk=site_visit.pk)
+
+    _page_ctx = {'site_visit': site_visit, 'today': timezone.localdate()}
+
     if request.method == 'POST':
         try:
             # Get form data
@@ -77,40 +92,61 @@ def schedule_job(request, pk):
             # Validate required fields
             if not job_date or not job_time:
                 messages.error(request, 'Please provide both date and time')
-                return render(request, 'bot/pages/schedule_job.html', {
-                    'site_visit': site_visit,
-                })
-            
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
+
             # Parse datetime
             job_datetime_str = f"{job_date} {job_time}"
             job_datetime = datetime.strptime(job_datetime_str, '%Y-%m-%d %H:%M')
-            
+
             # Localize to South Africa timezone
             sa_timezone = pytz.timezone('Africa/Johannesburg')
             job_datetime = sa_timezone.localize(job_datetime)
-            
+
             # Check if time is in the future
             if job_datetime <= timezone.now():
                 messages.error(request, 'Job time must be in the future')
-                return render(request, 'bot/pages/schedule_job.html', {
-                    'site_visit': site_visit,
-                })
-            
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
+
             # Check business days/hours against THIS tenant's own schedule
             _cfg = site_visit._schedule_cfg()
             if not _cfg.is_open_on(job_datetime.weekday()):
                 _phrase = _cfg.closed_days_phrase() or 'that day'
                 messages.error(request, f'Jobs cannot be scheduled on {_phrase} — the business is closed')
-                return render(request, 'bot/pages/schedule_job.html', {
-                    'site_visit': site_visit,
-                })
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
 
             if job_datetime.hour < _cfg.open_hour() or job_datetime.hour >= _cfg.close_hour():
                 messages.error(request, f'Jobs must be scheduled between {_cfg.open_hour()}:00 and {_cfg.close_hour()}:00')
-                return render(request, 'bot/pages/schedule_job.html', {
-                    'site_visit': site_visit,
-                })
-            
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
+
+            # A job that would run past closing is out of hours too — check it
+            # here so the overlap message below only ever means a real clash.
+            job_end = job_datetime + timedelta(hours=duration_hours)
+            close_boundary = job_datetime.replace(
+                hour=_cfg.close_hour(), minute=0, second=0, microsecond=0)
+            if job_end > close_boundary:
+                messages.error(request, f'A {duration_hours}-hour job from that time would run past closing ({_cfg.close_hour()}:00). Start earlier or shorten it')
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
+
+            # Respect how many jobs this business can run at once. A small
+            # operation (the default, one job at a time) is stopped from
+            # double-booking the crew; a business that has said it can handle
+            # several concurrent jobs is allowed up to its own limit. This
+            # check never ran on the scheduling path before, so overlaps were
+            # only caught on RESCHEDULE — a first booking could stack freely.
+            if not check_job_availability(
+                job_datetime, duration_hours,
+                exclude_appointment_id=site_visit.id, appointment=site_visit,
+            ):
+                _cap = _cfg.max_concurrent_jobs()
+                _clash = (
+                    'The business is already at its limit of '
+                    f'{_cap} job{"s" if _cap != 1 else ""} at that time. Pick another slot'
+                    if _cap > 1 else
+                    'That time clashes with a job already booked. Pick another slot'
+                )
+                messages.error(request, _clash)
+                return render(request, 'bot/pages/schedule_job.html', _page_ctx)
+
             # This lead BECOMES the job appointment (see
             # Appointment.schedule_job_appointment). It used to be written with
             # `Appointment.objects.update(...)` — a manager-level update with no
@@ -144,10 +180,8 @@ def schedule_job(request, pk):
         except Exception as e:
             messages.error(request, f'Error scheduling job: {str(e)}')
             print(f"❌ Schedule job error: {str(e)}")
-    
-    return render(request, 'bot/pages/schedule_job.html', {
-        'site_visit': site_visit,
-    })
+
+    return render(request, 'bot/pages/schedule_job.html', _page_ctx)
 
 
 @require_POST
@@ -203,17 +237,24 @@ def check_job_availability(job_datetime, duration_hours, exclude_appointment_id=
         
         if exclude_appointment_id:
             overlapping_jobs = overlapping_jobs.exclude(id=exclude_appointment_id)
-        
-        for job in overlapping_jobs:
-            existing_end = job.job_scheduled_datetime + timedelta(hours=job.job_duration_hours)
-            
-            # Check for overlap
-            if (job_datetime < existing_end and job_end_time > job.job_scheduled_datetime):
-                return False
-        
-        # Check business days/hours against the tenant's own schedule
+
         from ..tenant_config import get_config
         cfg = get_config(tenant)
+
+        # How many jobs this business can run at the same time (default 1).
+        # Count the jobs that actually overlap the requested window and only
+        # refuse once the crew would be over that limit — so a firm that has
+        # said it can take, say, three concurrent jobs can stack up to three.
+        max_jobs = cfg.max_concurrent_jobs()
+        overlap_count = 0
+        for job in overlapping_jobs:
+            existing_end = job.job_scheduled_datetime + timedelta(hours=job.job_duration_hours)
+            if (job_datetime < existing_end and job_end_time > job.job_scheduled_datetime):
+                overlap_count += 1
+                if overlap_count >= max_jobs:
+                    return False
+
+        # Check business days/hours against the tenant's own schedule
         if not cfg.is_open_on(job_datetime.weekday()):
             return False
 

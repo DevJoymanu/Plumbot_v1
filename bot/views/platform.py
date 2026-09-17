@@ -534,8 +534,32 @@ def _compose_business_hours(hours: dict):
     emergency tick still keeps that fact."""
     selected = [d for d in _WEEK if d in (hours.get('days') or [])]
     emergency = bool(hours.get('emergency_24h'))
+
+    # Job / visit capacity rides on the same JSON. Only non-default values are
+    # written (default = 1 job, 1 visit, jobs don't block visits), so a tenant
+    # who never touches these keeps a clean row and TenantConfig's defaults.
+    def _cap_int(key):
+        try:
+            return max(1, int(hours.get(key)))
+        except (TypeError, ValueError):
+            return 1
+    max_jobs = _cap_int('max_concurrent_jobs')
+    max_visits = _cap_int('max_concurrent_visits')
+    visits_during_job = bool(hours.get('visits_during_job', True))
+
+    def _with_capacity(base: dict) -> dict:
+        if max_jobs > 1:
+            base['max_concurrent_jobs'] = max_jobs
+        if max_visits > 1:
+            base['max_concurrent_visits'] = max_visits
+        if not visits_during_job:
+            base['visits_during_job'] = False
+        return base
+
     if not selected or not hours.get('open') or not hours.get('close'):
-        return {'emergency_24h': True} if emergency else None
+        base = {'emergency_24h': True} if emergency else {}
+        base = _with_capacity(base)
+        return base or None
     composed = {
         'days': f"{selected[0].title()}-{selected[-1].title()}",
         'open': hours['open'],
@@ -544,7 +568,7 @@ def _compose_business_hours(hours: dict):
     }
     if emergency:
         composed['emergency_24h'] = True
-    return composed
+    return _with_capacity(composed)
 
 
 def _join_natural(items):
@@ -788,6 +812,13 @@ def _profile_structured_ctx(profile):
         'hours_open': bh.get('open', ''),
         'hours_close': bh.get('close', ''),
         'hours_emergency_24h': bool(bh.get('emergency_24h')),
+        # Job / visit capacity (defaults: one job, one visit, jobs don't block
+        # visits). Read straight off the same JSON.
+        'cap_max_jobs': int(bh.get('max_concurrent_jobs') or 1),
+        'cap_max_visits': int(bh.get('max_concurrent_visits') or 1),
+        'cap_multiple_jobs': int(bh.get('max_concurrent_jobs') or 1) > 1,
+        'cap_multiple_visits': int(bh.get('max_concurrent_visits') or 1) > 1,
+        'cap_visits_during_job': bool(bh.get('visits_during_job', True)),
         'excluded_areas': (profile.excluded_areas if profile else None) or [],
         'faq_fields': [(key, label, facts.get(key, '')) for key, label in FAQ_TOPICS],
     }
@@ -796,11 +827,25 @@ def _profile_structured_ctx(profile):
 def _apply_structured_profile(request, profile):
     """Compose the structured hours / area chips / FAQ fields back onto the
     profile (unknown faq_facts keys are preserved)."""
+    # Job / visit capacity. The count only counts when its "can handle
+    # multiple" box is ticked — an unticked box means one at a time whatever
+    # number is left in the field.
+    def _capacity(flag_field, count_field):
+        if not request.POST.get(flag_field):
+            return 1
+        try:
+            return max(1, int(request.POST.get(count_field) or 1))
+        except (TypeError, ValueError):
+            return 1
+
     profile.business_hours = _compose_business_hours({
         'days': request.POST.getlist('hours_day'),
         'open': (request.POST.get('hours_open') or '').strip(),
         'close': (request.POST.get('hours_close') or '').strip(),
         'emergency_24h': bool(request.POST.get('hours_emergency_24h')),
+        'max_concurrent_jobs': _capacity('cap_multiple_jobs', 'cap_max_jobs'),
+        'max_concurrent_visits': _capacity('cap_multiple_visits', 'cap_max_visits'),
+        'visits_during_job': bool(request.POST.get('cap_visits_during_job')),
     })
     areas, seen = [], set()
     for raw in request.POST.getlist('excluded_area'):

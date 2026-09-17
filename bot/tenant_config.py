@@ -347,6 +347,39 @@ class TenantConfig:
         """Two-hourly start slots inside the tenant's own day, e.g. 8,10,12,14,16."""
         return list(range(self.open_hour(), max(self.open_hour() + 1, self.close_hour()), 2))
 
+    # ── Job / visit capacity (how many things this business can run at once) ─
+    # Rides on the same business_hours JSON as the hours and the emergency tick
+    # — no column. Every plumbing business has a different capacity: a one-van
+    # operation takes one job at a time, a bigger firm several, and some can
+    # keep quoting new site visits while a job is on while others cannot. The
+    # defaults are the smallest, safest shape (one job, one visit, jobs do NOT
+    # block visits) so a tenant who sets nothing behaves exactly as before.
+    DEFAULT_MAX_CONCURRENT_JOBS = 1
+    DEFAULT_MAX_CONCURRENT_VISITS = 1
+
+    def _capacity_int(self, key, default):
+        raw = self._hours_json().get(key)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return value if value >= 1 else default
+
+    def max_concurrent_jobs(self) -> int:
+        """How many jobs this business can have running at the same time."""
+        return self._capacity_int('max_concurrent_jobs', self.DEFAULT_MAX_CONCURRENT_JOBS)
+
+    def max_concurrent_visits(self) -> int:
+        """How many site visits this business can run at the same time."""
+        return self._capacity_int('max_concurrent_visits', self.DEFAULT_MAX_CONCURRENT_VISITS)
+
+    def visits_during_job(self) -> bool:
+        """Can the business still take a site visit while a job is on? Absent
+        means True — jobs have never blocked visits, so leave that untouched
+        unless a tenant deliberately says their crew can't do both at once."""
+        value = self._hours_json().get('visits_during_job')
+        return True if value is None else bool(value)
+
     @property
     def currency(self) -> str:
         return self._field('currency', 'US$')

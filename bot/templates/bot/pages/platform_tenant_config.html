@@ -198,6 +198,7 @@
           <div><div class="cfg-def__k">Location</div><div class="cfg-def__v {% if not cfg.location_short and not profile.location_line %}is-empty{% endif %}">{{ cfg.location_short|default:profile.location_line|default:"—" }}</div></div>
           <div><div class="cfg-def__k">Hours</div><div class="cfg-def__v {% if not cfg.hours_sentence %}is-empty{% endif %}">{{ cfg.hours_sentence|default:"—" }}</div></div>
           <div><div class="cfg-def__k">Emergencies</div><div class="cfg-def__v">{% if cfg.emergency_24h %}On call 24/7{% else %}<span class="is-empty">Working hours only</span>{% endif %}</div></div>
+          <div><div class="cfg-def__k">Job capacity</div><div class="cfg-def__v">{{ cfg.max_concurrent_jobs }} job{{ cfg.max_concurrent_jobs|pluralize }} · {{ cfg.max_concurrent_visits }} visit{{ cfg.max_concurrent_visits|pluralize }} at once{% if cfg.visits_during_job %} · visits during a job{% else %} · no visits during a job{% endif %}</div></div>
           <div><div class="cfg-def__k">Currency</div><div class="cfg-def__v">{{ currency }}</div></div>
           <div><div class="cfg-def__k">Licensed claim</div><div class="cfg-def__v">{% if profile.licensed_claim_enabled %}Enabled{% else %}<span class="is-empty">Off</span>{% endif %}</div></div>
           <div><div class="cfg-def__k">Customer-facing sender</div><div class="cfg-def__v {% if not profile.customer_from_email %}is-empty{% endif %}">{{ profile.customer_from_email|default:"platform subdomain" }}</div></div>

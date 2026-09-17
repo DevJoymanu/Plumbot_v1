@@ -438,7 +438,11 @@ class AvailabilityMixin:
 
                 # 5. Check for conflicts with other confirmed appointments.
                 # Tenant-scoped: another tenant's diary must never make this
-                # tenant's slot look taken.
+                # tenant's slot look taken. A business may run more than one
+                # site visit at a time if it has said so (default is one), so
+                # we COUNT the overlaps and only refuse once the crew is full.
+                sa_timezone = pytz.timezone('Africa/Johannesburg')
+                max_visits = self.tenant_cfg.max_concurrent_visits()
                 conflicting_appointments = Appointment.objects.filter(
                     status='confirmed',
                     scheduled_datetime__isnull=False,
@@ -446,24 +450,48 @@ class AvailabilityMixin:
                 ).exclude(
                     id=self.appointment.id  # Exclude current appointment for reschedules
                 )
-            
+
+                visit_overlaps = 0
                 for existing_appt in conflicting_appointments:
                     # Ensure existing appointment is timezone-aware
                     if existing_appt.scheduled_datetime.tzinfo is None:
-                        sa_timezone = pytz.timezone('Africa/Johannesburg')
                         existing_start = sa_timezone.localize(existing_appt.scheduled_datetime)
                     else:
                         existing_start = existing_appt.scheduled_datetime
-                    
+
                     existing_end = existing_start + appointment_duration
-                
+
                     # Check for time overlap
                     if (requested_datetime < existing_end and requested_end > existing_start):
-                        print(f"Conflict found with appointment {existing_appt.id}")
-                        print(f"Existing: {existing_start} to {existing_end}")
-                        print(f"Requested: {requested_datetime} to {requested_end}")
-                        return False, existing_appt
-            
+                        visit_overlaps += 1
+                        if visit_overlaps >= max_visits:
+                            print(f"Conflict found with appointment {existing_appt.id}")
+                            print(f"Existing: {existing_start} to {existing_end}")
+                            print(f"Requested: {requested_datetime} to {requested_end}")
+                            return False, existing_appt
+
+                # 5b. Some businesses can't quote a new site visit while a job
+                # is already running that day; others can. A tenant that has
+                # said its crew can't do both at once has the visit blocked
+                # when it overlaps a scheduled job. The default is True — jobs
+                # have never blocked visits, so this only bites where the owner
+                # deliberately turns it off.
+                if not self.tenant_cfg.visits_during_job():
+                    active_jobs = Appointment.objects.filter(
+                        appointment_type='job_appointment',
+                        job_status__in=['scheduled', 'in_progress'],
+                        job_scheduled_datetime__isnull=False,
+                        tenant=self.appointment.tenant,
+                    ).exclude(id=self.appointment.id)
+                    for job in active_jobs:
+                        job_start = job.job_scheduled_datetime
+                        if job_start.tzinfo is None:
+                            job_start = sa_timezone.localize(job_start)
+                        job_end = job_start + timedelta(hours=job.job_duration_hours or 4)
+                        if requested_datetime < job_end and requested_end > job_start:
+                            print(f"Visit clashes with job {job.id} and this business can't do both")
+                            return False, "job_conflict"
+
                 # 6. Check maximum advance booking (3 months)
                 max_advance_time = now + timedelta(days=90)
                 if requested_datetime > max_advance_time:

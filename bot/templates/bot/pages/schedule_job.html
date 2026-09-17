@@ -112,22 +112,11 @@
         </div>
     </div>
 
-    <script>
-        // Disable past dates and weekends
-        document.addEventListener('DOMContentLoaded', function () {
-            const dateInput = document.getElementById('job_date');
-            const today = new Date();
-
-            dateInput.addEventListener('change', function () {
-                const selectedDate = new Date(this.value);
-                const dayOfWeek = selectedDate.getDay();
-
-                // Check if weekend (0 = Sunday, 6 = Saturday)
-                if (dayOfWeek === 0 || dayOfWeek === 6) {
-                    alert('Please select a weekday (Monday-Friday)');
-                    this.value = '';
-                }
-            });
-        });
-    </script>
+    {% comment %}
+    No client-side weekday block. Which days a business works is the tenant's
+    own week, not a hardcoded Monday-Friday — Homebase works Sundays, and the
+    old script silently cleared any weekend date the plumber picked, which read
+    as the form refusing to submit. The server validates the date against the
+    tenant's real closed days and returns a clear message naming them.
+    {% endcomment %}
 {% endblock %}

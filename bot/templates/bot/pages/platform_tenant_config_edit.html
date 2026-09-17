@@ -233,6 +233,48 @@ logo on a client's behalf gets identical results to the client doing it.
       </div>
 
       <div class="cfg-subblock">
+        <div class="cfg-subhead">Job capacity — how much can they run at once</div>
+        <label class="cfg-toggle">
+          <input type="checkbox" name="cap_multiple_jobs" id="cap_multiple_jobs" {% if cap_multiple_jobs %}checked{% endif %}>
+          Can handle more than one job at the same time
+        </label>
+        <div class="cfg-times" id="cap_jobs_count" {% if not cap_multiple_jobs %}style="display:none"{% endif %}>
+          <div class="form-group">
+            <label>Jobs at once</label>
+            <input type="number" name="cap_max_jobs" min="1" max="20" value="{{ cap_max_jobs }}">
+          </div>
+        </div>
+
+        <label class="cfg-toggle">
+          <input type="checkbox" name="cap_visits_during_job" id="cap_visits_during_job" {% if cap_visits_during_job %}checked{% endif %}>
+          Can still do site visits / quotations while a job is on
+        </label>
+        <label class="cfg-toggle">
+          <input type="checkbox" name="cap_multiple_visits" id="cap_multiple_visits" {% if cap_multiple_visits %}checked{% endif %}>
+          Can handle more than one site visit at the same time
+        </label>
+        <div class="cfg-times" id="cap_visits_count" {% if not cap_multiple_visits %}style="display:none"{% endif %}>
+          <div class="form-group">
+            <label>Visits at once</label>
+            <input type="number" name="cap_max_visits" min="1" max="20" value="{{ cap_max_visits }}">
+          </div>
+        </div>
+        <p class="cfg-mini-note">A small operation leaves these off: one job and one visit at a time, and no new visit while a job is on.
+          A bigger crew can take several jobs or visits at once and keep quoting during a job. The count only applies when its box is ticked.</p>
+      </div>
+      <script>
+        (function () {
+          function bind(box, panel) {
+            var b = document.getElementById(box), p = document.getElementById(panel);
+            if (!b || !p) return;
+            b.addEventListener('change', function () { p.style.display = b.checked ? '' : 'none'; });
+          }
+          bind('cap_multiple_jobs', 'cap_jobs_count');
+          bind('cap_multiple_visits', 'cap_visits_count');
+        })();
+      </script>
+
+      <div class="cfg-subblock">
         <div class="cfg-subhead">Service area — suburbs the business declines</div>
         <div class="cfg-chips" id="area-chips">
           {% for area in excluded_areas %}

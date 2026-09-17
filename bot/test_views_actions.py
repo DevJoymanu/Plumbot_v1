@@ -2044,6 +2044,55 @@ class PlatformConsoleTests(TestCase):
             reverse('platform_tenant_config', args=['homebase'])).content.decode()
         self.assertIn('On call 24/7', body)
 
+    def test_config_edit_saves_job_and_visit_capacity(self):
+        """Each business states how much it can run at once: how many jobs, how
+        many site visits, and whether it can still quote a new visit while a
+        job is on. The flags ride on the same business_hours JSON and reach
+        TenantConfig."""
+        base = {
+            'plumber_name': 'Takudzwa', 'plumber_contact': '+263774819901',
+            'business_whatsapp': '+263776255077',
+            'location_line': "We're in Hatfield, Harare.",
+            'location_area': 'Hatfield', 'location_city': 'Harare',
+            'timezone_name': 'Africa/Johannesburg', 'currency': 'US$',
+            'email_from_name': 'Takudzwa', 'email_sender': '',
+            'hours_day': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            'hours_open': '08:00', 'hours_close': '17:00',
+            'form-TOTAL_FORMS': '0', 'form-INITIAL_FORMS': '0',
+            'form-MIN_NUM_FORMS': '0', 'form-MAX_NUM_FORMS': '1000',
+        }
+        # The editor exposes the controls.
+        body = self.client.get(
+            reverse('platform_tenant_config_edit', args=['homebase'])).content.decode()
+        self.assertIn('name="cap_multiple_jobs"', body)
+        self.assertIn('name="cap_max_jobs"', body)
+        self.assertIn('name="cap_visits_during_job"', body)
+
+        # A bigger crew: three jobs at once, can quote during a job.
+        data = dict(base, cap_multiple_jobs='on', cap_max_jobs='3',
+                    cap_visits_during_job='on')
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['homebase']), data)
+        self.assertEqual(response.status_code, 302)
+        profile = TenantProfile.objects.get(tenant=self.homebase)
+        self.assertEqual(profile.business_hours['max_concurrent_jobs'], 3)
+        self.assertNotIn('visits_during_job', profile.business_hours)  # True is default → omitted
+
+        from .tenant_config import get_config
+        cfg = get_config(self.homebase)
+        self.assertEqual(cfg.max_concurrent_jobs(), 3)
+        self.assertTrue(cfg.visits_during_job())
+
+        # A small crew that can't do both: one job (box left off, number
+        # ignored), and no visit while a job is on.
+        data = dict(base, cap_max_jobs='5')  # number present but box unticked
+        response = self.client.post(
+            reverse('platform_tenant_config_edit', args=['homebase']), data)
+        self.assertEqual(response.status_code, 302)
+        cfg = get_config(self.homebase)
+        self.assertEqual(cfg.max_concurrent_jobs(), 1)      # unticked → one at a time
+        self.assertFalse(cfg.visits_during_job())           # box unticked → blocked
+
     def test_owner_sets_and_previews_the_clients_customer_sender(self):
         """The platform owner sets a tenant's customer-facing sender from the
         config editor and sees the resolved identity previewed on both pages —
@@ -4728,6 +4777,68 @@ class JobSchedulingTests(StaffClientTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Site Visit Lead')
         self.assertNotContains(response, 'Untouched Lead')
+
+    def test_a_completed_visit_on_an_unconfirmed_lead_still_schedules(self):
+        """The "nothing happens, the page just refreshes" report. The Schedule
+        Job button shows on `can_schedule_job` (a logged visit), but the view
+        also demanded `status == 'confirmed'`, which the button never checks.
+        A visit logged manually on a lead the bot never confirmed (status still
+        'pending') showed the button and then bounced straight back the moment
+        it was pressed. The two must agree."""
+        self.site_visit.status = 'pending'
+        self.site_visit.save(update_fields=['status'])
+
+        response = self._post_job()
+        self.assertEqual(response.status_code, 302)
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertEqual(self.site_visit.job_status, 'scheduled')
+        self.assertIsNotNone(self.site_visit.job_scheduled_datetime)
+
+    def _existing_job_at(self, hour='10:00', suffix=709):
+        """Another job already booked in this tenant's diary at `hour`."""
+        import pytz
+        from datetime import datetime as _dt
+        day, _ = self._job_slot()
+        sa = pytz.timezone('Africa/Johannesburg')
+        dt = sa.localize(_dt.strptime(f'{day} {hour}', '%Y-%m-%d %H:%M'))
+        return make_lead(
+            suffix, customer_name='Existing Job',
+            appointment_type='job_appointment', status='confirmed',
+            job_status='scheduled', job_scheduled_datetime=dt,
+            job_duration_hours=4,
+        )
+
+    def _set_capacity(self, **keys):
+        """Merge capacity keys onto the homebase profile's business_hours."""
+        from bot.models import TenantProfile
+        tenant = Tenant.objects.get(slug='homebase')
+        profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
+        profile.business_hours = {**(profile.business_hours or {}), **keys}
+        profile.save(update_fields=['business_hours'])
+
+    def test_a_second_job_at_the_same_time_is_refused_by_default(self):
+        """A one-crew operation (the default) can't double-book itself. This
+        check never ran on the scheduling path before — overlaps were only
+        caught on reschedule."""
+        self._existing_job_at('10:00')
+        self._post_job()  # also 10:00 — overlaps
+
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'site_visit')
+        self.assertIsNone(self.site_visit.job_scheduled_datetime)
+
+    def test_a_bigger_crew_can_stack_jobs_up_to_its_limit(self):
+        """A business that has said it handles two jobs at once may stack the
+        second onto the same slot."""
+        self._set_capacity(max_concurrent_jobs=2)
+        self._existing_job_at('10:00')
+
+        response = self._post_job()
+        self.assertEqual(response.status_code, 302)
+        self.site_visit.refresh_from_db()
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertIsNotNone(self.site_visit.job_scheduled_datetime)
 
 
 class MassJobUpdateRepairTests(StaffClientTestCase):
