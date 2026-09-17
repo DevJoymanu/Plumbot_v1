@@ -4789,6 +4789,49 @@ class JobSchedulingTests(StaffClientTestCase):
         self.assertContains(response, 'name="phone_number"')
         self.assertContains(response, 'name="multi_day"')
 
+    def test_the_new_job_form_has_customer_autocomplete(self):
+        response = self.client.get(reverse('create_job'))
+        self.assertContains(response, 'id="lead_search"')
+        self.assertContains(response, 'name="lead_id"')
+        self.assertContains(response, reverse('appointment_search_api'))
+
+    def test_creating_a_job_marks_the_site_visit_complete(self):
+        """Owner rule: the plumber can log a job without first pressing
+        'complete site visit'; saving the job settles it."""
+        self._create_job()
+        job = Appointment.objects.get(phone_number='whatsapp:+263775550101')
+        self.assertTrue(job.site_visit_completed)
+        self.assertIsNotNone(job.site_visit_completed_at)
+
+    def test_new_job_books_onto_the_picked_lead_and_completes_its_visit(self):
+        lead = make_lead(
+            730, customer_name='Picked Pat', appointment_type='site_visit',
+            site_visit_completed=False, status='confirmed')
+        self._create_job(lead_id=str(lead.pk), customer_name='Picked Pat')
+        lead.refresh_from_db()
+        self.assertEqual(lead.appointment_type, 'job_appointment')
+        self.assertEqual(lead.job_status, 'scheduled')
+        self.assertTrue(lead.site_visit_completed)
+        # No stray duplicate created for the typed phone.
+        self.assertFalse(
+            Appointment.objects.filter(phone_number='whatsapp:+263775550101').exists())
+
+    def test_creating_a_quote_completes_the_site_visit(self):
+        """A 'code' being done means the site visit is complete, and the job
+        step opens."""
+        lead = make_lead(
+            740, customer_name='Quote Quinn', appointment_type='site_visit',
+            site_visit_completed=False, status='confirmed', job_status='not_applicable')
+        resp = self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps({'appointment_id': lead.pk,
+                             'items': [{'name': 'Tap', 'qty': 1, 'unit': 50}]}),
+            content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        lead.refresh_from_db()
+        self.assertTrue(lead.site_visit_completed)
+        self.assertEqual(lead.job_status, 'pending_schedule')
+
     def test_a_job_can_be_created_from_the_jobs_tab(self):
         """A walk-in / phone booking that never went through the bot's site
         visit is booked straight in as a job."""

@@ -632,13 +632,20 @@ def create_job(request):
             messages.error(request, 'That date or time is not valid.')
             return render(request, 'bot/pages/create_job.html', page_ctx)
 
-        # The row we will book onto — found by number (so a repeat customer is
-        # not duplicated) or created. It supplies the tenant for the overlap
-        # check, so validate AFTER we have it.
-        phone_stored = format_phone_number_for_storage(digits)
-        lead, _created = Appointment.objects.get_or_create_lead(
-            phone_stored, tenant=tenant,
-            defaults={'status': 'pending', 'customer_name': name})
+        # The row we will book onto. When the plumber picked an existing lead
+        # from the autocomplete we use THAT exact row (its id), so a job lands
+        # on the right record even if they then edited the number; otherwise we
+        # find-or-create by number so a repeat customer is not duplicated. It
+        # supplies the tenant for the overlap check, so validate AFTER we have it.
+        lead = None
+        lead_id = (request.POST.get('lead_id') or '').strip()
+        if lead_id.isdigit():
+            lead = Appointment.objects.for_tenant_or_seed(tenant).filter(pk=int(lead_id)).first()
+        if lead is None:
+            phone_stored = format_phone_number_for_storage(digits)
+            lead, _created = Appointment.objects.get_or_create_lead(
+                phone_stored, tenant=tenant,
+                defaults={'status': 'pending', 'customer_name': name})
 
         job_end, error = _validate_job_slot(
             cfg, job_datetime, duration_hours, job_days,
@@ -664,6 +671,13 @@ def create_job(request):
         lead.job_end_datetime = job_end if multi_day else None
         lead.job_status = 'scheduled'
         lead.status = 'confirmed'
+        # Logging a job means the site visit has happened — mark it complete
+        # (owner rule): the plumber can book the job without first pressing
+        # "complete site visit", and saving the job settles it. Existing
+        # timestamp is preserved.
+        if not lead.site_visit_completed:
+            lead.site_visit_completed = True
+            lead.site_visit_completed_at = timezone.now()
         lead.save()
 
         try:

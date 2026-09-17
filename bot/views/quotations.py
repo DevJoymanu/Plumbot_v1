@@ -350,6 +350,37 @@ def _apply_client_fields(appointment, data):
         appointment.save(update_fields=changed)
 
 
+def _mark_visit_complete_for_quote(appointment):
+    """A quote ('code') being raised means the site visit/assessment happened,
+    so the two travel together (owner rule): doing the code completes the
+    visit, and completing the visit still lets the plumber be asked for the
+    code. Real leads only — a standalone quote's synthetic stub is skipped.
+    Best effort: a quote must never fail because this bookkeeping did."""
+    if appointment is None:
+        return
+    try:
+        phone = appointment.phone_number or ''
+        if phone.startswith('quotation_only_') or phone.startswith('email_'):
+            return
+        if appointment.site_visit_completed:
+            return
+        fields = ['site_visit_completed']
+        appointment.site_visit_completed = True
+        if not appointment.site_visit_completed_at:
+            appointment.site_visit_completed_at = timezone.now()
+            fields.append('site_visit_completed_at')
+        # Still a site visit → open the job-scheduling step, mirroring
+        # mark_site_visit_completed, so the job can be logged next.
+        if appointment.appointment_type == 'site_visit' and \
+                appointment.job_status in ('', 'not_applicable', None):
+            appointment.job_status = 'pending_schedule'
+            fields.append('job_status')
+        appointment.save(update_fields=fields)
+    except Exception:
+        logger.exception("Could not mark visit complete for quote on apt %s",
+                         getattr(appointment, 'pk', None))
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_quotation_api(request):
@@ -439,6 +470,9 @@ def create_quotation_api(request):
         # Recalculate total
         quotation.save()
         logger.info(f"💰 Quotation total recalculated: {quotation.total_amount}")
+
+        # Raising a quote settles the site visit (see helper).
+        _mark_visit_complete_for_quote(appointment)
 
         response_data = {
             'success': True,
