@@ -847,7 +847,11 @@ try:
         "Most probably during the weekend, l will get in touch.", {}, _FakeApptTf())
     results.log(
         "delay timeframe: self-initiated defer -> parked, no booking push",
-        ("check back on" in _defer.lower()
+        # "check back" not "check back on": when the agreed moment is tomorrow
+        # the copy reads "check back tomorrow", so requiring the "on <date>"
+        # phrasing made this case fail on some weekdays. The intent is only
+        # that a check-back is offered and no day/time is pushed.
+        ("check back" in _defer.lower()
          and "day and time" not in _defer
          and "what time suits you" not in _defer.lower()),
         got=_defer,

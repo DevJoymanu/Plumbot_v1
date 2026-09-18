@@ -2738,33 +2738,25 @@
                 <div class="detail-card-header">Scheduling</div>
                 <div class="detail-card-body">
                   {% if appointment.appointment_type == 'site_visit' %}
-                    {% if not appointment.site_visit_completed %}
                     {% comment %}
-                    No "Complete Site Visit" button here any more. Logging the
-                    visit is the banner at the TOP of this tab, which opens the
-                    same tokenized form the plumber gets by email, so there is
-                    exactly one way to do it and one place it can be done.
-                    This card only reports where the job stands.
+                    Scheduling the job settles the site visit (owner rule), so
+                    the button is always offered for a site-visit row - the
+                    plumber no longer has to log the visit first. If the visit
+                    HAS been logged we show when, but that is not a gate.
+                    Logging the visit itself is still the banner at the top of
+                    this tab.
                     {% endcomment %}
-                    <div class="empty-block" style="padding:0; text-align:left;">
-                      Log the site visit at the top of this page before scheduling the job.
-                    </div>
-                    {% elif appointment.can_schedule_job %}
+                    {% if appointment.site_visit_completed %}
                     <div class="mini-stat" style="margin-bottom:12px;">
                       <div class="mini-stat-label">Site Visit Completed</div>
                       <div class="mini-stat-value">{{ appointment.site_visit_completed_at|date:"M d, Y H:i" }}</div>
                     </div>
-                    <a href="{% url 'schedule_job' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
-                    {% elif appointment.get_job_appointments %}
-                    <div class="job-link-list">
-                      {% for job in appointment.get_job_appointments %}
-                      <a href="{% url 'appointment_detail' job.pk %}" class="job-link">
-                        <strong>Job #{{ job.pk }}</strong><br>
-                        <span class="text-muted">{{ job.job_scheduled_datetime|date:"M d, Y H:i"|default:"Not scheduled" }}</span>
-                      </a>
-                      {% endfor %}
+                    {% else %}
+                    <div class="empty-block" style="padding:0 0 12px; text-align:left;">
+                      Scheduling the job marks the site visit complete.
                     </div>
                     {% endif %}
+                    <a href="{% url 'schedule_job' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn success"><i class="fas fa-calendar-plus"></i> Schedule Job</a>
                   {% else %}
                     <div class="mini-stat-grid">
                       <div class="mini-stat">

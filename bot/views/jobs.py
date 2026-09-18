@@ -90,22 +90,13 @@ def schedule_job(request, pk):
     """Schedule job appointment after site visit"""
     site_visit = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
 
-    # Gate the screen on the SAME question the "Schedule Job" button asks
-    # (`can_schedule_job`): a site visit that has been logged as complete.
-    # It used to also demand `status == 'confirmed'`, which the button never
-    # checks — so a visit logged through the banner on a lead the bot never
-    # formally confirmed (status still 'pending') showed the button, then got
-    # bounced straight back here with an error the moment it was pressed. That
-    # is the "nothing happens, the page just refreshes" report: a real visit
-    # that could not be turned into a job. Whether the LEAD was confirmed says
-    # nothing about whether the VISIT happened, and plenty of real visits are
-    # logged manually without the bot ever pinning a slot.
+    # The only gate is that this row is a site visit (not one that is already a
+    # scheduled job). Scheduling the job is what SETTLES the visit (owner rule),
+    # so it is NOT gated on the visit being logged complete first — booking the
+    # job marks it done. The old completion gate meant a real visit that hadn't
+    # been written up could not be turned into a job at all.
     if site_visit.appointment_type != 'site_visit':
         messages.error(request, 'Cannot schedule a job for this appointment')
-        return redirect(_detail_url(request, site_visit.pk))
-
-    if not site_visit.site_visit_completed:
-        messages.error(request, 'Mark the site visit complete before scheduling the job')
         return redirect(_detail_url(request, site_visit.pk))
 
     # This screen is opened inside the conversations workspace iframe, which
@@ -170,7 +161,7 @@ def schedule_job(request, pk):
                     end_datetime=job_end if job_days > 1 else None,
                 )
             except ValueError:
-                messages.error(request, 'Mark the site visit complete before scheduling the job')
+                messages.error(request, 'This appointment is already a scheduled job')
                 return redirect(_detail_url(request, site_visit.pk))
 
             # The lead went ahead — its quote is accepted.

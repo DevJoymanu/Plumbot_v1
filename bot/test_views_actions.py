@@ -4759,15 +4759,22 @@ class JobSchedulingTests(StaffClientTestCase):
         self.bystander.refresh_from_db()
         self.assertEqual(self.bystander.customer_area, 'Mount Pleasant')
 
-    def test_incomplete_site_visit_cannot_be_scheduled(self):
+    def test_scheduling_a_job_marks_an_unlogged_site_visit_complete(self):
+        """Owner rule: scheduling the job settles the visit. A site visit that
+        was never logged complete can still be turned into a job, and doing so
+        marks it complete (the plumber doesn't have to log the visit first)."""
         self.site_visit.site_visit_completed = False
+        self.site_visit.site_visit_completed_at = None
         self.site_visit.job_status = 'not_applicable'
-        self.site_visit.save(update_fields=['site_visit_completed', 'job_status'])
+        self.site_visit.save(update_fields=[
+            'site_visit_completed', 'site_visit_completed_at', 'job_status'])
 
         self._post_job()
         self.site_visit.refresh_from_db()
-        self.assertEqual(self.site_visit.appointment_type, 'site_visit')
-        self.assertIsNone(self.site_visit.job_scheduled_datetime)
+        self.assertEqual(self.site_visit.appointment_type, 'job_appointment')
+        self.assertIsNotNone(self.site_visit.job_scheduled_datetime)
+        self.assertTrue(self.site_visit.site_visit_completed)
+        self.assertIsNotNone(self.site_visit.site_visit_completed_at)
 
     def _create_job(self, **overrides):
         job_date, job_time = self._job_slot()

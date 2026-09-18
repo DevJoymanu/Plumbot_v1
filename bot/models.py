@@ -891,12 +891,13 @@ class Appointment(models.Model):
         self.save()
     
     def can_schedule_job(self):
-        """Check if job appointment can be scheduled"""
-        return (
-            self.appointment_type == 'site_visit' and
-            self.site_visit_completed and
-            self.job_status == 'pending_schedule'
-        )
+        """Whether the 'Schedule Job' control should be offered on this row.
+
+        A job can be scheduled for any site-visit row: scheduling the job is
+        what settles the visit (owner rule), so it is NOT gated on the visit
+        being logged complete first. Once the row has become a job_appointment
+        it is no longer offered."""
+        return self.appointment_type == 'site_visit'
     
     def schedule_job_appointment(self, job_datetime, duration_hours=4,
                                  description="", materials="", plumber=None,
@@ -912,9 +913,17 @@ class Appointment(models.Model):
 
         `end_datetime` is set for a job that runs over several days; left None
         the job is a single-day one of `duration_hours`.
+
+        Scheduling the job SETTLES the site visit: the plumber no longer has to
+        press "complete site visit" first, and booking the job marks it done
+        (owner rule). An existing completion timestamp is preserved.
         """
-        if not self.can_schedule_job():
-            raise ValueError("Cannot schedule job - site visit not completed")
+        if self.appointment_type == 'job_appointment' and self.job_scheduled_datetime:
+            raise ValueError("This appointment is already a scheduled job")
+
+        if not self.site_visit_completed:
+            self.site_visit_completed = True
+            self.site_visit_completed_at = timezone.now()
 
         self.appointment_type = 'job_appointment'
         self.job_scheduled_datetime = job_datetime
