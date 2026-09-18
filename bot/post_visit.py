@@ -183,6 +183,11 @@ def ensure_report(appointment):
         appointment=appointment,
         defaults={'tenant_id': appointment.tenant_id},
     )
+    # Keep the lead's own cached relation in step with the row we just
+    # resolved. A caller holding the appointment reads `apt.site_visit_report`,
+    # and Django caches that on first access: without this, arming a sequence
+    # through here would be invisible to the very object that asked for it.
+    appointment.site_visit_report = report
     return report
 
 
@@ -236,6 +241,12 @@ def report_is_untouched(report) -> bool:
     """
     if report is None or report.pk is None:
         return True
+    # A sequence that has been armed is a decision somebody took, even before
+    # its first send: a quote raised on this lead arms the asks (see
+    # `start_quote_followups`) without writing any of the timestamps below, and
+    # the staleness guard must not throw that away on the next tick.
+    if getattr(report, 'sequence', 'awaiting_form') != 'awaiting_form':
+        return False
     return not any((
         report.submitted_at,
         report.fallback_email_sent_at,
@@ -281,6 +292,42 @@ def due_visits(now=None, tenant=None):
         .exclude(phone_number__startswith='quotation_only_')
         .select_related('site_visit_report', 'tenant')
         .order_by('scheduled_datetime')
+    )
+
+
+def armed_leads(now=None, tenant=None):
+    """Every lead whose sequence is armed and DUE, whatever their visit says.
+
+    `due_visits` answers a question about a finished site visit: who still owes
+    us a debrief? Once a sequence is running the question is a different one,
+    and the visit has stopped being the thing that decides it. A quote raised
+    on a lead the bot never pinned a slot for arms the asks (see
+    `start_quote_followups`) and has no visit to be found by, so without this it
+    would sit at its due moment forever.
+
+    Deliberately narrow: only reports already in a customer-facing sequence with
+    a due moment that has passed. A report that is awaiting the form, done, cold
+    or stopped is never pulled in by this, so it widens what the cron LOOKS at
+    without widening what it may send.
+    """
+    from bot.models import Appointment
+
+    now = now or timezone.now()
+    if tenant is None:
+        qs = Appointment.objects.real()
+    else:
+        qs = Appointment.objects.for_tenant(tenant).exclude(
+            phone_number__startswith='whatsapp:+999')
+    return (
+        qs.filter(
+            site_visit_report__sequence__in=('asks', 'confirm'),
+            site_visit_report__next_action_at__isnull=False,
+            site_visit_report__next_action_at__lte=now,
+        )
+        # Synthetic keys: a standalone quote's stub is not a lead.
+        .exclude(phone_number__startswith='quotation_only_')
+        .select_related('site_visit_report', 'tenant')
+        .order_by('pk')
     )
 
 
@@ -348,6 +395,7 @@ def _arm_sequence(report, now=None):
     never has to re-derive the branch.
     """
     now = now or timezone.now()
+    _mark_sequence_started(report, now)
 
     if report.expectation == 'specific_date' and report.expected_date:
         if report.confirmation_sent_at or _local(now).date() > report.expected_date:
@@ -371,6 +419,18 @@ def _arm_sequence(report, now=None):
         report.next_action_at = _next_ask_due(report)
 
 
+def _mark_sequence_started(report, now):
+    """Stamp when the customer-facing cadence was armed, once.
+
+    Set by every path that arms one -- the debrief form, the Case C deadline and
+    a quote being raised -- because it is the anchor the ask cadence is measured
+    from and the one the Email tab projects off. Never re-stamped: the asks are
+    measured from the START of the run, not from the last thing that touched it.
+    """
+    if not report.sequence_started_at:
+        report.sequence_started_at = now
+
+
 def _next_ask_due(report):
     """When the ask after the one just sent falls due."""
     base = report.last_ask_at or report.submitted_at or timezone.now()
@@ -379,6 +439,88 @@ def _next_ask_due(report):
     if report.ask_count == 2:
         return base + timedelta(days=ASK_3_AFTER_DAYS)
     return None
+
+
+# -- A quote was raised: arm the chase ---------------------------------------
+
+# Synthetic phone keys. A standalone quote invents a stub lead to hang itself
+# on, and a legacy cold-email row has no WhatsApp identity; neither is somebody
+# we may start a sequence about.
+_SYNTHETIC_KEYS = ('quotation_only_', 'email_')
+
+
+def start_quote_followups(appointment, *, now=None, source='quote'):
+    """A quote has been raised for this lead -- start chasing the booking.
+
+    The ask sequence was only ever armed by the debrief form (or by the Case C
+    deadline standing in for it), so a quote raised any other way -- from the
+    lead's screen, the quotes list, the standalone editor, a template -- sat
+    there with nothing behind it. The copy the asks already send is quote copy
+    ("your quote should be with you now... roughly when were you hoping to have
+    the work done?"), so this arms the same machine from the other trigger
+    rather than inventing a second one.
+
+    Returns True only when THIS call armed it. Every refusal is deliberate:
+
+    * **The plumber's own answer outranks a quote.** Only a report still
+      awaiting the form is armed. A report the plumber submitted, or one already
+      running, or one that finished, went cold or was stopped, is left exactly
+      as it is -- so a second quote on the same lead cannot restart a chase they
+      have already been through, and raising a quote after "not proceeding"
+      cannot talk over that decision.
+    * **No email, no arming.** The follow-ups are email, and a lead with no
+      address on file has nothing to receive them. Leaving the report awaiting
+      the form keeps the existing no-email handback pointed at the plumber,
+      which is the honest outcome; arming would silence it.
+    * **Suppressed leads are never chased**, by the same resolver every other
+      send path reads.
+
+    Best effort by contract: a quote must never fail because its follow-ups
+    could not be armed, so callers may ignore the return value.
+    """
+    now = now or timezone.now()
+    if appointment is None or getattr(appointment, 'pk', None) is None:
+        return False
+
+    phone = getattr(appointment, 'phone_number', '') or ''
+    if phone.startswith(_SYNTHETIC_KEYS):
+        return False
+
+    if lead_is_suppressed(appointment):
+        logger.info('Quote follow-ups not armed for apt %s: lead is suppressed',
+                    appointment.pk)
+        return False
+
+    if not lead_email(appointment):
+        logger.info('Quote follow-ups not armed for apt %s: no email on file',
+                    appointment.pk)
+        return False
+
+    report = ensure_report(appointment)
+    if report.sequence != 'awaiting_form':
+        return False
+
+    report.expectation = report.expectation or 'unknown'
+    report.sequence = 'asks'
+    _mark_sequence_started(report, now)
+    # The same first-ask moment the form's own Case B uses, measured from the
+    # thing that armed it: the quote may still be going out today, and ask 1
+    # opens by telling the lead it should be with them.
+    report.next_action_at = next_day_noon(now)
+    report.save(update_fields=['expectation', 'sequence', 'sequence_started_at',
+                               'next_action_at'])
+
+    try:
+        appointment.add_conversation_message(
+            'assistant',
+            '[POST-VISIT] Quote raised, booking follow-ups armed ({})'.format(source))
+    except Exception:
+        logger.exception('Could not note the armed quote follow-ups - apt %s',
+                         appointment.pk)
+
+    logger.info('Quote follow-ups armed for apt %s (%s), first ask %s',
+                appointment.pk, source, report.next_action_at)
+    return True
 
 
 # -- What this flow has scheduled, for the dashboard -------------------------
@@ -439,7 +581,15 @@ def projected_emails(appointment):
     if report.sequence in ('asks', 'cold'):
         # All three asks are derivable from the form's own submission: next day
         # at noon, then +3 days, then +7. ask_count says which have gone out.
-        due = next_day_noon(report.submitted_at or report.created_at)
+        # Ask 1's own due moment while it is still pending: that IS what the
+        # cron will act on. Once it has gone out the run is dated from the
+        # moment it was armed -- never `created_at`, which is when somebody
+        # first opened the lead's screen and can be weeks earlier.
+        if report.ask_count == 0 and report.next_action_at:
+            due = report.next_action_at
+        else:
+            due = next_day_noon(report.sequence_started_at
+                                or report.submitted_at or report.created_at)
         for number in range(1, MAX_ASKS + 1):
             sent = report.ask_count >= number
             # Only the LATEST send carries a real timestamp; the earlier ones are
@@ -616,7 +766,7 @@ def run_post_visit_tick(now=None, dry_run=False, log=None, tenant=None):
         if log:
             log(msg)
 
-    for apt in due_visits(now=now, tenant=tenant):
+    for apt in _leads_to_tick(now=now, tenant=tenant):
         try:
             report = getattr(apt, 'site_visit_report', None)
 
@@ -656,12 +806,39 @@ def run_post_visit_tick(now=None, dry_run=False, log=None, tenant=None):
     return stats
 
 
+def _leads_to_tick(now, tenant):
+    """Every lead this pass must look at, each one exactly once.
+
+    Two questions, two querysets: who owes us a debrief (`due_visits`) and whose
+    sequence is armed and due (`armed_leads`). A lead who answers both -- the
+    ordinary case, a visit that happened and a chase that followed -- is ticked
+    once, and the debrief queryset stays first so the order the run has always
+    had is the order it keeps.
+    """
+    seen = set()
+    for source in (due_visits(now=now, tenant=tenant),
+                   armed_leads(now=now, tenant=tenant)):
+        for apt in source:
+            if apt.pk in seen:
+                continue
+            seen.add(apt.pk)
+            yield apt
+
+
 def _tick_open_report(apt, report, now, dry_run, emit, stats):
     """The debrief has not been submitted: chase the plumber, then Case C."""
     end = visit_end(apt)
 
     # 1. The 35-minute fallback link to the plumber.
+    # Never once the sequence is armed. This email exists to get the flow
+    # moving, so a flow already moving does not need it -- and a quote raised in
+    # the app (`start_quote_followups`) has both answered the question it asks
+    # and proved the plumber was here. Without the guard, arming a chase on an
+    # old visit would email the plumber about a day nobody remembers, which is
+    # the noise the backlog guard was written to stop. Case C is unaffected: it
+    # arms at noon the next day, hours after this has already gone out.
     if (not report.fallback_email_sent_at and end
+            and report.sequence == 'awaiting_form'
             and now >= end + timedelta(minutes=FALLBACK_EMAIL_DELAY_MINUTES)):
         from bot.plumber_notifications import send_site_visit_form_email
         if dry_run:
@@ -720,7 +897,9 @@ def _tick_open_report(apt, report, now, dry_run, emit, stats):
     report.expectation = 'unknown'
     report.sequence = 'asks'
     report.next_action_at = now
-    report.save(update_fields=['expectation', 'sequence', 'next_action_at'])
+    _mark_sequence_started(report, now)
+    report.save(update_fields=['expectation', 'sequence', 'next_action_at',
+                               'sequence_started_at'])
     emit('[case C] ask sequence started without the form (apt {})'.format(apt.pk))
     _tick_sequence(apt, report, now, dry_run, emit, stats)
 

@@ -277,6 +277,12 @@ def close_pleasantry(appointment=None, is_shona: bool = False) -> str:
 
     Lifted from how the owner actually signs off: "Got it, no problem.",
     "All good, we'll speak on Thursday then...".
+
+    NOTE both of those presuppose a SETTLED conversation, and the caller is
+    what enforces it: `controller._sale_is_open` holds this move back whenever
+    nothing has been agreed, because said into a live sale a sign-off is not a
+    sign-off, it is a lost lead. Do not reach for this template directly from a
+    new path without asking that question first.
     """
     if is_shona:
         return 'Zvakanaka, hapana dambudziko.'

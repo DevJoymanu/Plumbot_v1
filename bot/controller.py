@@ -619,6 +619,41 @@ def _booking_half_made(appointment) -> bool:
     return bool(slot) and status != 'confirmed'
 
 
+def _sale_is_open(appointment) -> bool:
+    """Nothing has been settled yet, so there is nothing to close ON.
+
+    `close_pleasantry` exists to END a turn, and the owner sign-offs it was
+    lifted from all presuppose a settled outcome: "All good, we'll speak on
+    Thursday then" is said when a day is agreed. Said into a LIVE sale it is
+    not a sign-off, it is a lost lead — a lead who asked the tub price, got it
+    with the budget tie-down, replied "Ok thank you" and received "Got it, no
+    problem." The tie-down went unanswered, nothing was on the diary, and the
+    bot closed the conversation itself (prod, 2026-09-18).
+
+    An acknowledgement is not a decision. The owner rule is that the bot always
+    tries to advance the sale unless the lead CLEARLY states otherwise, and
+    "ok thank you" states nothing of the kind — a lead who genuinely wants out
+    says so, and that is an exit signal with its own handling (which parks them
+    and leaves a real check-back behind, rather than ending on a pleasantry).
+
+    Settled means: booked, or suppressed for a reason the rest of the codebase
+    already honours — parked, handed off, stopped, declined, out of area, job
+    on the diary, lead inactive. `lead_is_suppressed` is that single resolver
+    and is reused here rather than restated, so a new stop state cannot end up
+    meaning "settled" in one place and "still live" in another.
+    """
+    if str(getattr(appointment, 'status', '') or '') == 'confirmed':
+        return False
+    try:
+        from bot.post_visit import lead_is_suppressed
+        if lead_is_suppressed(appointment):
+            return False
+    except Exception:
+        logger.warning('Could not read the lead stop state, treating the sale '
+                       'as open', exc_info=True)
+    return True
+
+
 def _asks_us_something(uclass) -> bool:
     """Did this turn carry a question for us?
 
@@ -724,6 +759,15 @@ def decide_move(uclass, appointment):
     # never asked for, and the visit sat in the diary as an unconfirmed row.
     if move == 'close_pleasantry' and _booking_half_made(appointment):
         logger.info('close_pleasantry held back: a booking is still open')
+        return None
+
+    # ...and never into a sale where nothing has been settled at all. This is
+    # the general case the two gates above are each a special case of: the move
+    # ENDS the turn, so it may only run once there is an outcome to end ON.
+    # Held back, the turn falls through to the deterministic router, which asks
+    # the next thing the flow needs — which is what advancing the sale means.
+    if move == 'close_pleasantry' and _sale_is_open(appointment):
+        logger.info('close_pleasantry held back: nothing settled, sale is live')
         return None
     # The proof is worth sending once, and only once we know what to match it
     # against. A model that asks for it twice, or before the job is known, is

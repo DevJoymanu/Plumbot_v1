@@ -3537,8 +3537,29 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # it here, where no branch can lose it. Excluded cities are still
         # refused, exactly as extraction_mixin does it.
         _uc_area = (uc_extracted(_uclass).get('area') or '').strip()
-        if (_uc_area and _uc_area.lower() != 'null'
-                and not appointment.customer_area):
+        if _uc_area.lower() == 'null':
+            _uc_area = ''
+        # The classifier is the only thing that has ever written an area — here,
+        # in extraction_mixin and in process_extracted_data, none of which has a
+        # fallback. So when it returns null the answer is dropped by all three at
+        # once, and a BATCHED turn is exactly where it returns null: the debounce
+        # joins "Bluffhill." and "Need to renovate my bathroom" into one message,
+        # the model latches onto the renovation, and the only few-shots for an
+        # area reply are bare one-word ones. The lead was asked for a suburb they
+        # had just given, the flow stayed stuck on the area question and the
+        # visit was never pitched (prod, barmak, 2026-09-18). Deterministic per
+        # the house rule for short/fuzzy strings, and gated on having JUST asked
+        # the question, which is what makes a place-shaped phrase safe to read as
+        # the answer.
+        if not _uc_area and not appointment.customer_area:
+            try:
+                if plumbot._we_just_asked_the_area():
+                    _uc_area = plumbot._area_from_reply(message_body) or ''
+                    if _uc_area:
+                        print(f"🧭 Area recovered from the raw reply: {_uc_area}")
+            except Exception as _area_fb_exc:
+                print(f"⚠️ Deterministic area fallback failed: {_area_fb_exc}")
+        if _uc_area and not appointment.customer_area:
             try:
                 _excluded_city = plumbot._is_excluded_city(
                     _uc_area, tenant=getattr(appointment, 'tenant', None))

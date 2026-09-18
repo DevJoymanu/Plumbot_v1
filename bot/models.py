@@ -3051,6 +3051,13 @@ class SiteVisitReport(models.Model):
 
     sequence = models.CharField(max_length=20, choices=SEQUENCE_CHOICES,
                                 default='awaiting_form', db_index=True)
+    # When the customer-facing cadence was ARMED, whichever thing armed it: the
+    # debrief form, the Case C deadline, or a quote being raised. The asks are
+    # measured from here, so this is the anchor the Email tab projects off --
+    # `created_at` cannot be it, because the detail page creates a row the
+    # moment anybody opens the lead's screen, often weeks earlier, and
+    # `submitted_at` is null on both the paths that arm without the form.
+    sequence_started_at = models.DateTimeField(null=True, blank=True)
     ask_count = models.PositiveSmallIntegerField(default=0)
     last_ask_at = models.DateTimeField(null=True, blank=True)
     next_action_at = models.DateTimeField(null=True, blank=True, db_index=True)

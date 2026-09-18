@@ -1,0 +1,37 @@
+# The bot advances the sale unless the lead CLEARLY states otherwise
+# (owner rule, 2026-09-18, off a prod transcript).
+#
+# A lead asked the tub price, got it with the budget tie-down, replied
+# "Ok thank you" and received "Got it, no problem." The tie-down went
+# unanswered, nothing was on the diary, and the bot closed its own sale. The
+# lead was never asked for anything again.
+#
+# close_pleasantry ENDS a turn, and the owner sign-offs it was lifted from all
+# presuppose a SETTLED conversation ("All good, we'll speak on Thursday then").
+# controller._sale_is_open holds it back while nothing is agreed, so the turn
+# falls through to the deterministic router and asks the next thing the flow
+# needs. An acknowledgement is not a decision.
+#
+# Two things this also guards: "Ok thank you" must not be stored as the project
+# description (any string on that field makes description_captured True, so the
+# bot would never ask what the job is), and the price must not be re-sent.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> How much is the tub
+expect: US$
+expect: budget
+
+# THE BUG: this used to be the end of the conversation.
+> Ok thank you
+reject: no problem
+reject: hapana dambudziko
+# It must not re-send the price it has already given, and must not stack
+# two questions — but it must ask SOMETHING.
+reject: US$
+
+# Still moving, and still not signing off.
+> Just the tub for now
+reject: no problem
+reject: US$

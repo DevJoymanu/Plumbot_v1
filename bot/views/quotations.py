@@ -293,7 +293,12 @@ class CreateQuotationView(CreateView):
             self.object = form.save()
             formset.instance = self.object
             formset.save()
-            
+
+            # Every path that raises a quote arms the chase, this legacy
+            # server-rendered one included.
+            _start_quote_followups(getattr(self.object, 'appointment', None),
+                                   source='quote form')
+
             messages.success(self.request, 'Quotation created successfully!')
             
             if 'pk' in self.kwargs:
@@ -378,6 +383,25 @@ def _mark_visit_complete_for_quote(appointment):
         appointment.save(update_fields=fields)
     except Exception:
         logger.exception("Could not mark visit complete for quote on apt %s",
+                         getattr(appointment, 'pk', None))
+
+
+def _start_quote_followups(appointment, source='quote editor'):
+    """A quote being raised starts the chase for the booking.
+
+    The ask sequence had exactly one trigger, the site-visit debrief form, so a
+    quote raised any other way went out with nothing behind it. The resolver
+    decides whether this lead may actually be armed -- see
+    `post_visit.start_quote_followups`; nothing about that judgement lives here.
+
+    Best effort, like `_mark_visit_complete_for_quote` beside it: a quote must
+    never fail because its follow-ups could not be armed.
+    """
+    try:
+        from bot.post_visit import start_quote_followups
+        start_quote_followups(appointment, source=source)
+    except Exception:
+        logger.exception("Could not arm the quote follow-ups for apt %s",
                          getattr(appointment, 'pk', None))
 
 
@@ -471,8 +495,10 @@ def create_quotation_api(request):
         quotation.save()
         logger.info(f"💰 Quotation total recalculated: {quotation.total_amount}")
 
-        # Raising a quote settles the site visit (see helper).
+        # Raising a quote settles the site visit (see helper) and starts the
+        # follow-up sequence that chases the lead for the booking.
         _mark_visit_complete_for_quote(appointment)
+        _start_quote_followups(appointment)
 
         response_data = {
             'success': True,

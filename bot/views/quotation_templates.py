@@ -294,10 +294,12 @@ def create_standalone_quotation_api(request):
     # Recalculate totals after items are added
     quotation.save()
 
-    # Raising a quote settles the site visit — real leads only (the helper
-    # skips the synthetic stub a lead-less standalone quote creates).
-    from .quotations import _mark_visit_complete_for_quote
+    # Raising a quote settles the site visit and starts the booking chase —
+    # real leads only (both helpers skip the synthetic stub a lead-less
+    # standalone quote creates).
+    from .quotations import _mark_visit_complete_for_quote, _start_quote_followups
     _mark_visit_complete_for_quote(appointment)
+    _start_quote_followups(appointment, source='standalone quote')
 
     logger.info(
         f"Standalone quotation created: #{quotation.quotation_number} "

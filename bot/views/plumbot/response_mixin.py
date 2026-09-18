@@ -2589,7 +2589,206 @@ class ResponseMixin:
                 'standalone', 'stand alone', 'stand-alone',
                 'built-in', 'built in', 'builtin', 'inbuilt', 'in-built',
             )
-            return any(marker in msg_lower for marker in detail_markers) or len(msg.split()) >= 3
+            if any(marker in msg_lower for marker in detail_markers):
+                return True
+
+            # The word-count fallback catches a real description that happens to
+            # carry no marker word ("the one in the corner"). It also caught
+            # every acknowledgement three words long: "Ok thank you" was stored
+            # as the project description of a lead who had only asked the tub
+            # price (prod, 2026-09-18), and once ANY string is on that field
+            # `description_captured` is True, so the bot never asks what the job
+            # is and `lead_handoff.job_phrase` reads it back to them as "your Ok
+            # thank you". A message made entirely of words that carry no content
+            # is an acknowledgement, whatever its length.
+            tokens = re.findall(r"[a-z']+", msg_lower)
+            if tokens and all(t in self._CONTENTLESS_WORDS for t in tokens):
+                return False
+
+            return len(msg.split()) >= 3
+
+
+        # Fragments of our own area question, used to tell that the LAST thing we
+        # sent was the area ask. Kept beside _area_from_reply because the two are
+        # only ever correct together: the resolver is safe precisely because we
+        # know what question the lead is answering.
+        _AREA_QUESTION_FRAGMENTS = (
+            "area are you in", "whereabouts", "part of town",
+            "where are you based", "which suburb", "what suburb",
+            "suburb are you in", "suburb is the",
+        )
+
+        # Job talk, not a place. A segment carrying any of these is the lead
+        # describing the work, not naming where they live.
+        _AREA_REJECT_MARKERS = (
+            'renovat', 'install', 'repair', 'fix', 'replace', 'redo', 'upgrade',
+            'shower', 'toilet', 'tub', 'bath', 'geyser', 'basin', 'sink',
+            'pipe', 'drain', 'tile', 'vanity', 'cubicle', 'chamber',
+            'quote', 'price', 'cost', 'how much', 'mahara',
+        )
+
+        _AREA_NON_ANSWERS = {
+            'hi', 'hello', 'hey', 'ok', 'okay', 'alright', 'cool', 'sharp',
+            'thanks', 'thank', 'noted', 'yes', 'no', 'yep', 'nope', 'sure',
+            'hongu', 'kwete', 'ndatenda', 'maita', 'basa',
+        }
+
+        # Time talk. A lead answering the area question with an AVAILABILITY
+        # answer ("whenever suits you") is the shape that would otherwise be
+        # filed as a suburb, because it carries no job word and no chat word.
+        _AREA_TEMPORAL_WORDS = {
+            'whenever', 'anytime', 'any', 'time', 'day', 'today', 'tomorrow',
+            'tonight', 'morning', 'afternoon', 'evening', 'week', 'weekend',
+            'month', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+            'saturday', 'sunday', 'asap', 'soon', 'later', 'now', 'am', 'pm',
+            'mangwana', 'nhasi', 'manheru', 'mangwanani', 'svondo', 'muvhuro',
+            'chipiri', 'chitatu', 'china', 'chishanu', 'mugovera', 'nguva',
+            'chero',
+        }
+
+        # Ordinary chat words. A place name has to contribute at least ONE word
+        # that is not one of these — that is what separates "Bluffhill" from
+        # "whenever suits you", without a suburb gazetteer we would have to keep
+        # up to date.
+        _AREA_COMMON_WORDS = {
+            'a', 'an', 'the', 'and', 'but', 'or', 'of', 'to', 'for', 'in', 'at',
+            'on', 'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does',
+            'did', 'can', 'could', 'will', 'would', 'should', 'have', 'has',
+            'had', 'i', 'im', 'me', 'my', 'we', 'us', 'our', 'you', 'your',
+            'it', 'its', 'they', 'them', 'their', 'he', 'she', 'this', 'that',
+            'there', 'here', 'what', 'when', 'where', 'who', 'why', 'how',
+            'suits', 'suit', 'works', 'work', 'fine', 'good', 'great', 'nice',
+            'please', 'just', 'still', 'want', 'need', 'like', 'think', 'know',
+            'get', 'got', 'going', 'go', 'come', 'send', 'call', 'text',
+            'message', 'then', 'maybe', 'also', 'much', 'many', 'some', 'side',
+            'not', 'dont', 'ill', 'lets', 'let', 'choose', 'chose',
+            'pick', 'decide', 'up', 'down', 'over', 'out', 'anything',
+            'whatever', 'mind', 'sarudzai', 'imi', 'zvakanaka',
+            'really', 'very', 'quite', 'so', 'well', 'else',
+        }
+
+        # The three sets above are the area resolver's layered guards, but the
+        # vocabulary is not area-specific: these are simply the words that carry
+        # no content. `_looks_like_project_description_reply` needs the same
+        # judgement, so the union is named neutrally and shared rather than
+        # retyped into a second drifting copy.
+        _CONTENTLESS_WORDS = (_AREA_NON_ANSWERS | _AREA_COMMON_WORDS
+                              | _AREA_TEMPORAL_WORDS)
+
+        # "I'm in Bluffhill", "based in Mt Pleasant", "ndiri kuChitungwiza".
+        _AREA_LEAD_IN = re.compile(
+            r"^(?:"
+            # Shona: "ndiri kuChitungwiza" glues the locative to the place.
+            # Only stripped behind ndiri/tiri, or a bare "pa" would eat the
+            # first two letters of "Parktown".
+            r"(?:ndiri|tiri)\s*(?:ku|pa)?\s*"
+            r"|(?:i'?m|i am|im|we'?re|we are|it'?s|its)?\s*(?:based\s+)?"
+            r"(?:in|at|from|around|near|staying\s+in|live\s+in|living\s+in)\s+"
+            r")",
+            re.IGNORECASE,
+        )
+
+        def _we_just_asked_the_area(self) -> bool:
+            """True when the most recent thing WE sent was the area question.
+
+            Only the latest assistant turn counts. An area ask three turns back
+            has already been answered or abandoned, and treating a later message
+            as its answer is how a stray word becomes a suburb.
+            """
+            history = getattr(self.appointment, 'conversation_history', None) or []
+            for entry in reversed(history):
+                if not isinstance(entry, dict) or entry.get('role') != 'assistant':
+                    continue
+                text = str(entry.get('content') or '').lower()
+                return any(f in text for f in self._AREA_QUESTION_FRAGMENTS)
+            return False
+
+        @classmethod
+        def _area_from_reply(cls, message: str):
+            """The suburb out of a reply to "what area are you in?", or None.
+
+            EVERY area write in this codebase — the webhook's early capture,
+            extraction_mixin's passive capture and process_extracted_data — reads
+            `area` off the classifier and has no fallback, so when the model
+            returns null the lead's answer is dropped by all three at once. A
+            BATCHED turn is exactly where it returns null: the debounce joins
+            "Bluffhill." and "Need to renovate my bathroom" into one message, the
+            model latches onto the renovation, and the only few-shots for an area
+            reply are bare one-word ones ("Ziko"). The lead was then asked again
+            about a job they had just described, with the flow stuck on the area
+            question and the visit never pitched (prod, barmak, 2026-09-18).
+
+            Deterministic per the house rule for short/fuzzy strings, and only
+            ever consulted when we have just asked the area — that is what makes
+            treating a place-shaped phrase as the answer safe.
+
+            Returns the customer's own wording, never a normalised label; the
+            caller still runs it through _is_excluded_city.
+            """
+            raw = (message or '').strip()
+            if not raw:
+                return None
+
+            for segment in re.split(r'[\r\n.!;]+', raw):
+                candidate = segment.strip().strip(' ,.!?-')
+                if not candidate or '?' in segment:
+                    continue
+                if any(m in candidate.lower() for m in cls._AREA_REJECT_MARKERS):
+                    continue
+                if cls._is_service_type_only(candidate):
+                    continue
+
+                stripped = cls._AREA_LEAD_IN.sub('', candidate).strip(' ,.!?-')
+                if not stripped:
+                    continue
+                # A suburb is a short noun phrase — "Glen View South" is about
+                # as long as they get. Anything longer is a sentence that happens
+                # to carry no job word, not a place name.
+                if not 1 <= len(stripped.split()) <= 3:
+                    continue
+
+                tokens = re.findall(r"[a-z]+", stripped.lower())
+                if not tokens:
+                    continue
+                # A place name contributes at least one word that is not chat,
+                # not time talk and not an acknowledgement. Without this, an
+                # AVAILABILITY answer to the area question ("whenever suits
+                # you") is filed as a suburb.
+                if all(t in cls._AREA_COMMON_WORDS
+                       or t in cls._AREA_TEMPORAL_WORDS
+                       or t in cls._AREA_NON_ANSWERS
+                       for t in tokens):
+                    continue
+                # A digit-led phrase is a date, a time or a house number.
+                if re.search(r"\d\s*(?:am|pm)|^\d+$", stripped.lower()):
+                    continue
+                return stripped
+
+            return None
+
+
+
+        @classmethod
+        def _job_words_only(cls, message: str) -> str:
+            """The message with the suburb half of a batched turn removed.
+
+            "Bluffhill." + "Need to renovate my bathroom" arrive as ONE message,
+            so storing the raw text as the project description files the suburb
+            as part of the job — and that description is read back to the lead by
+            `lead_handoff.job_phrase` ("your Bluffhill. Need to renovate my
+            bathroom"). Drops only segments the area resolver would ACCEPT as a
+            place, so a description that merely mentions where they live is
+            untouched. Falls back to the original when that would leave nothing.
+            """
+            raw = (message or '').strip()
+            if not raw:
+                return raw
+            kept = [
+                seg.strip() for seg in re.split(r'[\r\n.!;]+', raw)
+                if seg.strip() and cls._area_from_reply(seg) is None
+            ]
+            rejoined = '. '.join(kept).strip()
+            return rejoined or raw
 
 
         def _is_purchase_commitment(self, message: str) -> bool:

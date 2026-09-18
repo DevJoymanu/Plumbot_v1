@@ -7565,12 +7565,34 @@ try:
         conversation_history = []
         customer_area = 'Ruwa'
         project_type = 'bathroom_renovation'
+        # SETTLED. The move ends a turn, so it may only run once there is an
+        # outcome to end ON — see _sale_is_open. This lead used to be 'pending'
+        # here, which is a lead whose sale is still live: the same plan on that
+        # row is now held back, asserted just below. Keeping the row settled is
+        # also what makes the three gate assertions after it mean something,
+        # since otherwise they would return None for the wrong reason.
+        status = 'confirmed'
+        internal_notes = ''
+        is_lead_active = True
+        job_scheduled_datetime = None
+        job_status = ''
 
     _uc_close = {'next_move': 'close_pleasantry', 'move_confidence': 0.9,
                  'intent': 'ack', 'confidence': 'HIGH',
                  'state_update': {'want_level': 'interested'}}
     results.log("close: the model may now end the turn",
                 _cctl.decide_move(_uc_close, _AckLead()) == 'close_pleasantry')
+
+    # ...but NEVER into a live sale. The owner rule is that the bot advances
+    # unless the lead clearly states otherwise, and an acknowledgement states
+    # nothing of the kind (prod, 2026-09-18: "Ok thank you" after a tub price
+    # was answered with "Got it, no problem." and the lead was never asked for
+    # anything again).
+    class _LiveSaleLead(_AckLead):
+        status = 'pending'
+
+    results.log("close: a live sale is advanced, not signed off",
+                _cctl.decide_move(_uc_close, _LiveSaleLead()) is None)
     results.log("close: it is in the drivable set",
                 'close_pleasantry' in _cctl.DRIVABLE_MOVES)
 
@@ -10510,6 +10532,178 @@ for _not_flex in ('tomorrow at 9am', 'Sunday please', 'the 2pm one',
                   'I will get back to you', 'how much is a shower cubicle'):
     results.log(f"any time: not a free hand ({_not_flex[:30]}...)",
                 _anytime.lead_has_no_time_preference(_not_flex) is False)
+
+
+# ── An acknowledgement is not a project description ─────────────────────────
+# The word-count fallback in _looks_like_project_description_reply caught every
+# acknowledgement three words long. "Ok thank you" was stored as the project
+# description of a lead who had only asked the tub price (prod, 2026-09-18), and
+# once ANY string is on that field `description_captured` is True — so the bot
+# never asks what the job is, and lead_handoff.job_phrase reads it back to them
+# as "your Ok thank you".
+class _FakeSelfDesc:
+    _CONTENTLESS_WORDS = ResponseMixin._CONTENTLESS_WORDS
+    _looks_like_project_description_reply = (
+        ResponseMixin._looks_like_project_description_reply)
+
+_desc_self = _FakeSelfDesc()
+
+for _ack in ('Ok thank you', 'ok thanks', 'Alright thank you',
+             'thank you so much', 'yes please do', 'that is fine thanks',
+             'ok cool thanks', 'no thank you'):
+    results.log("ack is not a description (%s)" % _ack[:28],
+                _desc_self._looks_like_project_description_reply(_ack) is False)
+
+# ...and a real description is still read, including one carrying no marker word
+# (which is what the length fallback is FOR).
+for _real in ('I want a new shower', 'replace the bath',
+              'two toilets and a basin', 'the one in the corner',
+              'freestanding', '2x shower cubicles and accessories',
+              'my geyser is leaking'):
+    results.log("still a description (%s)" % _real[:28],
+                _desc_self._looks_like_project_description_reply(_real) is True)
+
+
+# ── The bot advances the sale unless the lead CLEARLY says otherwise ────────
+# `close_pleasantry` ENDS a turn, and the owner sign-offs it was lifted from all
+# presuppose a settled outcome. A lead who asked the tub price, got it with the
+# budget tie-down and replied "Ok thank you" got "Got it, no problem." — the
+# tie-down unanswered, nothing on the diary, and the bot closed its own sale
+# (prod, 2026-09-18). An acknowledgement is not a decision.
+from bot.controller import _sale_is_open as _sale_open
+
+class _FakeLeadSale:
+    def __init__(self, status='pending', notes='', active=True):
+        self.status = status
+        self.internal_notes = notes
+        self.is_lead_active = active
+        self.job_scheduled_datetime = None
+        self.job_status = ''
+
+results.log(
+    "advance the sale: nothing settled means the sale is still open",
+    _sale_open(_FakeLeadSale()) is True,
+)
+results.log(
+    "advance the sale: a booked lead may be signed off",
+    _sale_open(_FakeLeadSale(status='confirmed')) is False,
+)
+for _tag in ('[PARKED]', '[HANDED_OFF]', '[STOP_REQUESTED]',
+             '[OOS_DECLINED]', '[EXCLUDED_AREA:Bulawayo]'):
+    results.log("advance the sale: %s reads as settled" % _tag,
+                _sale_open(_FakeLeadSale(notes=_tag)) is False)
+results.log(
+    "advance the sale: an inactive lead may be signed off",
+    _sale_open(_FakeLeadSale(active=False)) is False,
+)
+results.log(
+    "advance the sale: a booked job reads as settled",
+    _sale_open(_FakeLeadSale(status='pending')) is True,
+)
+
+
+# ── The area out of a BATCHED reply ─────────────────────────────────────────
+# EVERY area write in the bot (the webhook's early capture, extraction_mixin's
+# passive capture, process_extracted_data) reads `area` off the classifier, and
+# none of them had a fallback — so one mis-read dropped the suburb in all three
+# at once. The debounce joins "Bluffhill." and "Need to renovate my bathroom"
+# into ONE message; the model kept the renovation and returned area=null, the
+# flow stayed stuck on the area question, the lead was asked about a job they
+# had just described and the visit was never pitched (prod, barmak, 2026-09-18).
+_area_from_reply = ResponseMixin._area_from_reply
+
+results.log(
+    "area reply: the suburb survives a batched turn that also names the job",
+    _area_from_reply("Bluffhill." + chr(10) + "Need to renovate my bathroom") == "Bluffhill",
+)
+results.log(
+    "area reply: order does not matter, the job half is skipped",
+    _area_from_reply("Need to renovate my bathroom." + chr(10) + "Bluffhill") == "Bluffhill",
+)
+for _plain, _want in (
+    ("Bluffhill", "Bluffhill"),
+    ("Bluffhill.", "Bluffhill"),
+    ("I'm in Bluffhill", "Bluffhill"),
+    ("based in Mt Pleasant", "Mt Pleasant"),
+    ("ndiri kuChitungwiza", "Chitungwiza"),
+    ("Harare, Borrowdale", "Harare, Borrowdale"),
+    ("Glen Norah", "Glen Norah"),
+):
+    results.log("area reply: reads (%s)" % _plain[:28],
+                _area_from_reply(_plain) == _want)
+
+# Longer place names still read.
+for _long_place in ("Glen View South", "Dzivarasekwa Extension", "Mount Pleasant"):
+    results.log("area reply: a multi-word suburb survives (%s)" % _long_place,
+                _area_from_reply(_long_place) == _long_place)
+
+# An AVAILABILITY answer to the area question must NOT be filed as a suburb.
+# It carries no job word and no acknowledgement, so only the "a place name
+# contributes a word that is not chat" rule stops it (caught by
+# FlexibleAvailabilityTests.test_a_missing_field_is_asked_for_instead_of_booking).
+for _when in ("whenever suits you", "anytime is fine", "any day works",
+              "tomorrow at 9am", "you choose", "up to you",
+              "whatever works for you", "i really dont mind",
+              "chero nguva", "imi sarudzai", "i will get back to you"):
+    results.log("area reply: time talk is not a place (%s)" % _when[:28],
+                _area_from_reply(_when) is None)
+
+# It INVENTS nothing. With no place in the message the bot asks again, which is
+# the honest outcome — a wrong suburb closes the question with a lie.
+for _no_area in ("Need to renovate my bathroom", "how much is it?", "yes",
+                 "ok thanks", "bathroom renovation", ""):
+    results.log("area reply: invents nothing (%s)" % _no_area[:28],
+                _area_from_reply(_no_area) is None)
+
+# The locative prefix is stripped only behind ndiri/tiri — a bare "pa" would eat
+# the first two letters of a real suburb.
+results.log(
+    "area reply: a bare locative never truncates Parktown",
+    _area_from_reply("Parktown") == "Parktown",
+)
+
+# The resolver is only consulted when the LAST thing we sent was the area ask.
+class _FakeApptArea:
+    def __init__(self, history):
+        self.conversation_history = history
+
+class _FakeSelfArea:
+    _AREA_QUESTION_FRAGMENTS = ResponseMixin._AREA_QUESTION_FRAGMENTS
+    _we_just_asked_the_area = ResponseMixin._we_just_asked_the_area
+    def __init__(self, history):
+        self.appointment = _FakeApptArea(history)
+
+results.log(
+    "area reply: the gate is our own last message asking for the area",
+    _FakeSelfArea([
+        {"role": "user", "content": "can i see pics"},
+        {"role": "assistant", "content": "What area are you in?"},
+    ])._we_just_asked_the_area(),
+)
+results.log(
+    "area reply: an area ask we have moved on from does not arm it",
+    _FakeSelfArea([
+        {"role": "assistant", "content": "What area are you in?"},
+        {"role": "user", "content": "Bluffhill"},
+        {"role": "assistant", "content": "What day suits you?"},
+    ])._we_just_asked_the_area() is False,
+)
+results.log(
+    "area reply: a fresh conversation never arms it",
+    _FakeSelfArea([])._we_just_asked_the_area() is False,
+)
+
+# The classifier NORMALISES the lead's sentence into the bare category, and the
+# service-type gate then threw that away — so the lead was asked to describe a
+# job they had just described. Their own words must outrank the tidied version.
+results.log(
+    "area reply: the classifier's own wording for this phrasing is service-type-only",
+    ResponseMixin._is_service_type_only("renovate my bathroom"),
+)
+results.log(
+    "area reply: the lead's own sentence is NOT, so it is what we keep",
+    ResponseMixin._is_service_type_only("Need to renovate my bathroom") is False,
+)
 
 
 # The slot itself is DETERMINISTIC — the model is never asked which day or hour.

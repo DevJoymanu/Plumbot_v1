@@ -617,3 +617,50 @@ The acknowledgement also stopped being a receipt. "Let me know if I have
 anything wrong" invites the cheapest possible agreement, and a lead who has just
 agreed with us once answers the ask underneath more readily than one who has
 only had their own details read back at them.
+
+
+## An acknowledgement is not a decision
+
+**The bot signed off on a sale nobody had closed.** Prod, 2026-09-18.
+
+> **Bad:**
+> Lead: "How much is the tub"
+> Bot: "Freestanding (standalone) tubs: full setup from US$720 all-in (tub US$400
+> + mixer US$200 + install US$120). These are starting prices. The exact price is
+> confirmed once the plumber sees the space. That sit alright with your budget?"
+> Lead: "Ok thank you"
+> Bot: "Got it, no problem."
+>
+> **Good:**
+> Lead: "Ok thank you"
+> Bot: "All good, what area are you in?"
+
+The price reply is right: figures broken down, the disclaimer, and the budget
+tie-down to close on. What went wrong is the turn after it. The lead never
+answered the tie-down, nothing was on the diary, and the bot ended the
+conversation itself with a pleasantry. There was nothing left running: no
+question outstanding, no slot, no check-back, and no reason for the lead to
+write again.
+
+`close_pleasantry` is a real move and it is kept — the model asks for it more
+than any other and it was right to give it. The error is WHERE it may run. The
+owner sign-offs it was written from all presuppose a settled conversation: "All
+good, we'll speak on Thursday then" is said once a day is agreed. Said into a
+live sale the same words are not a sign-off, they are a lost lead.
+
+So the rule is the owner's: **the bot advances the sale unless the lead clearly
+states otherwise.** "Ok thank you" states nothing of the kind. A lead who
+genuinely wants out says so, and that is an exit signal with its own handling —
+which parks them and leaves a real check-back behind, rather than ending on a
+pleasantry. `controller._sale_is_open` is the gate, and "settled" reuses
+`lead_is_suppressed` rather than restating it, so a new stop state cannot mean
+"settled" in one place and "still live" everywhere else.
+
+**The same turn was also filing the acknowledgement as the job.** The
+word-count fallback in `_looks_like_project_description_reply` treated any
+three-word message as a description, so "Ok thank you" was stored as the
+project description — and because ANY non-empty string satisfies
+`description_captured`, the bot would then never ask what the work actually was,
+and `lead_handoff.job_phrase` would read it back to the lead as "your Ok thank
+you". A message made entirely of words that carry no content is an
+acknowledgement, whatever its length.

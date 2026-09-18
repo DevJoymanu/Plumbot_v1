@@ -6215,6 +6215,210 @@ class PostVisitSchedulerTests(TestCase):
         self.assertIn('Post-visit', out.getvalue())
 
 
+class QuoteArmsTheBookingChaseTests(StaffClientTestCase):
+    """A quote being raised starts the follow-up sequence that chases the
+    booking. It used to have exactly one trigger, the site-visit debrief form,
+    so a quote raised anywhere else went out with nothing behind it."""
+
+    def _lead(self, suffix, **kw):
+        kw.setdefault('customer_name', 'Quoted Quinn')
+        kw.setdefault('customer_email', 'quinn@example.com')
+        kw.setdefault('appointment_type', 'site_visit')
+        return make_lead(suffix, **kw)
+
+    def _raise_quote(self, lead):
+        return self.client.post(
+            reverse('create_quotation_api'),
+            data=json.dumps({'appointment_id': lead.pk,
+                             'items': [{'name': 'Mixer', 'qty': 1, 'unit': 90}]}),
+            content_type='application/json')
+
+    def _report(self, lead):
+        from bot.models import SiteVisitReport
+        return SiteVisitReport.objects.filter(appointment=lead).first()
+
+    def test_raising_a_quote_arms_the_ask_sequence(self):
+        from bot.post_visit import next_day_noon
+        lead = self._lead(760)
+        before = timezone.now()
+        self.assertEqual(self._raise_quote(lead).status_code, 200)
+
+        report = self._report(lead)
+        self.assertIsNotNone(report)
+        self.assertEqual(report.sequence, 'asks')
+        self.assertEqual(report.ask_count, 0)
+        self.assertIsNotNone(report.sequence_started_at)
+        # Ask 1 lands at the same moment the form's own Case B puts it: noon
+        # the next day, measured from the thing that armed it.
+        self.assertEqual(report.next_action_at,
+                         next_day_noon(report.sequence_started_at))
+        self.assertGreaterEqual(report.sequence_started_at, before)
+
+    def test_a_standalone_quote_for_a_real_lead_arms_it_too(self):
+        lead = self._lead(761)
+        resp = self.client.post(
+            reverse('create_standalone_quotation_api'),
+            data=json.dumps({'appointment_id': lead.pk, 'client_name': 'Quinn',
+                             'items': [{'name': 'Geyser', 'qty': 1, 'unit': 400}]}),
+            content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._report(lead).sequence, 'asks')
+
+    def test_a_lead_less_quote_arms_nothing(self):
+        """The standalone editor invents a stub lead to hang the quote on. It
+        is a synthetic key, not somebody we may start a sequence about."""
+        from bot.models import SiteVisitReport
+        resp = self.client.post(
+            reverse('create_standalone_quotation_api'),
+            data=json.dumps({'client_name': 'Walk In', 'client_phone': '0771234567',
+                             'items': [{'name': 'Tap', 'qty': 1, 'unit': 20}]}),
+            content_type='application/json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(
+            SiteVisitReport.objects.filter(
+                appointment__phone_number__startswith='quotation_only_').exists())
+
+    def test_no_email_means_no_sequence(self):
+        """The follow-ups are email. A lead with no address is left awaiting the
+        form, which is what keeps the no-email handback pointed at the plumber."""
+        lead = self._lead(762, customer_email='')
+        self.assertEqual(self._raise_quote(lead).status_code, 200)
+        report = self._report(lead)
+        self.assertTrue(report is None or report.sequence == 'awaiting_form')
+
+    def test_a_suppressed_lead_is_never_armed(self):
+        lead = self._lead(763)
+        lead.mark_handed_off()
+        self.assertEqual(self._raise_quote(lead).status_code, 200)
+        report = self._report(lead)
+        self.assertTrue(report is None or report.sequence == 'awaiting_form')
+
+    def test_a_lead_with_the_job_on_the_diary_is_never_armed(self):
+        lead = self._lead(764,
+                          job_scheduled_datetime=timezone.now() + timedelta(days=2))
+        self.assertEqual(self._raise_quote(lead).status_code, 200)
+        report = self._report(lead)
+        self.assertTrue(report is None or report.sequence == 'awaiting_form')
+
+    def test_a_second_quote_does_not_restart_the_chase(self):
+        lead = self._lead(765)
+        self._raise_quote(lead)
+        report = self._report(lead)
+        report.ask_count = 2
+        report.next_action_at = timezone.now() + timedelta(days=3)
+        report.save(update_fields=['ask_count', 'next_action_at'])
+        armed_at, due = report.sequence_started_at, report.next_action_at
+
+        self._raise_quote(lead)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 2)
+        self.assertEqual(report.next_action_at, due)
+        self.assertEqual(report.sequence_started_at, armed_at)
+
+    def test_the_plumbers_own_answer_outranks_a_quote(self):
+        """'Not proceeding' on the debrief form stops the sequence. A quote
+        raised afterwards must not talk over that decision."""
+        from bot.post_visit import apply_submission, ensure_report
+        lead = self._lead(766)
+        apply_submission(ensure_report(lead), outcome='not_proceeding')
+        self._raise_quote(lead)
+        self.assertEqual(self._report(lead).sequence, 'stopped')
+
+
+class QuoteArmedChaseRunsTests(TestCase):
+    """The cron has to reach the leads this arms. `due_visits` finds a lead by
+    their finished site visit, and a quote-armed lead may not have one."""
+
+    def setUp(self):
+        self.lead = make_lead(
+            8380, customer_name='Chased Chipo', customer_email='chipo@example.com',
+            appointment_type='site_visit')
+
+    def _arm(self):
+        from bot.post_visit import start_quote_followups
+        self.assertTrue(start_quote_followups(self.lead))
+        return self.lead.site_visit_report
+
+    def _tick(self, now=None):
+        from bot.post_visit import run_post_visit_tick
+        return run_post_visit_tick(now=now)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_lead_with_no_visit_still_gets_the_asks(self, _send):
+        report = self._arm()
+        self.assertEqual(
+            self._tick(now=report.next_action_at - timedelta(minutes=1))['asks'], 0)
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        report.refresh_from_db()
+        self.assertEqual(report.ask_count, 1)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_the_whole_run_of_three_asks_goes_out(self, _send):
+        report = self._arm()
+        at = report.next_action_at
+        for expected in (1, 2, 3):
+            self._tick(now=at)
+            report.refresh_from_db()
+            self.assertEqual(report.ask_count, expected)
+            at = report.next_action_at
+
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_no_debrief_form_is_emailed_for_a_visit_that_never_happened(self, _send, plumber):
+        """The lead is reached by their armed sequence, not by a finished
+        visit, so the plumber must not be asked how a visit went."""
+        self.lead.scheduled_datetime = timezone.now() - timedelta(days=1)
+        self.lead.status = 'pending'
+        self.lead.save(update_fields=['scheduled_datetime', 'status'])
+        report = self._arm()
+        self._tick(now=report.next_action_at)
+        self.assertFalse(plumber.called)
+        report.refresh_from_db()
+        self.assertIsNone(report.fallback_email_sent_at)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_the_backlog_guard_does_not_strand_an_armed_sequence(self, _send):
+        """The guard keys off activity, and arming a sequence is activity even
+        before its first send - otherwise a quote on an old visit would arm a
+        chase the very next tick threw away as stale. The plumber is not
+        chased for a debrief either: the quote answered that question."""
+        self.lead.status = 'confirmed'
+        self.lead.scheduled_datetime = timezone.now() - timedelta(days=30)
+        self.lead.save(update_fields=['status', 'scheduled_datetime'])
+        report = self._arm()
+        with patch('bot.plumber_notifications.send_plumber_notification_email',
+                   return_value=True) as plumber:
+            self.assertEqual(self._tick(now=report.next_action_at)['asks'], 1)
+        self.assertFalse(plumber.called)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    def test_a_lead_booked_between_ticks_is_dropped(self, _send):
+        report = self._arm()
+        self.lead.job_scheduled_datetime = timezone.now() + timedelta(days=3)
+        self.lead.save(update_fields=['job_scheduled_datetime'])
+        self.assertEqual(self._tick(now=report.next_action_at)['asks'], 0)
+
+    def test_the_email_tab_dates_the_asks_from_the_arming(self):
+        """The Email tab must describe the cadence the cron runs. `created_at`
+        is when somebody first opened the lead's screen, which can be weeks
+        before anything was armed."""
+        from bot.models import SiteVisitReport
+        from bot.post_visit import ensure_report, next_day_noon, projected_emails
+        stale = ensure_report(self.lead)
+        SiteVisitReport.objects.filter(pk=stale.pk).update(
+            created_at=timezone.now() - timedelta(days=40))
+        report = self._arm()
+
+        rows = [r for r in projected_emails(self.lead)
+                if r['label'].startswith('Quote follow-up')]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]['scheduled_for'], report.next_action_at)
+        self.assertEqual(rows[1]['scheduled_for'],
+                         next_day_noon(report.sequence_started_at) + timedelta(days=3))
+        self.assertEqual(rows[2]['scheduled_for'],
+                         next_day_noon(report.sequence_started_at) + timedelta(days=10))
+
+
 class PostVisitDateParsingTests(TestCase):
     """extract_expected_date: a real date switches branches, a vague one must not."""
 
@@ -11069,3 +11273,196 @@ class ComposedAvailabilityAskTests(TestCase):
             ask = bot._availability_ask()
         self.assertIn('When would suit you', ask)
         self.assertIn('open', ask.lower())
+
+
+class BatchedAreaReplyTests(TestCase):
+    """The area out of a turn that answers the question AND adds job detail.
+
+    Every area write in the bot reads `area` off the classifier and none had a
+    fallback, so a single mis-read dropped the suburb everywhere at once. The
+    debounce joins "Bluffhill." and "Need to renovate my bathroom" into ONE
+    message; the model kept the renovation and returned area=null. The flow
+    stayed stuck on the area question, the lead was asked about a job they had
+    just described, and the visit was never pitched (prod, barmak, 2026-09-18).
+
+    The classifier here returns exactly what production returned.
+    """
+
+    # area=null, and the description NORMALISED into the bare category — which
+    # is what the service-type gate then threw away.
+    MISSED_AREA = {
+        'intent': 'in_scope', 'confidence': 'HIGH',
+        'service_type': 'bathroom_renovation',
+        'speech_act': 'booking_answer',
+        'extracted': {'area': None, 'availability': None,
+                      'customer_name': None,
+                      'project_description': 'renovate my bathroom'},
+    }
+
+    MESSAGE = 'Bluffhill.' + chr(10) + 'Need to renovate my bathroom'
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+
+    def _lead(self, suffix, **kw):
+        fields = dict(tenant=self.homebase, status='pending',
+                      project_type='bathroom_renovation',
+                      project_description='', customer_area='')
+        fields.update(kw)
+        lead = make_lead(suffix, **fields)
+        # The transcript: we priced the tub, sent the gallery, then asked the
+        # area. Our LAST message is the area question, which is what arms the
+        # deterministic fallback.
+        lead.conversation_history = [
+            {'role': 'user', 'content': 'How much stand alone tubs'},
+            {'role': 'assistant', 'content': 'Freestanding tubs start from US$720 all-in.'},
+            {'role': 'user', 'content': 'Can i see pics'},
+            {'role': 'assistant', 'content': 'What area are you in?'},
+        ]
+        lead.save()
+        return lead
+
+    def _answer(self, lead, message, classification):
+        from .views.plumbot.base import Plumbot
+        bot = Plumbot(lead.phone_number, tenant=lead.tenant)
+        bot.appointment = lead
+        with patch('bot.views.plumbot.notification_mixin.send_plumber_notification_email'), \
+             patch('bot.whatsapp_cloud_api.whatsapp_api.send_text_message'), \
+             patch('bot.views.plumbot.base.Plumbot.add_to_google_calendar'), \
+             patch('bot.views.plumbot.base.Plumbot.notify_team'), \
+             patch('bot.views.plumbot.state_mixin.StateMixin._is_excluded_city',
+                   return_value=None), \
+             patch('bot.views.plumbot.base.Plumbot.send_confirmation_message'):
+            reply = bot.generate_response(
+                message, precomputed_classification=classification)
+        lead.refresh_from_db()
+        return reply
+
+    def test_the_suburb_is_captured_even_though_the_model_missed_it(self):
+        lead = self._lead(9971)
+        self._answer(lead, self.MESSAGE, self.MISSED_AREA)
+        self.assertEqual(lead.customer_area, 'Bluffhill')
+
+    def test_the_area_is_not_asked_for_again(self):
+        lead = self._lead(9972)
+        reply = self._answer(lead, self.MESSAGE, self.MISSED_AREA)
+        for asked_again in ('what area are you in', 'which suburb',
+                            'what suburb', 'whereabouts'):
+            self.assertNotIn(asked_again, (reply or '').lower())
+
+    def test_the_lead_own_words_beat_the_normalised_label(self):
+        """The classifier tidies "Need to renovate my bathroom" into "renovate
+        my bathroom", which IS service-type-only and was discarded — so the bot
+        asked them to describe a job they had just described."""
+        lead = self._lead(9973)
+        self._answer(lead, self.MESSAGE, self.MISSED_AREA)
+        self.assertTrue(
+            (lead.project_description or '').strip(),
+            'the job the lead described must not be thrown away')
+
+    def test_a_reply_with_no_place_in_it_still_asks(self):
+        """The fallback INVENTS nothing — a wrong suburb closes the question
+        with a lie, so no match means we ask again."""
+        lead = self._lead(9974)
+        self._answer(lead, 'Need to renovate my bathroom', self.MISSED_AREA)
+        self.assertEqual(lead.customer_area or '', '')
+
+    def test_an_availability_answer_is_never_filed_as_a_suburb(self):
+        lead = self._lead(9975)
+        self._answer(lead, 'whenever suits you', self.MISSED_AREA)
+        self.assertEqual(lead.customer_area or '', '')
+
+
+class AdvanceTheSaleTests(TestCase):
+    """The bot advances the sale unless the lead CLEARLY states otherwise.
+
+    A lead asked the tub price, got it with the budget tie-down, replied
+    "Ok thank you" and received "Got it, no problem." The tie-down went
+    unanswered, nothing was on the diary, and the bot closed the conversation
+    itself (prod, 2026-09-18).
+
+    `close_pleasantry` ENDS a turn, and the owner sign-offs it was lifted from
+    all presuppose a settled outcome. An acknowledgement is not a decision.
+    """
+
+    ACK_PLAN = {
+        'intent': 'in_scope', 'confidence': 'HIGH',
+        'speech_act': 'ack',
+        'next_move': 'close_pleasantry', 'move_confidence': 0.95,
+        'state_update': {'want_level': 'interested'},
+        'extracted': {'area': None, 'availability': None,
+                      'customer_name': None, 'project_description': None},
+    }
+
+    def setUp(self):
+        self.homebase = Tenant.objects.get(slug='homebase')
+
+    def _lead(self, suffix, **kw):
+        fields = dict(tenant=self.homebase, status='pending',
+                      project_type='standalone_tub',
+                      project_description='', customer_area='')
+        fields.update(kw)
+        return make_lead(suffix, **fields)
+
+    def _decide(self, lead, plan=None):
+        from bot.controller import decide_move
+        return decide_move(plan or self.ACK_PLAN, lead)
+
+    # ── the gate ──────────────────────────────────────────────────────────
+    def test_the_bot_does_not_sign_off_on_a_live_sale(self):
+        lead = self._lead(9981)
+        self.assertIsNone(
+            self._decide(lead),
+            'nothing is settled — the turn belongs to the router, which asks '
+            'the next thing the flow needs')
+
+    def test_a_booked_lead_may_still_be_signed_off(self):
+        """The move is not being deleted — it is the right one once there is
+        an outcome to end ON."""
+        lead = self._lead(9982, status='confirmed')
+        self.assertEqual(self._decide(lead), 'close_pleasantry')
+
+    def test_a_parked_lead_may_still_be_signed_off(self):
+        lead = self._lead(9983, internal_notes='[PARKED]')
+        self.assertEqual(self._decide(lead), 'close_pleasantry')
+
+    def test_a_handed_off_lead_may_still_be_signed_off(self):
+        lead = self._lead(9984, internal_notes='[HANDED_OFF]')
+        self.assertEqual(self._decide(lead), 'close_pleasantry')
+
+    def test_an_inactive_lead_may_still_be_signed_off(self):
+        lead = self._lead(9985, is_lead_active=False)
+        self.assertEqual(self._decide(lead), 'close_pleasantry')
+
+    def test_the_resolver_reads_every_stop_state_from_one_place(self):
+        """lead_is_suppressed is reused rather than restated, so a new stop
+        state cannot mean 'settled' here and 'still live' everywhere else."""
+        from bot.controller import _sale_is_open
+        from bot.post_visit import SUPPRESSED_TAGS
+        for offset, tag in enumerate(SUPPRESSED_TAGS):
+            lead = self._lead(99860 + offset, internal_notes=tag)
+            self.assertFalse(_sale_is_open(lead),
+                             f'{tag} must read as settled')
+
+    # ── what it says instead ──────────────────────────────────────────────
+    def test_the_ack_gets_a_forward_moving_reply(self):
+        """Holding the move back is only half the fix — the turn has to
+        actually advance."""
+        lead = self._lead(9987)
+        from .views.plumbot.base import Plumbot
+        bot = Plumbot(lead.phone_number, tenant=lead.tenant)
+        bot.appointment = lead
+        with patch('bot.views.plumbot.notification_mixin.send_plumber_notification_email'), \
+             patch('bot.whatsapp_cloud_api.whatsapp_api.send_text_message'), \
+             patch('bot.views.plumbot.base.Plumbot.add_to_google_calendar'), \
+             patch('bot.views.plumbot.base.Plumbot.notify_team'), \
+             patch('bot.views.plumbot.base.Plumbot.send_confirmation_message'):
+            reply = bot.generate_response(
+                'Ok thank you', precomputed_classification=self.ACK_PLAN)
+        self.assertTrue((reply or '').strip(), 'the turn must not go silent')
+        self.assertNotIn('no problem', (reply or '').lower(),
+                         'a sign-off is what this bug was')
+        # It asks for something, or offers a slot — either advances.
+        self.assertTrue(
+            '?' in (reply or ''),
+            f'the reply must move the sale on, got: {reply!r}')

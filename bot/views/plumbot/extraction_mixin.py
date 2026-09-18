@@ -607,6 +607,26 @@ class ExtractionMixin:
                 # description question first; store it only when the lead repeats
                 # service types AFTER we've specifically asked (retry >= 1).
                 _desc_retry = self._get_question_retry_count('project_description')
+                # The classifier NORMALISES what the lead said: "Need to renovate
+                # my bathroom" comes back as "renovate my bathroom", which IS
+                # service-type-only and is thrown away here — so the lead is asked
+                # to describe a job they have just described. Their own sentence
+                # would have passed. This gate is about the LEAD handing us a bare
+                # category, never about the extractor tidying a real sentence into
+                # one, so when their words carry more than the category, keep their
+                # words. The elif below already does this when the description is
+                # the question in play; this covers detail VOLUNTEERED while they
+                # answer something else (prod, barmak, 2026-09-18).
+                if (_extracted_desc and _desc_retry == 0
+                        and self._is_service_type_only(_extracted_desc)
+                        and incoming_message
+                        and not self._is_service_type_only(incoming_message)
+                        and self._looks_like_project_description_reply(incoming_message)):
+                    print(f"📝 Keeping the lead's own wording over the normalised "
+                          f"'{_extracted_desc}'")
+                    # Their words, minus the half that answered the area
+                    # question — a batched turn carries both.
+                    _extracted_desc = self._job_words_only(incoming_message)
                 if (
                     _extracted_desc and
                     _extracted_desc != 'null' and
@@ -655,10 +675,28 @@ class ExtractionMixin:
                         print(f"✅ Description stored from repeated service type: {_desc}")
 
                 # ── Area — capture passively whenever volunteered ─────────────────────
-                if (extracted_data.get('area') and
-                        extracted_data.get('area') != 'null' and
+                _area_value = (extracted_data.get('area') or '').strip()
+                if _area_value.lower() == 'null':
+                    _area_value = ''
+                # Same deterministic fallback the webhook's early capture runs,
+                # through the SAME resolver — this function is also reached from
+                # the email path, where that choke point never runs. Gated on the
+                # area being the question in play, or on our last message having
+                # asked it: the classifier drops the suburb out of a batched turn
+                # ("Bluffhill." + "Need to renovate my bathroom" arrive as one
+                # message) and nothing else here would catch it.
+                if not _area_value and not self.appointment.customer_area:
+                    try:
+                        if next_question == 'area' or self._we_just_asked_the_area():
+                            _area_value = self._area_from_reply(incoming_message) or ''
+                            if _area_value:
+                                print(f"🧭 Area recovered from the raw reply: {_area_value}")
+                    except Exception:
+                        logger.warning("Deterministic area fallback failed",
+                                       exc_info=True)
+                if (_area_value and
                         not self.appointment.customer_area):
-                    _raw_area = extracted_data['area']
+                    _raw_area = _area_value
                     _excl     = self._is_excluded_city(_raw_area, tenant=getattr(self.appointment, 'tenant', None))
                     if _excl:
                         # Flag as excluded — do NOT save the area
