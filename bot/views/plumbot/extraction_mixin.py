@@ -576,8 +576,12 @@ class ExtractionMixin:
                         extracted_data.get('service_type') != 'null' and
                         not self.appointment.project_type):
                     _raw_svc = extracted_data['service_type']
-                    # Normalise space-separated variant if AI returns it
-                    _norm_svc = _raw_svc.replace(' ', '_')
+                    # Normalise the shapes the AI returns: "bathroom renovation",
+                    # and the display LABEL "Bathroom Renovation", which the old
+                    # case-sensitive check stored raw, so every reader keyed on
+                    # 'bathroom_renovation' missed it (barmak 1158, 1160, 1161).
+                    _norm_svc = (_raw_svc.strip().lower()
+                                 .replace('&', 'and').replace(' ', '_'))
                     if _norm_svc in _VALID_SERVICE_TYPES:
                         self.appointment.project_type = _norm_svc
                     else:

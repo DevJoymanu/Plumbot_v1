@@ -695,6 +695,24 @@ def _answering_the_close(uclass, appointment) -> bool:
     return False
 
 
+def _answering_our_budget_question(appointment) -> bool:
+    """Was our latest message the price tie-down or the budget ask?"""
+    history = getattr(appointment, 'conversation_history', None) or []
+    last = next((t.get('content') or '' for t in reversed(history)
+                 if isinstance(t, dict) and t.get('role') == 'assistant'), '')
+    if not last:
+        return False
+    try:
+        from bot.views.plumbot.response_mixin import ResponseMixin
+        sigs = list(ResponseMixin._price_tiedown_signatures())
+        sigs += [sig for _, sig in ResponseMixin._BUDGET_ASK.values()]
+    except Exception:
+        logger.warning('Could not read the budget signatures', exc_info=True)
+        return False
+    low = last.lower()
+    return any(sig in low for sig in sigs)
+
+
 def _asks_us_something(uclass) -> bool:
     """Did this turn carry a question for us?
 
@@ -778,6 +796,14 @@ def decide_move(uclass, appointment):
         move = apply_plan_path_gate('book_visit', appointment)
 
     if move not in DRIVABLE_MOVES:
+        return None
+
+    # The budget ladder owns the turn after its own two questions (the price
+    # tie-down, then "how much were you hoping to invest?"). Its handlers run
+    # AFTER this in the webhook, so a driven move here would answer a "no" to
+    # the tie-down with the fee objection, or a budget figure with the close.
+    if _answering_our_budget_question(appointment):
+        logger.info('%s held back: the lead is answering our budget question', move)
         return None
 
     # The close is made ONCE. After that the lead is answering it, and the

@@ -380,6 +380,143 @@ CTWA_WINDOW_HOURS = 72.0
 DELAY_SECOND_TOUCH_HOURS = 96  # 4 days
 
 
+# ─── Context the follow-up must read (audit of live sends, 2026-09-19) ──────
+# Every helper below exists because a real follow-up went out without it.
+
+_FOLLOWUP_PREFIXES = ('[AUTO FOLLOW-UP] ', '[AUTOMATIC FOLLOW-UP] ',
+                      '[MANUAL FOLLOW-UP] ', '[BULK MANUAL FOLLOW-UP] ')
+
+
+def not_a_lead_reason(lead) -> str:
+    """Why this conversation is not a lead to chase, or '' when it is.
+
+    Two kinds went out on 2026-09-18/19 and should never have:
+      - a vendor pitching US (a marketing agency's "20 dollar package", barmak
+        1159) was asked twice whether it wanted a bathroom or a kitchen;
+      - a message the bot itself judged out of scope ("Ndasiya grease pamota",
+        homebase 1163, tagged [OOS_PENDING] category=out_of_scope) was told
+        "you got in touch about some work".
+    A lead whose job we already know is always chaseable, whatever else they
+    said along the way.
+    """
+    if (getattr(lead, 'project_type', '') or getattr(lead, 'project_description', '')):
+        return ''
+    user_turns = [str(m.get('content') or '') for m in (getattr(lead, 'conversation_history', None) or [])
+                  if isinstance(m, dict) and m.get('role') == 'user']
+    try:
+        from bot.out_of_scope_handler import is_inbound_sales_pitch
+        if user_turns and any(is_inbound_sales_pitch(t) for t in user_turns):
+            return 'a vendor pitching us, not a customer'
+    except Exception:
+        logger.warning('Sales-pitch check failed', exc_info=True)
+    if '[OOS_PENDING] category=out_of_scope' in (getattr(lead, 'internal_notes', '') or ''):
+        return 'their message was out of scope and nothing plumbing has come since'
+    return ''
+
+
+# What the ad they clicked was about. All eleven barmak ad leads of 2026-09-18
+# came from one BATHROOM ad and were asked "is it a bathroom, a kitchen, or a
+# new installation?"; one answered "I thought you were selling tubs, looks
+# like it's not" and left (1169).
+_AD_SUBJECTS = (('kitchen', ('kitchen',)),
+                ('bathroom', ('bathroom', 'bath', 'tub', 'shower', 'toilet')))
+
+
+def ad_subject(lead):
+    """'bathroom' / 'kitchen' when the lead came from an ad about one, else None."""
+    ref = getattr(lead, 'ctwa_referral', None) or {}
+    if not isinstance(ref, dict):
+        return None
+    text = ' '.join(str(ref.get(k) or '') for k in ('headline', 'body')).lower()
+    for subject, words in _AD_SUBJECTS:
+        if any(re.search(r'\b' + w, text) for w in words):
+            return subject
+    return None
+
+
+def pending_price_tiedown(lead):
+    """The subject noun ('a new tub') of a price tie-down still waiting on the
+    lead, '' when it names none, or None when no tie-down is pending.
+
+    Pending means: one of OUR messages since the lead last spoke carries the
+    tie-down. Our own follow-ups count (they re-ask it), so the run stays on
+    the same question across attempts. Without this the tie-down was answered
+    for them: "which suburb are you in? Also, does the starting price range sit
+    alright with your budget?" (barmak 1158), two questions in one touch.
+    """
+    from bot.views.plumbot.response_mixin import ResponseMixin
+    sigs = ResponseMixin._price_tiedown_signatures()
+    for msg in reversed(getattr(lead, 'conversation_history', None) or []):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get('role') == 'user':
+            return None
+        text = str(msg.get('content') or '')
+        for prefix in _FOLLOWUP_PREFIXES:
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+        low = text.lower()
+        if any(sig in low for sig in sigs):
+            m = re.search(r'invest in (?:for )?((?:a new|the) [a-z]+)', low)
+            if m:
+                return m.group(1)
+            entry = ResponseMixin._invest_subject(text)
+            return entry[2] if entry else ''
+    return None
+
+
+def lead_writes_shona(lead) -> bool:
+    """Did the lead write to us in Shona? Follow-ups answer in their language."""
+    text = ' '.join(str(m.get('content') or '') for m in (lead.conversation_history or [])
+                    if isinstance(m, dict) and m.get('role') == 'user')
+    if not text.strip():
+        return False
+    # AI-primary, like the chat path: the keyword detector needs two markers
+    # and read "Ndoda kuchinja tub nemusinki mubathroom yangu" as English.
+    # Only asked on the AI path, which is already spending a call.
+    try:
+        from bot.repeated_question_detector import detect_language
+        return detect_language(text[-600:]) == 'shona'
+    except Exception:
+        return False
+
+
+def fit_to_template(ai_text: str, template: str) -> str:
+    """Hold the model's version to the shape of the owner's script.
+
+    The model was told to stay close to the template and still added a second
+    question ("Which suburb are you in? Also, does the starting price range sit
+    alright with your budget?", barmak 1158) and a closing line nobody needs
+    ("Once we know that we can tell you how we will sort it."). The owner's
+    scripts themselves are sent whole: some carry two questions on purpose
+    ("what made you reach out? ... Is it a bathroom, kitchen...?") and some end
+    on a statement, so the rule is relative to the script, never absolute:
+      - more questions than the script asks -> the script goes out instead;
+      - the script ends on its question -> anything after the model's last
+        question is cut.
+    """
+    if not ai_text:
+        return template
+    allowed = max(template.count('?'), 1)
+    if ai_text.count('?') > allowed:
+        return template
+    if template.rstrip().endswith('?') and '?' in ai_text:
+        return ai_text[:ai_text.rindex('?') + 1].rstrip()
+    return ai_text
+
+
+class _Subjectless:
+    """A stand-in `self` for ResponseMixin._price_tiedown: the cron has no
+    Plumbot, and the subject is always passed explicitly here."""
+    _PRICE_TIEDOWN = None
+    appointment = None
+
+    def __init__(self):
+        from bot.views.plumbot.response_mixin import ResponseMixin
+        self._PRICE_TIEDOWN = ResponseMixin._PRICE_TIEDOWN
+        self._lang_key = ResponseMixin._lang_key
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 class Command(BaseCommand):
     help = 'At least 4 follow-ups, spread across the lead messaging window — Hormozi timing, value-first messaging'
@@ -1412,6 +1549,9 @@ class Command(BaseCommand):
                 f'{spent} touches since they last messaged '
                 f'(cap {FOLLOWUP_CAP_PER_REPLY})'
             )
+        why_not = not_a_lead_reason(lead)
+        if why_not:
+            return False, why_not
 
         due_at = self._scheduled_due_at(lead)
         if due_at is None:
@@ -1734,7 +1874,15 @@ class Command(BaseCommand):
     # ─── Next question ────────────────────────────────────────────────────────
 
     def _get_next_question(self, lead):
-        if not lead.project_type:
+        # An unanswered price tie-down is the open question, whatever fields
+        # are missing: jumping to the area left the tie-down hanging and the
+        # model asked both.
+        if pending_price_tiedown(lead) is not None:
+            return 'price_tiedown'
+        # A description answers the service question, exactly as it does in
+        # the chat (`_job_is_known`): a lead who said "tub" is not asked which
+        # room it is.
+        if not lead.project_type and not lead.project_description:
             return 'service_type'
         if not lead.project_description:
             return 'project_description'
@@ -1787,7 +1935,10 @@ class Command(BaseCommand):
             'kitchen_renovation':        'kitchen renovation',
             'new_plumbing_installation': 'new plumbing installation',
         }
-        return mapping.get(lead.project_type or '', 'plumbing work')
+        # Rows written before the extraction fix hold the display label
+        # ("Bathroom Renovation"), so normalise before the lookup.
+        key = (lead.project_type or '').strip().lower().replace('&', 'and').replace(' ', '_')
+        return mapping.get(key, 'plumbing work')
 
     # ─── Message generation ───────────────────────────────────────────────────
 
@@ -1848,11 +1999,25 @@ class Command(BaseCommand):
         already_collected = self._already_collected_summary(lead)
         recent_convo      = self._recent_conversation_snippet(lead)
 
-        if next_question == 'complete':
+        if next_question == 'price_tiedown':
+            # The tie-down IS the question. Handing the model the whole price
+            # reply to "rephrase" is how prices, the disclaimer and a second
+            # question ended up in one touch (barmak 1158, 1161).
+            question_block = (
+                'Our price message is still waiting on them. Ask ONLY whether '
+                'the price sounds worth it to them, in the words of the base '
+                'template. Do NOT repeat any price, figure or disclaimer.'
+            )
+        elif next_question == 'complete':
             question_block = (
                 'We have everything we need. Tell them we are ready to lock in their '
                 'appointment the moment they confirm — make it feel effortless to say yes.'
             )
+        elif next_question == 'service_type' and ad_subject(lead):
+            # The template names the ad they clicked. Rephrasing our last
+            # question instead handed the model "a bathroom, a kitchen, or a
+            # new installation?" to reword, and it asked that again (1165).
+            question_block = ''
         elif last_question and attempt <= 3:
             question_block = (
                 f'The last question we asked (unanswered) was:\n"""\n{last_question}\n"""\n\n'
@@ -1868,10 +2033,15 @@ class Command(BaseCommand):
             else '1 to 2 sentences only — keep it short and human.'
         )
 
+        ad = ad_subject(lead)
+        shona = lead_writes_shona(lead)
+
         prompt = f"""You are writing a WhatsApp follow-up message for {business_name_for(lead)} — a professional plumbing company in Zimbabwe.
 
 LEAD CONTEXT:
 - Interest: {service}
+- How they found us: {f'they tapped our Facebook ad about a {ad}, so the {ad} is what they came for' if ad else 'not an ad we can read'}
+- Language: {'they wrote in SHONA, so write the whole message in Shona' if shona else 'English'}
 - Area: {area or 'not yet shared'}
 - Last heard from them: {time_ref}
 - This is follow-up attempt #{attempt} of {max_followups_for(lead)} (spread across {'three days — they came from a Facebook ad, so the window is 72 hours' if is_ctwa_lead(lead) else 'the 24 hours since they last messaged'})
@@ -1892,11 +2062,11 @@ BASE TEMPLATE (your starting point — do not stray far from this):
 RULES — every single one must be followed:
 1. Stay close to the base template — same intent, same question, same tone
 2. You may lightly rephrase for naturalness but do not invent new angles or content
-3. Open with "Hi there," — we do not have their name, never use one
+3. Open with {'"Mhoro,"' if shona else '"Hi there,"'} — we do not have their name, never use one
 4. NEVER ask for the customer's name
-5. One question maximum — and NEVER ask for something already listed under ALREADY COLLECTED
+5. Ask the base template's question(s) and NO others. Never restate prices, figures or disclaimers from the conversation, and never add a closing line the template does not have. NEVER ask for something already listed under ALREADY COLLECTED
 6. {length_instruction}
-7. Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")
+7. {'Shona, as the customer wrote; keep plumbing words they would use in English (tub, shower, geyser) in English' if shona else 'Zimbabwean English (e.g. "sorted" not "handled", "keen" not "excited")'}
 8. Zero markdown, zero bold, zero bullet points
 9. No emojis, not one, on any attempt
 10. Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung).
@@ -1931,8 +2101,9 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
         )
 
         from bot.utils import strip_emojis, strip_dashes
-        message = strip_dashes(
-            strip_emojis(raw.strip().replace('**', '').replace('__', '')))
+        message = fit_to_template(
+            strip_dashes(strip_emojis(raw.strip().replace('**', '').replace('__', ''))),
+            template_text)
 
         # Guard: if DeepSeek returned something too short to be a real follow-up,
         # fall back to the template so we never send a bare "Hi" or empty string.
@@ -1983,29 +2154,100 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
         # Never empty: _service_label falls back to 'plumbing work', so the copy
         # below can always finish its sentence.
         job = job_phrase(lead) or self._service_label(lead)
+        # Their own words, unless their words are a paragraph: "we can come and
+        # see the place for the renovation of small bathroom on a farm in
+        # Madziva; install sink, toilet, freestanding bath, shower and give you
+        # an exact price" is what the whole description does to a sentence.
+        if len(job.split()) > 6:
+            job = self._service_label(lead)
         name = (getattr(lead, 'customer_name', '') or '').strip()
         hi = f'Hi {name}, ' if name else 'Hi there, '
         area = f' in {lead.customer_area}' if lead.customer_area else ''
 
+        # The price tie-down still waiting on them (see pending_price_tiedown):
+        # the same easy yes, named for the thing we priced, never a new ask.
+        noun = pending_price_tiedown(lead) or ''
+        from bot.views.plumbot.response_mixin import ResponseMixin
+        tiedown = ResponseMixin._price_tiedown(
+            _Subjectless(), 'english', subject=noun or None)
+        keen_on = noun or 'going ahead'
+
+        # {service} in the owner's script: the service TYPE in words, as it was
+        # in April ("your bathroom renovation slot"), never the lead's free text.
+        from bot.models import Appointment as _Appt
+        _type_key = ((lead.project_type or '').strip().lower()
+                     .replace('&', 'and').replace(' ', '_'))
+        service = ((dict(_Appt.PROJECT_TYPE_CHOICES).get(_type_key, '')
+                    if _type_key not in ('', 'other') else '').lower()
+                   or 'plumbing project')
+        # "around Harare" is the TENANT's own city, and nothing when it has
+        # none on file (absent means omit, never borrow Homebase's).
+        try:
+            from bot.tenant_config import get_config
+            _city = get_config(getattr(lead, 'tenant', None)).location_city
+        except Exception:
+            _city = ''
+        recent_where = area or (f' around {_city}' if _city else '')
+
+        # They clicked an ad about a bathroom (or a kitchen): that IS the
+        # service, so ask which part of it, never which room.
+        ad = ad_subject(lead)
+        ad_parts = {'bathroom': 'like the tub or the shower',
+                    'kitchen': 'like the sink'}.get(ad, '')
+
         templates = {
-            # We do not know the service yet, so there is nothing to say back
-            # except that they got in touch. The choice is the ask.
+            'price_tiedown': [
+                f"{hi}just on the prices we sent{' for ' + noun if noun else ''}. {tiedown}",
+                f"{hi}happy to go through the prices if anything was unclear. {tiedown}",
+                f"{hi}still keen on {keen_on}?",
+                f"Still keen on {keen_on}?",
+            ],
+            # -- THE OWNER'S SCRIPT (restored 2026-09-19) ----------------------
+            # service_type, area, availability and complete are the owner's own
+            # April 2026 copy, word for word apart from two mechanical changes:
+            # " // " became a blank line, and each dash became the full stop or
+            # comma it stood for (dashes are banned in customer copy, and the
+            # automated pass of 2026-09-02 mangled exactly these lines). The
+            # owner chose this over the 2026-09-09 contextual rewrite knowingly,
+            # the "booking up" lines and "we price the job upfront" included.
+            # Do not reword it; change it only when the owner asks. Pinned by
+            # the `owner script` cases in TEST 0.
             'service_type': [
                 (
-                    f"{hi}you got in touch about some work{area} and I never "
-                    f"caught what sort. Is it a bathroom, a kitchen, or a new "
-                    f"installation?"
+                    f"{hi}what made you reach out? Most people don't message "
+                    f"unless something's actually bothering them about their "
+                    f"space.\n\nIs it a bathroom, kitchen, or new installation "
+                    f"you're after?"
                 ),
                 (
-                    f"{hi}so I can point you the right way, is it a bathroom, a "
-                    f"kitchen, or a new installation you are after?"
+                    "Hey! Just so I can point you in the right direction, are "
+                    "you looking at a bathroom renovation, kitchen reno, or a "
+                    "new installation?\n\nWe price the job upfront so you know "
+                    "exactly what you're paying before anything starts."
                 ),
                 (
-                    f"{hi}still keen to get this sorted? Bathroom, kitchen, or a "
-                    f"new installation?"
+                    "We're getting booked up this week. If you're still keen, "
+                    "which service were you after? Bathroom, kitchen, or new "
+                    "plumbing installation?"
                 ),
                 (
-                    f"Bathroom, kitchen, or a new installation?"
+                    "Still looking for a plumber?"
+                ),
+            ],
+            'ad_service': [
+                (
+                    f"{hi}you got in touch from our {ad} ad. Is it the whole "
+                    f"{ad} you want redone, or one thing in it, {ad_parts}?"
+                ),
+                (
+                    f"{hi}for your {ad}, are you after a full redo or just one "
+                    f"or two things changed?"
+                ),
+                (
+                    f"{hi}still keen to get the {ad} sorted?"
+                ),
+                (
+                    f"Still keen on the {ad}?"
                 ),
             ],
             'project_description': [
@@ -2026,55 +2268,60 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             ],
             'area': [
                 (
-                    f"{hi}I have the {job} down. I just need your area so I know "
-                    f"if we cover you. Which suburb are you in?"
+                    f"{hi}I just need your area to finish the booking. Which "
+                    f"suburb are you based in?"
                 ),
                 (
-                    f"{hi}which suburb is the {job} in? That is the last thing I "
-                    f"need before I can get you a price."
+                    f"{hi}we've done a number of renovations{recent_where} "
+                    f"recently, just need your suburb to match you with the "
+                    f"right team."
                 ),
                 (
-                    f"{hi}whereabouts is the {job}?"
+                    "Almost done. We're booking up this week. Which suburb are "
+                    "you in so we can lock in your slot?"
                 ),
                 (
-                    f"Which suburb is the {job} in?"
+                    "Which area are you in?"
                 ),
             ],
             'availability': [
                 (
-                    f"{hi}we can come and see the place for the {job} and give "
-                    f"you an exact price. What day suits you?"
+                    f"{hi}what day works best for the free site visit? We have "
+                    f"slots this week and next."
                 ),
                 (
-                    f"{hi}for the {job}, nothing is locked in until you say so "
-                    f"and you can always move it. Would earlier in the week or "
-                    f"later suit you better?"
+                    f"{hi}locking in a slot costs nothing and you can always "
+                    f"reschedule. Would tomorrow or later this week work for "
+                    f"the visit?"
                 ),
                 (
-                    f"{hi}what day works for the visit for the {job}?"
+                    "We're getting tight on slots this week. Which day works "
+                    "for the site visit?"
                 ),
                 (
-                    f"What day works to come and see the {job}?"
+                    "Want to lock in a time?"
                 ),
             ],
             'complete': [
                 (
-                    f"{hi}everything is set on our side for the {job}{area}. "
-                    f"Just say the word and I will confirm your slot."
+                    f"{hi}everything's set on our end for your {service}. Just "
+                    f"say the word and I'll confirm your slot."
                 ),
                 (
-                    f"{hi}your {job} slot is ready to confirm. What time works "
-                    f"best for you?"
+                    f"{hi}your {service} slot is ready. The price is fixed once "
+                    f"we confirm. What's the best time to lock it in?"
                 ),
                 (
-                    f"{hi}shall I lock in the slot for the {job}?"
+                    f"We're booking up. Shall I lock in your {service} slot?"
                 ),
                 (
-                    f"Still want to get the {job} sorted?"
+                    f"Still want to get the {service} sorted?"
                 ),
             ],
         }
 
+        if next_question == 'service_type' and ad:
+            next_question = 'ad_service'
         options = templates.get(next_question, templates['complete'])
         idx = min(attempt - 1, len(options) - 1)
         message = options[idx]

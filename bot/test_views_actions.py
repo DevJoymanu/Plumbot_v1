@@ -3379,7 +3379,9 @@ class OfferPageTests(TestCase):
         self.assertContains(
             page, 'Our Bathroom makeover special is US$800 — a freestanding tub and side chamber.')
         self.assertContains(page, 'sees the space')
-        self.assertContains(page, 'That sit alright with your budget?')
+        # The soft value tie-down (owner rule, 2026-09-19), never a budget ask.
+        self.assertContains(page, 'willing to invest in')
+        self.assertNotContains(page, 'your budget')
         # Homebase's own offer row is untouched by acme's edits.
         self.assertTrue(TenantPriceItem.objects.filter(
             tenant=self.homebase, family='package', variant='facebook').exists())

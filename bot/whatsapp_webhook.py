@@ -3319,6 +3319,13 @@ def finalise_outbound(reply: str, appointment, message_body: str = None,
     if _unbacked:
         print("🛑 Booking claim dropped - this lead is not confirmed")
 
+    # A blunt "What is your budget?" becomes the soft value tie-down (owner
+    # rule, 2026-09-19), whichever model path wrote it.
+    from bot.views.plumbot.response_mixin import soften_budget_question
+    reply, _softened = soften_budget_question(reply, appointment)
+    if _softened:
+        print("🪶 Blunt budget question swapped for the value tie-down")
+
     # Never promise a free visit a tenant charges for. The message is passed so
     # an explicit "what does the visit cost?" gets the figure again.
     reply, _fee_fixed = strip_free_visit_claims(reply, appointment, message_body)
@@ -4371,8 +4378,12 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
 
         # -- STEP 1a: Budget objection after a price tie-down -------------------
         # Must run BEFORE the OOS/complaint step: a soft decline ("not really") to
-        # "That sit alright with your budget?" otherwise gets mis-flagged as a
-        # complaint and deflected to the plumber.
+        # the price tie-down otherwise gets mis-flagged as a complaint and
+        # deflected to the plumber.
+        #
+        # The ladder (owner rule, 2026-09-19): tie-down "does that sound like
+        # something you'd be willing to invest in?" -> a no gets "how much were
+        # you hoping to invest?" -> their figure gets what we do at or under it.
         _budget_reply = None
         if (plumbot._last_assistant_was_price_tiedown()
                 and plumbot._is_budget_decline(message_body)):
@@ -4380,8 +4391,17 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 detect_language_simple(message_body)
             )
             print(f"💸 Budget objection (webhook): '{message_body[:60]}'")
+        elif plumbot._last_assistant_was_budget_ask():
+            _budget_figure = plumbot._budget_figure(message_body)
+            if _budget_figure:
+                _budget_reply = plumbot._build_budget_options_reply(
+                    _budget_figure, detect_language_simple(message_body))
+                print(f"💸 Budget figure {_budget_figure}: options offered")
         if _budget_reply is not None:
-            _budget_reply = finalise_outbound(_budget_reply, appointment, message_body)
+            # Fixed copy built from the tenant's own figures: the reader has
+            # nothing contextual to fix, and must not reword the ask.
+            _budget_reply = finalise_outbound(_budget_reply, appointment,
+                                              message_body, check=False)
             appointment.add_conversation_message("assistant", _budget_reply)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at

@@ -182,6 +182,13 @@ def _fences_hold(draft: str, refined: str) -> tuple:
         return False, 'invented a figure: %s' % ', '.join(sorted(added))
 
     low_d, low_r = draft.lower(), refined.lower()
+    # Never turn our close into a demand for their budget. "What is your
+    # budget?" went out in place of the soft price tie-down (prod, 2026-09-19);
+    # the budget is only ever asked after a no, by deterministic copy.
+    _outright = re.compile(r"\bwhat(?:'s|\s+is)\s+(?:your|the)\s+budget\b"
+                           r"|\byour\s+budget\s*\?")
+    if _outright.search(low_r) and not _outright.search(low_d):
+        return False, 'asked their budget outright'
     for word in _PROMISE_WORDS:
         if word in low_r and word not in low_d:
             return False, 'added a promise: %s' % word

@@ -66,17 +66,30 @@ question, never the identical pitch again (`_already_sent_job_quote_pitch`).
 - Break down supply + install (figures from `_FAMILY_LABOUR_BREAKDOWN`).
 - Disclaimer wording: "These are approximate starting prices — your exact quote
   is confirmed once the plumber sees the space." No "site visit" phrasing.
-- Close with the budget tie-down `_price_tiedown` ("That sit alright with your
-  budget?") — never an open "What did you have in mind?". After price comes
-  Qualify, and a yes here hands straight off to the visit close.
+- Close with the soft VALUE tie-down `_price_tiedown` ("Does that sound like
+  something you'd be willing to invest in for a new tub?"), named for the thing
+  priced via `_invest_subject`. Never "What is your budget?" (owner, 2026-09-19:
+  it reads as a demand) and never an open "What did you have in mind?". After
+  price comes Qualify, and a yes here hands straight off to the visit close.
+  `soften_budget_question` in `finalise_outbound` swaps any blunt budget
+  question a model path writes, and the reply check's fence refuses to write one.
 - New product price replies route their closer through `_product_price_close`
   or `_get_pricing_followup_prompt` — never hardcode an open question.
 
-**Budget objection = reframe, never negotiate.** A "no" to the budget tie-down
-gets the all-in reframe ("That's everything in — supply, install, fully fitted,
-no extras on the day...") and an offer of the exact number for their space.
-Never discount, never ask their budget figure (that flow was removed on
-purpose — don't reintroduce it).
+**The budget ladder (owner rule, 2026-09-19; replaces the all-in reframe).**
+1. The value tie-down above.
+2. A "no" to it (`_is_budget_decline`) gets `_build_budget_ask`: "No problem.
+   How much were you hoping to invest in a new tub?" Same subject, one question.
+3. Their figure (`_budget_figure`) gets `_build_budget_options_reply`: what we
+   do AT OR UNDER it, closest first, three at most, from the tenant's OWN price
+   rows for that subject; nothing that fits names our most affordable option;
+   no prices on file names no figure but theirs.
+
+Never discount and never invent a figure. The budget is asked ONLY after a no,
+only by that deterministic copy. The controller stands aside after either
+question (`controller._answering_our_budget_question`), because the ladder's
+handlers run after it in the webhook. Pinned by the `budget ladder` cases in
+TEST 0 and `scenarios/budget_ladder_soft_close.txt`.
 
 ## The one recurring bug: customer's words override gates
 
@@ -172,7 +185,7 @@ never end with nothing in their hands either:
 - **Self-initiated defer** ("I'll get in touch over the weekend") → park
   gracefully with a check-back date; do NOT pressure for a slot even if the
   timeframe is near (`_is_self_initiated_defer` gates the booking pivot).
-- Never fabricate scarcity or urgency — honest slot availability only.
+- Never fabricate scarcity or urgency — honest slot availability only. **One owner-approved exception:** the follow-up scripts in `send_followups._template_message` ("We're getting booked up this week", "tight on slots") are the owner's own April copy, restored on 2026-09-19. Leave them; do not extend them to other copy.
 
 ## Domain facts that keep getting wrong
 

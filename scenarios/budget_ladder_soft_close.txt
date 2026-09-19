@@ -1,0 +1,30 @@
+# The price close is a soft value yes, never "What is your budget?"
+# (owner rule, 2026-09-19).
+#
+# Prod: "Morning how much to renovate a bathroom" got "Bathroom renovation
+# starts from US$900 ... What is your budget?", which reads as a demand. The
+# owner's ladder:
+#   1. "Does that sound like something you'd be willing to invest in for a
+#      new bathroom?"
+#   2. a no gets "How much were you hoping to invest in a new bathroom?"
+#   3. their figure gets what we do at or under it, from the tenant's own
+#      price rows, never a discount.
+# Pinned deterministically by the `budget ladder` cases in TEST 0; this is the
+# live check that the model paths do not write the blunt ask back in.
+
+> Morning how much to renovate a bathroom
+expect: US$
+expect: willing to invest
+reject: what is your budget
+reject: your budget?
+
+> No
+expect: hoping to invest
+reject: everything in
+reject: discount
+reject: what is your budget
+
+> About 500
+expect: US$500
+reject: discount
+reject: what is your budget

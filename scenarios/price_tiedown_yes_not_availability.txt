@@ -15,7 +15,7 @@
 
 > how much tub
 expect: US$
-expect: budget
+expect: willing to invest
 
 # The tub is now captured as the job off the price ask, so the affirmation moves
 # the lead forward (area / visit) instead of being told we sell tubs — and the

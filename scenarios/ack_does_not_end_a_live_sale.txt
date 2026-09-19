@@ -21,7 +21,7 @@ expect: how may we assist you on plumbing services
 
 > How much is the tub
 expect: US$
-expect: budget
+expect: willing to invest
 
 # THE BUG: this used to be the end of the conversation.
 > Ok thank you

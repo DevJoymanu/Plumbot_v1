@@ -2281,7 +2281,7 @@ try:
     ))._next_forward_question("english", scope=[('shower', 2)], has_accessories=True)
     results.log(
         "forward Q: no prior tie-down -> asks for a yes first (budget tie-down)",
-        "with your budget" in _fq_td.lower(),
+        "willing to invest" in _fq_td.lower(),
         got=str(_fq_td),
     )
     # Transcript case: area answered (Greendale) AND a day already offered
@@ -2431,7 +2431,7 @@ try:
     )
     results.log(
         "pricing close: no prior tie-down -> budget tie-down first",
-        "with your budget" in _td1.lower(),
+        "willing to invest" in _td1.lower(),
         got=str(_td1),
     )
     # Scope stage + known items, tie-down already sent -> confirm-intent names items.
@@ -3165,7 +3165,7 @@ try:
     _pc1 = _FakeSelfFollowup("project_description")._product_price_close("english")
     results.log(
         "product price close: no prior tie-down -> budget tie-down first",
-        "with your budget" in _pc1.lower(),
+        "willing to invest" in _pc1.lower(),
         got=str(_pc1),
     )
     _pc2 = _FakeSelfFollowup(
@@ -3187,13 +3187,19 @@ try:
         _pc3 == "What did you have in mind?",
         got=str(_pc3),
     )
-    # Price replies close on the budget tie-down (business preference), EN + Shona.
+    # Price replies close on a soft VALUE tie-down named for what they asked
+    # about, never on their wallet (owner rule, 2026-09-19: "What is your
+    # budget?" read as a demand). EN + Shona.
     _pt_en = _FakeSelfFollowup("service_type")._price_tiedown("english")
     _pt_sn = _FakeSelfFollowup("service_type")._price_tiedown("shona")
+    _pt_tub = _FakeSelfFollowup("service_type")._price_tiedown("english", subject="standalone_tub")
     results.log(
-        "price tie-down: budget-fit close (EN + Shona)",
-        _pt_en == "That sit alright with your budget?" and "budget" in _pt_sn.lower(),
-        got=f"en={_pt_en!r} sn={_pt_sn!r}",
+        "price tie-down: a value yes, named for the thing priced (EN + Shona)",
+        _pt_en.startswith("Does that sound like something you'd be willing to invest in")
+        and _pt_tub == "Does that sound like something you'd be willing to invest in for a new tub?"
+        and "budget" not in (_pt_en + _pt_tub).lower()
+        and "kuisa mari iyoyo" in _pt_sn,
+        got=f"en={_pt_en!r} tub={_pt_tub!r} sn={_pt_sn!r}",
     )
     # The budget tie-down counts as a tie-down for stacking purposes.
     results.log(
@@ -3292,16 +3298,13 @@ try:
         and _nt._last_assistant_was_price_tiedown() is False,
         got=f"after_budget={_bt._last_assistant_was_price_tiedown()} after_other={_nt._last_assistant_was_price_tiedown()}",
     )
-    _bo = _bfake._handle_budget_objection("english")
-    results.log(
-        "budget objection: reframes all-in value, offers the exact number (no negotiating)",
-        # Case-insensitive: the copy reads "That's everything in. Supply,
-        # install, ..." now that the dash became a full stop, and the
-        # assertion is about what the reframe SAYS, not how it is cased.
-        ("everything in" in _bo and "supply, install" in _bo.lower()
-         and "no extras on the day" in _bo and "exact number for your space" in _bo),
-        got=_bo,
-    )
+    # The retired wording is still recognised, so a lead mid-conversation
+    # still climbs the ladder, and so is the new one.
+    _bt_new = _FakeSelfFollowup("project_description", history=_bot(
+        "Tub from US$160. Does that sound like something you'd be willing "
+        "to invest in for a new tub?"))
+    results.log("budget objection: the new tie-down is detected too",
+                _bt_new._last_assistant_was_price_tiedown() is True)
     # After a scope answer ("a tub and chamber"), advance to the next booking field
     # using the EXACT approved script — never a paraphrase, never a price.
     _adv_area = _FakeSelfFollowup("area")._advance_after_scope("english")
@@ -5629,22 +5632,68 @@ try:
         tenant = None
         conversation_history = []
 
-    _job_banks = ('project_description', 'area', 'availability', 'complete')
-    for _bank in _job_banks:
-        for _attempt in (1, 2, 3, 4):
-            _msg = _fu2._template_message(_CtxLead(), _bank, _attempt)['message']
-            results.log(f"followup context [{_bank} #{_attempt}]: names their own job",
-                        'full ensuite refit' in _msg, got=_msg[:90])
-    for _bank in ('service_type',) + _job_banks:
-        for _attempt in (1, 2, 3, 4):
-            _msg = _fu2._template_message(_CtxLead(), _bank, _attempt)['message'].lower()
-            for _invented in ('booking up', 'tight on slots', 'only a few'):
-                results.log(f"followup context [{_bank} #{_attempt}]: no invented urgency",
-                            _invented not in _msg, got=_msg[:90])
-            for _claim in ('price the job upfront', 'price is fixed',
-                           'costs nothing', 'free site visit'):
-                results.log(f"followup context [{_bank} #{_attempt}]: no tenant's USP",
-                            _claim not in _msg, got=_msg[:90])
+    # project_description is still the contextual copy and names their job.
+    for _attempt in (1, 2, 3, 4):
+        _msg = _fu2._template_message(_CtxLead(), 'project_description', _attempt)['message']
+        results.log(f"followup context [project_description #{_attempt}]: names their own job",
+                    'full ensuite refit' in _msg, got=_msg[:90])
+
+    # THE OWNER'S SCRIPT, word for word (owner decision, 2026-09-19). The owner
+    # chose their April copy over the 2026-09-09 contextual rewrite, including
+    # the "booking up" lines and "we price the job upfront". These cases exist
+    # so a later session cannot "fix" it back: change the script only when the
+    # owner asks, and change these with it.
+    _OWNER_SCRIPT = {
+        'service_type': [
+            "Hi Rudo, what made you reach out? Most people don't message unless "
+            "something's actually bothering them about their space.\n\nIs it a "
+            "bathroom, kitchen, or new installation you're after?",
+            "Hey! Just so I can point you in the right direction, are you looking at "
+            "a bathroom renovation, kitchen reno, or a new installation?\n\nWe price "
+            "the job upfront so you know exactly what you're paying before anything starts.",
+            "We're getting booked up this week. If you're still keen, which service "
+            "were you after? Bathroom, kitchen, or new plumbing installation?",
+            "Still looking for a plumber?",
+        ],
+        'area': [
+            "Hi Rudo, I just need your area to finish the booking. Which suburb are "
+            "you based in?",
+            "Hi Rudo, we've done a number of renovations in Borrowdale recently, just "
+            "need your suburb to match you with the right team.",
+            "Almost done. We're booking up this week. Which suburb are you in so we "
+            "can lock in your slot?",
+            "Which area are you in?",
+        ],
+        'availability': [
+            "Hi Rudo, what day works best for the free site visit? We have slots "
+            "this week and next.",
+            "Hi Rudo, locking in a slot costs nothing and you can always reschedule. "
+            "Would tomorrow or later this week work for the visit?",
+            "We're getting tight on slots this week. Which day works for the site visit?",
+            "Want to lock in a time?",
+        ],
+        'complete': [
+            "Hi Rudo, everything's set on our end for your bathroom renovation. Just "
+            "say the word and I'll confirm your slot.",
+            "Hi Rudo, your bathroom renovation slot is ready. The price is fixed once "
+            "we confirm. What's the best time to lock it in?",
+            "We're booking up. Shall I lock in your bathroom renovation slot?",
+            "Still want to get the bathroom renovation sorted?",
+        ],
+    }
+    for _bank, _lines in _OWNER_SCRIPT.items():
+        for _attempt, _want in enumerate(_lines, 1):
+            _got = _fu2._template_message(_CtxLead(), _bank, _attempt)['message']
+            results.log(f"owner script [{_bank} #{_attempt}]: word for word",
+                        _got == _want, expected=_want, got=_got)
+            results.log(f"owner script [{_bank} #{_attempt}]: no dash, no emoji",
+                        ' - ' not in _got and '\u2014' not in _got and '\u2013' not in _got
+                        and all(ord(c) < 0x2500 for c in _got), got=_got)
+    results.log("owner script: the city is the tenant's own, and omitted when absent",
+                _fu2._template_message(
+                    type('_NoArea', (_CtxLead,), {'customer_area': None})(), 'area', 2
+                )['message'] == ("Hi Rudo, we've done a number of renovations recently, "
+                                 "just need your suburb to match you with the right team."))
     results.log("followup context: the lead is greeted by name",
                 'Rudo' in _fu2._template_message(_CtxLead(), 'area', 1)['message'],
                 got=_fu2._template_message(_CtxLead(), 'area', 1)['message'][:90])
@@ -5652,6 +5701,121 @@ try:
     results.log("followup context: a nameless lead gets no placeholder",
                 'None' not in _fu2._template_message(_nameless, 'area', 1)['message'],
                 got=_fu2._template_message(_nameless, 'area', 1)['message'][:90])
+
+    # -- Audit of the live sends, 2026-09-19 -----------------------------------
+    # Each case is a follow-up that really went out and should not have.
+    from bot.management.commands import send_followups as _sfm
+
+    def _ctx(**kw):
+        base = dict(id=78, customer_name='', project_type=None,
+                    project_description=None, customer_area=None, tenant=None,
+                    conversation_history=[], internal_notes='', ctwa_referral=None)
+        base.update(kw)
+        return _types.SimpleNamespace(**base)
+
+    _BATH_AD = {'headline': 'chat with us',
+                'body': "Is the bathroom in your head anything like the one you've got?"}
+
+    # 1. A lead from a bathroom ad is asked about the bathroom, never which room.
+    _ad = _ctx(ctwa_referral=_BATH_AD, conversation_history=[
+        {'role': 'user', 'content': 'Hello! Can I get more info on this?'},
+        {'role': 'assistant', 'content': 'Hello,\nHow may we assist you on plumbing services'}])
+    results.log("followup audit: the ad they clicked is read", _sfm.ad_subject(_ad) == 'bathroom')
+    for _attempt in (1, 2, 3, 4):
+        _m = _fu2._template_message(_ad, _fu2._get_next_question(_ad), _attempt)['message']
+        results.log(f"followup audit: an ad lead is asked about the bathroom (#{_attempt})",
+                    'bathroom' in _m and 'kitchen' not in _m
+                    and 'new installation' not in _m, got=_m)
+    results.log("followup audit: a lead with no ad keeps the room question",
+                'kitchen' in _fu2._template_message(_ctx(), 'service_type', 1)['message'])
+    results.log("followup audit: a description answers the service question",
+                _fu2._get_next_question(_ctx(project_description='tub')) == 'area')
+
+    # 2. An unanswered price tie-down is re-asked alone, named for the thing.
+    _priced = _ctx(project_type='bathroom_renovation', project_description='tub',
+                   conversation_history=[
+        {'role': 'user', 'content': 'How much are your tubs'},
+        {'role': 'assistant', 'content': 'Standard built-in tubs are from US$235 all-in. '
+                                         "Does that sound like something you'd be willing "
+                                         'to invest in for a new tub?'},
+        {'role': 'assistant', 'content': '[AUTO FOLLOW-UP] Hi there, still keen on a new tub?'}])
+    results.log("followup audit: a pending tie-down is the next question, not the area",
+                _fu2._get_next_question(_priced) == 'price_tiedown'
+                and _sfm.pending_price_tiedown(_priced) == 'a new tub')
+    _legacy = _ctx(conversation_history=[
+        {'role': 'assistant', 'content': 'Standard built-in tubs are from US$235. '
+                                         'That sit alright with your budget?'}])
+    results.log("followup audit: the retired tie-down is still recognised",
+                _sfm.pending_price_tiedown(_legacy) == 'a new tub')
+    _answered = _ctx(conversation_history=list(_priced.conversation_history)
+                     + [{'role': 'user', 'content': 'yes'}])
+    results.log("followup audit: a tie-down they answered is not pending",
+                _sfm.pending_price_tiedown(_answered) is None)
+    for _attempt in (1, 2, 3, 4):
+        _m = _fu2._template_message(_priced, 'price_tiedown', _attempt)['message']
+        results.log(f"followup audit: the tie-down touch is one question, no price (#{_attempt})",
+                    _m.count('?') == 1 and 'US$' not in _m and 'a new tub' in _m
+                    and 'suburb' not in _m.lower(), got=_m)
+    results.log("followup audit: its first touch keeps the ladder's signature",
+                'willing to invest' in _fu2._template_message(_priced, 'price_tiedown', 1)['message'])
+
+    # 3. The model is held to the shape of the owner's script. The scripts go
+    #    out whole (some ask two questions on purpose, some end on a statement).
+    _one_q = "Hi there, I just need your area to finish the booking. Which suburb are you based in?"
+    results.log("followup audit: a model that adds a question gets the script instead",
+                _sfm.fit_to_template(
+                    "Hi there, which suburb are you in? Also, does the starting price "
+                    "sit alright with your budget?", _one_q) == _one_q)
+    results.log("followup audit: trailing padding after the last question is cut",
+                _sfm.fit_to_template(
+                    "Hi there, which suburb are you in? Once we know that we can tell you more.",
+                    _one_q) == "Hi there, which suburb are you in?")
+    _two_q = ("Hi there, what made you reach out? Most people don't message unless "
+              "something's actually bothering them about their space.\n\nIs it a "
+              "bathroom, kitchen, or new installation you're after?")
+    results.log("followup audit: a script with two questions keeps both",
+                _sfm.fit_to_template(_two_q, _two_q) == _two_q)
+    _stmt = ("Hey! Just so I can point you in the right direction, are you looking at "
+             "a bathroom renovation, kitchen reno, or a new installation?\n\nWe price "
+             "the job upfront so you know exactly what you're paying before anything starts.")
+    results.log("followup audit: a script that ends on a statement keeps it",
+                _sfm.fit_to_template(_stmt, _stmt) == _stmt)
+
+    # 4. Not every conversation is a lead.
+    _vendor = _ctx(conversation_history=[{'role': 'user', 'content':
+        "Good afternoon, I'm from Sunrise Digital Marketing Agency. We have a 20 dollar "
+        "package which contains 3 social media post"}])
+    _oos = _ctx(internal_notes='[OOS_PENDING] category=out_of_scope original=Ndasiya%20grease',
+                conversation_history=[{'role': 'user', 'content': 'Ndasiya grease pamota'}])
+    results.log("followup audit: a vendor pitching us is not chased",
+                bool(_sfm.not_a_lead_reason(_vendor)))
+    results.log("followup audit: an out-of-scope message is not chased",
+                bool(_sfm.not_a_lead_reason(_oos)))
+    results.log("followup audit: a known job is always chaseable",
+                _sfm.not_a_lead_reason(_ctx(project_type='bathroom_renovation',
+                                            internal_notes=_oos.internal_notes)) == '')
+    _gate_src = _insp_fu.getsource(_fu2._is_ready_for_followup) if '_insp_fu' in dir() else \
+        __import__('inspect').getsource(_fu2._is_ready_for_followup)
+    results.log("followup audit: the readiness check asks not_a_lead_reason",
+                'not_a_lead_reason' in _gate_src)
+    _ai_src = __import__('inspect').getsource(_fu2._ai_message)
+    results.log("followup audit: the model's version is fitted to the script",
+                'fit_to_template(' in _ai_src)
+
+    # 5. Template wording that contradicted the conversation.
+    _all = ' '.join(_fu2._template_message(_CtxLead(), b, a)['message']
+                    for b in ('area', 'availability', 'complete') for a in (1, 2, 3, 4))
+    results.log("followup audit: no 'before I can get you a price', no vague earlier/later",
+                'get you a price' not in _all and 'earlier in the week or' not in _all
+                and 'What time works' not in _all, got=_all[:120])
+    _long = _ctx(project_type='bathroom_renovation', project_description=(
+        'renovation of small bathroom on a farm in Madziva; install sink, toilet'))
+    _lm = _fu2._template_message(_long, 'project_description', 1)['message']
+    results.log("followup audit: a paragraph of description is not pasted into the sentence",
+                'Madziva' not in _lm and 'bathroom renovation' in _lm, got=_lm)
+    results.log("followup audit: a stored display label still reads as the service",
+                _fu2._service_label(_ctx(project_type='Bathroom Renovation'))
+                == 'bathroom renovation')
 
     # Hotter leads are chased sooner than colder ones, in every band they share.
     _hot_offs = _fu2._followup_offsets(_WindowLead(status=_LS2.VERY_HOT))
@@ -6747,7 +6911,8 @@ try:
                 got=_sn_r[:60])
     for _r in (_basin, _toilet, _tub, _free):
         results.log("replace: one question, no dash, closes on the budget tie-down",
-                    _r.count('?') == 1 and ' - ' not in _r and _r.endswith("budget?"),
+                    _r.count('?') == 1 and ' - ' not in _r
+                    and "willing to invest in for a new" in _r and _r.endswith("?"),
                     got=_r[-80:])
     import inspect as _insp_r
     results.log("replace: the price handler asks this BEFORE any carried intent",
@@ -9359,7 +9524,8 @@ results.log(
 results.log(
     "tie-down: the price signatures resolve from the table",
     set(_RMT._price_tiedown_signatures())
-    == {sig for _, sig in _RMT._PRICE_TIEDOWN.values()},
+    == ({sig for _, sig in _RMT._PRICE_TIEDOWN.values()}
+        | set(_RMT._LEGACY_PRICE_TIEDOWN_SIGNATURES)),
     got=str(_RMT._price_tiedown_signatures()),
 )
 
@@ -11545,6 +11711,157 @@ results.log(
 )
 results.log("week part: no range named means no reply from this path",
             _wr._week_part_reply("Monday 10 am") is None)
+
+# -- The budget ladder (owner rule, 2026-09-19) -------------------------------
+# "Bathroom renovation starts from US$900 ... What is your budget?" read as a
+# demand. The ladder: a soft value tie-down named for the thing priced; a "no"
+# gets "how much were you hoping to invest in <it>?"; their figure gets what we
+# do at or under it, from the tenant's OWN price rows. Never a discount.
+from bot.views.plumbot.response_mixin import soften_budget_question as _sbq
+from bot import controller as _ctl_b
+
+
+class _BRow:
+    def __init__(self, family, variant='', label='', allin=None, flat=None,
+                 supply=None, labour=None):
+        self.family, self.variant, self.label = family, variant, label
+        self.short_label = ''
+        self.allin, self.flat, self.supply, self.labour = allin, flat, supply, labour
+
+
+class _FakeBudget:
+    _BUDGET_ASK = ResponseMixin._BUDGET_ASK
+    _lang_key = ResponseMixin._lang_key
+    _handle_budget_objection = ResponseMixin._handle_budget_objection
+    _build_budget_ask = ResponseMixin._build_budget_ask
+    _subject_of_our_last_turn = ResponseMixin._subject_of_our_last_turn
+    _last_assistant_text = ResponseMixin._last_assistant_text
+    _last_assistant_was_budget_ask = ResponseMixin._last_assistant_was_budget_ask
+    _budget_figure = ResponseMixin._budget_figure
+    _build_budget_options_reply = ResponseMixin._build_budget_options_reply
+    _budget_price_options = ResponseMixin._budget_price_options
+
+    def __init__(self, last_bot='', rows=(), project_type=''):
+        history = [{'role': 'assistant', 'content': last_bot}] if last_bot else []
+        self.appointment = _ty.SimpleNamespace(
+            conversation_history=history, project_type=project_type)
+        self.tenant_cfg = _ty.SimpleNamespace(
+            currency='US$', price_items=lambda _r=list(rows): _r)
+
+
+_B_ROWS = (
+    _BRow('tub', '', 'built-in tub', allin=160),
+    _BRow('tub', 'freestanding', 'freestanding tub', allin=670),
+    _BRow('shower', '', 'shower cubicle', allin=250),
+    _BRow('vanity', '', 'vanity unit', supply=160, labour=90),
+    _BRow('sink', '', 'kitchen sink', flat=100),
+)
+_TUB_TD = ("Tubs are from US$160 all in.\n\nDoes that sound like something "
+           "you'd be willing to invest in for a new tub?")
+
+# Rung 2: a no gets the ask, for the same thing, and nothing else.
+_ba = _FakeBudget(_TUB_TD)._handle_budget_objection('english')
+results.log("budget ladder: a no asks what they hoped to invest, in the same thing",
+            _ba == "No problem. How much were you hoping to invest in a new tub?",
+            got=repr(_ba))
+results.log("budget ladder: no subject on file asks without one",
+            _FakeBudget("Price is from US$90.")._build_budget_ask('english')
+            == "No problem. How much were you hoping to invest?")
+results.log("budget ladder: a Shona lead is asked in Shona",
+            _FakeBudget(_TUB_TD)._build_budget_ask('shona')
+            == "Hapana dambudziko. Maitarisira kushandisa marii?")
+results.log("budget ladder: the ask is recognised as our last turn",
+            _FakeBudget(_ba)._last_assistant_was_budget_ask() is True
+            and _FakeBudget(_TUB_TD)._last_assistant_was_budget_ask() is False)
+
+# Their figure, read deterministically.
+for _msg, _want in (("about 500", 500), ("$1,200", 1200), ("1.5k", 1500),
+                    ("US$300 max", 300), ("2 tubs for 600", 600),
+                    ("not sure yet", None), ("2", None)):
+    results.log("budget figure: %r -> %r" % (_msg, _want),
+                ResponseMixin._budget_figure(_msg) == _want,
+                got=repr(ResponseMixin._budget_figure(_msg)))
+
+# Rung 3: what fits, closest first, only for the thing they asked about.
+_ask_tub = "No problem. How much were you hoping to invest in a new tub?"
+_ask_bath = "No problem. How much were you hoping to invest in a new bathroom?"
+_o_tub = _FakeBudget(_ask_tub, _B_ROWS)._build_budget_options_reply(500)
+results.log("budget options: only what fits, only for a tub",
+            "Built-in tub: from US$160" in _o_tub and "670" not in _o_tub
+            and "shower" not in _o_tub.lower(), got=repr(_o_tub))
+_o_bath = _FakeBudget(_ask_bath, _B_ROWS)._build_budget_options_reply(300)
+results.log("budget options: a bathroom lists fittings under the figure, closest first",
+            _o_bath.index("250") < _o_bath.index("160")
+            and "Vanity unit: from US$250" in _o_bath
+            and "kitchen sink" not in _o_bath.lower(), got=repr(_o_bath))
+_o_low = _FakeBudget(_ask_tub, _B_ROWS)._build_budget_options_reply(100)
+results.log("budget options: nothing fits names our most affordable, never a discount",
+            "most affordable option" in _o_low and "US$160" in _o_low
+            and "US$100" in _o_low and "discount" not in _o_low.lower(),
+            got=repr(_o_low))
+_o_none = _FakeBudget(_ask_tub, ())._build_budget_options_reply(400)
+results.log("budget options: a tenant with no prices invents none",
+            "US$400" in _o_none and _o_none.count("US$") == 1, got=repr(_o_none))
+for _lbl, _txt in (('fits', _o_tub), ('bathroom', _o_bath), ('low', _o_low),
+                   ('none', _o_none), ('ask', _ba)):
+    results.log("budget ladder copy (%s): one question, no dash, no emoji" % _lbl,
+                _txt.count('?') == 1 and ' - ' not in _txt and '—' not in _txt
+                and all(ord(c) < 0x2500 for c in _txt), got=repr(_txt))
+
+# The blunt ask never reaches the customer, whichever path wrote it.
+_prod = ("Bathroom renovation starts from US$900. That covers a freestanding tub "
+         "and shower cubicle. Exact price is confirmed once we see the space. "
+         "What is your budget?")
+_soft, _sh = _sbq(_prod, _ty.SimpleNamespace(project_type=''))
+results.log("budget ladder: the prod reply's blunt ask becomes the value tie-down",
+            _sh and _soft.endswith("Does that sound like something you'd be willing "
+                                   "to invest in for a new bathroom?")
+            and "What is your budget" not in _soft and "US$900" in _soft,
+            got=repr(_soft))
+_fit, _fit_hit = _sbq("Tubs from US$160. Does that fit your budget?",
+                 _ty.SimpleNamespace(project_type=''))
+results.log("budget ladder: the WHOLE question is swapped, never its tail",
+            _fit_hit and _fit == ("Tubs from US$160. Does that sound like something "
+                             "you'd be willing to invest in for a new tub?"),
+            got=repr(_fit))
+_sn_b = "Izvozvo zvirikuenderana ne budget yenyu here?"
+results.log("budget ladder: Shona and budget-free replies are left alone",
+            _sbq(_sn_b, None) == (_sn_b, False)
+            and _sbq("What area are you in?", None) == ("What area are you in?", False))
+
+# The reader may not write it in either.
+from bot.response_check import _fences_hold as _rc_fences
+results.log("budget ladder: the reply check may not turn the close into a budget demand",
+            _rc_fences(_TUB_TD, "Tubs are from US$160 all in. What is your budget?")[0]
+            is False)
+
+# The controller stands aside after either question, so the ladder gets the turn.
+for _lbl, _last in (('tie-down', _TUB_TD), ('ask', _ask_tub),
+                    ('retired tie-down', "That sit alright with your budget?")):
+    results.log("budget ladder: the controller stands aside after the %s" % _lbl,
+                _ctl_b._answering_our_budget_question(
+                    _ty.SimpleNamespace(conversation_history=[
+                        {'role': 'assistant', 'content': _last}])) is True)
+results.log("budget ladder: ...and only then",
+            _ctl_b._answering_our_budget_question(_ty.SimpleNamespace(
+                conversation_history=[{'role': 'assistant',
+                                       'content': 'What area are you in?'}])) is False)
+
+# Wiring: both entry points climb the ladder, and the chain softens.
+import inspect as _insp_b
+from bot import whatsapp_webhook as _ww_b
+_route_src = _insp_b.getsource(_ww_b._generate_and_schedule_reply)
+results.log("budget ladder: the webhook answers a budget figure before OOS",
+            _route_src.index('_build_budget_options_reply')
+            < _route_src.index('handle_out_of_scope('))
+results.log("budget ladder: generate_response answers a budget figure too",
+            '_build_budget_options_reply' in _insp_b.getsource(ResponseMixin.generate_response))
+results.log("budget ladder: the outbound chain softens a blunt budget ask",
+            'soften_budget_question' in _insp_b.getsource(_ww_b.finalise_outbound))
+results.log("budget ladder: the controller check runs before any move is driven",
+            'book_visit held back' in _insp_b.getsource(_ctl_b.decide_move)
+            and _insp_b.getsource(_ctl_b.decide_move).index('_answering_our_budget_question')
+            < _insp_b.getsource(_ctl_b.decide_move).index('close_pleasantry held back'))
 
 # -- The fence: what makes an LLM safe on a slot the customer must trust -----
 _one = ['tomorrow at 9am']

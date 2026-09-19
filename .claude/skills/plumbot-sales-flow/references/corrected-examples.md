@@ -518,7 +518,7 @@ answered with a "no".
 
 | They said "no" to | Was | Now |
 |---|---|---|
-| "That sit alright with your budget?" | all-in reframe | ✓ unchanged |
+| "That sit alright with your budget?" | all-in reframe | superseded 2026-09-19: see "The budget ladder" below |
 | "Is a shower cubicle the only thing…?" | "what else would you like sorted?" | ✓ unchanged |
 | "Anything else on the property?" | advance to next field | ✓ unchanged |
 | "…any plumbing work involved?" (OOS) | decline, naming the trade | ✓ unchanged |
@@ -664,3 +664,47 @@ project description — and because ANY non-empty string satisfies
 and `lead_handoff.job_phrase` would read it back to the lead as "your Ok thank
 you". A message made entirely of words that carry no content is an
 acknowledgement, whatever its length.
+
+---
+
+## The budget ladder (owner rule, 2026-09-19)
+
+**Prod, 2026-09-19.** A Facebook ad lead:
+
+> **Customer:** "Morning how much to renovate a bathroom"
+>
+> **Bot (bad):** "Bathroom renovation starts from US$900. That covers a
+> freestanding tub and shower cubicle. Exact price is confirmed once we see the
+> space. What is your budget?"
+>
+> **Customer:** "Will let you know"
+
+The figure was fine. The close was not: "What is your budget?" asks the lead to
+defend their wallet a second after hearing a number, and the easiest answer to
+a demand is to leave. The owner's correction, three rungs:
+
+> **Bot (good):** "Bathroom renovation starts from US$900 ... Does that sound
+> like something you'd be willing to invest in for a new bathroom?"
+>
+> **Customer:** "No"
+>
+> **Bot (good):** "No problem. How much were you hoping to invest in a new
+> bathroom?"
+>
+> **Customer:** "About 500"
+>
+> **Bot (good):** "Thanks, that helps. With US$500 in mind, these fit:
+> • Shower cubicle: from US$250
+> • Vanity unit: from US$250
+> • Built-in tub: from US$160
+>
+> Would one of those work for you, or should we come and have a quick look and
+> plan it around that figure?"
+
+Why it works: the first question is an easy yes about VALUE for the thing they
+asked about, not about money. The budget is only asked once they have said the
+price does not work, and then it is asked about the same thing, so it reads as
+helping rather than probing. Their figure is answered with what we actually do
+at that figure, from the tenant's own price rows, which keeps the sale alive
+without ever discounting. This replaced the all-in reframe of 2026-09-01.
+

@@ -1083,6 +1083,42 @@ def strip_unbacked_confirmation(reply: str, appointment):
     return MESSAGE_SPLIT_MARKER.join(parts), True
 
 
+# A whole QUESTION sentence that mentions the budget ("What is your budget?",
+# "Does that fit your budget?"). The whole sentence is swapped, never a tail
+# of it. Shona questions are left alone.
+_OUTRIGHT_BUDGET_RE = re.compile(
+    r"(^|(?<=[.!?\n]))([ \t]*)([^.!?\n]*\bbudget\b[^.!?\n]*\?)",
+    re.IGNORECASE,
+)
+_SHONA_BUDGET_MARKERS = ('yenyu', ' here?', 'munayo', 'marii')
+
+
+def soften_budget_question(reply: str, appointment):
+    """Swap a blunt "What is your budget?" for the soft price tie-down.
+
+    Owner rule, 2026-09-19: asking the budget outright after a price reads as
+    a demand ("Bathroom renovation starts from US$900 ... What is your
+    budget?"). The close is an easy yes about value, named for the thing they
+    asked about; their figure is asked only after a no, by deterministic copy.
+    The model wrote it, so it is caught here on the way out, whichever path
+    composed it. English only; returns (reply, changed).
+    """
+    if not reply:
+        return reply, False
+    match = next((m for m in _OUTRIGHT_BUDGET_RE.finditer(reply)
+                  if not any(s in m.group(3).lower() for s in _SHONA_BUDGET_MARKERS)),
+                 None)
+    if match is None:
+        return reply, False
+    entry = (ResponseMixin._invest_subject(reply[:match.start(3)])
+             or ResponseMixin._invest_subject(
+                 getattr(appointment, 'project_type', None)))
+    tiedown = ResponseMixin._PRICE_TIEDOWN['english'][0]
+    if entry:
+        tiedown = f"{tiedown[:-1]} for {entry[2]}?"
+    return reply[:match.start(3)] + tiedown + reply[match.end(3):], True
+
+
 def strip_repeat_free_visit(reply: str, appointment, message: str = None):
     """Take "free" off the visit once this lead has already been told.
 
@@ -1655,10 +1691,46 @@ class ResponseMixin:
         # Pairing them makes the coupling visible, and TEST 0 asserts every
         # signature is genuinely a substring of the text it claims to identify —
         # so a reword that forgets its signature fails the commit gate.
+        # The price tie-down asks whether the figure is worth it FOR THE THING
+        # they asked about, never about their wallet (owner rule, 2026-09-19).
+        # "That sit alright with your budget?" came back from the model as
+        # "What is your budget?", which reads as a demand; this is an easy yes
+        # about value. English names the subject ("... for a new tub?") via
+        # `_invest_subject`; the signature stays inside the fixed part.
         _PRICE_TIEDOWN = {
-            'english': ("That sit alright with your budget?", "with your budget"),
-            'shona': ("Izvozvo zvirikuenderana ne budget yenyu here?", "ne budget"),
+            'english': ("Does that sound like something you'd be willing to "
+                        "invest in?", "willing to invest"),
+            'shona': ("Mungada here kuisa mari iyoyo pazviri?", "kuisa mari iyoyo"),
         }
+        # "That sit alright with your budget?" / "Izvozvo zvirikuenderana ne
+        # budget yenyu here?", retired 2026-09-19 and still recognised.
+        _LEGACY_PRICE_TIEDOWN_SIGNATURES = ("with your budget", "ne budget")
+        # Asked ONLY after a "no" to that tie-down, and then their figure is
+        # answered with what we do at or under it (`_build_budget_options_reply`).
+        _BUDGET_ASK = {
+            'english': ("How much were you hoping to invest", "hoping to invest"),
+            'shona': ("Maitarisira kushandisa marii", "kushandisa marii"),
+        }
+        # (key, words that identify it in an intent or in our own copy, the
+        # noun we say, the price families that can answer a budget for it).
+        # Kitchen before bathroom and bathroom before tub: "kitchen_renovation"
+        # is not a bathroom and "bathroom" contains "bath".
+        _INVEST_SUBJECTS = (
+            ('both', ('bathroom_and_kitchen', 'bathroom and kitchen'),
+             'the renovation',
+             ('package', 'renovation', 'tub', 'shower', 'vanity', 'toilet',
+              'chamber', 'basin', 'kitchen', 'sink')),
+            ('kitchen', ('kitchen',), 'a new kitchen', ('kitchen', 'sink')),
+            ('bathroom', ('bathroom', 'package', 'renovation'), 'a new bathroom',
+             ('package', 'renovation', 'tub', 'shower', 'vanity', 'toilet',
+              'chamber', 'basin')),
+            ('tub', ('tub', 'bath'), 'a new tub', ('tub',)),
+            ('shower', ('shower',), 'a new shower', ('shower',)),
+            ('vanity', ('vanity',), 'a new vanity', ('vanity', 'basin')),
+            ('basin', ('basin',), 'a new basin', ('basin', 'vanity')),
+            ('toilet', ('toilet', 'chamber'), 'a new toilet', ('toilet', 'chamber')),
+            ('geyser', ('geyser',), 'the geyser', ('geyser',)),
+        )
         _BUDGET_FIT_CLOSE = {
             'english': ("Is that around what you were looking to invest to get it "
                         "sorted properly?", "looking to invest"),
@@ -1711,15 +1783,174 @@ class ResponseMixin:
         def _lang_key(cls, language: str) -> str:
             return 'shona' if language == 'shona' else 'english'
 
-        def _price_tiedown(self, language: str = "english") -> str:
-            """Closing tie-down for PRICE replies — a budget-fit yes (per business
-            preference) rather than the generic value-check used elsewhere."""
-            return self._PRICE_TIEDOWN[self._lang_key(language)][0]
+        def _price_tiedown(self, language: str = "english", subject=None) -> str:
+            """Closing tie-down for PRICE replies: an easy yes about whether the
+            figure is worth it for the thing they asked about.
+
+            `subject` is an intent or phrase; absent, the intent priced this turn
+            (`_pricing_subject`, set by handle_service_inquiry), then the lead's
+            own service type. Nothing resolvable means no subject, never a guess.
+            """
+            text = self._PRICE_TIEDOWN[self._lang_key(language)][0]
+            if self._lang_key(language) == 'shona':
+                return text
+            entry = ResponseMixin._invest_subject(
+                subject or getattr(self, '_pricing_subject', None)
+                or getattr(getattr(self, 'appointment', None), 'project_type', None))
+            if not entry:
+                return text
+            return f"{text[:-1]} for {entry[2]}?"
+
+        @classmethod
+        def _invest_subject(cls, text):
+            """The `_INVEST_SUBJECTS` entry named in an intent or a sentence."""
+            low = str(text or '').lower().replace('_', ' ')
+            if not low.strip():
+                return None
+            for entry in cls._INVEST_SUBJECTS:
+                if any(re.search(r'\b' + re.escape(w.replace('_', ' ')), low)
+                       for w in entry[1]):
+                    return entry
+            return None
+
+        def _subject_of_our_last_turn(self):
+            """The subject our latest message priced or asked about. The phrase
+            we wrote ("... invest in for a new tub?") is read first, because a
+            price reply can mention other fixtures along the way."""
+            low = self._last_assistant_text().lower()
+            m = re.search(r'invest in (?:for )?((?:a new|the) [a-z]+)', low)
+            if m:
+                for entry in ResponseMixin._INVEST_SUBJECTS:
+                    if entry[2] == m.group(1):
+                        return entry
+            return ResponseMixin._invest_subject(low)
+
+        def _last_assistant_text(self) -> str:
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            return next(
+                (m.get('content') or '' for m in reversed(history)
+                 if isinstance(m, dict) and m.get('role') == 'assistant'),
+                '',
+            )
+
+        def _last_assistant_was_budget_ask(self) -> bool:
+            """Our latest turn asked how much they were hoping to invest."""
+            last = self._last_assistant_text().lower()
+            return any(sig in last for _, sig in self._BUDGET_ASK.values())
+
+        @staticmethod
+        def _budget_figure(message):
+            """The amount a lead names as their budget, or None.
+
+            "about 500", "$500", "US$1,200", "500 dollars", "1.5k". The largest
+            figure wins ("2 tubs for 600" means 600). Below 10 is a count, never a
+            budget.
+            """
+            best = None
+            for m in re.finditer(r'(\d[\d,]*(?:\.\d+)?)\s*(k)?\b',
+                                 str(message or ''), re.IGNORECASE):
+                try:
+                    value = float(m.group(1).replace(',', ''))
+                except ValueError:
+                    continue
+                if m.group(2):
+                    value *= 1000
+                if value >= 10 and (best is None or value > best):
+                    best = value
+            if best is None:
+                return None
+            return int(best) if best == int(best) else best
+
+        def _budget_price_options(self, families) -> list:
+            """(name, figure) for every priced row in `families`, from THIS
+            tenant's own sheet only. A row with no figure is left out."""
+            out = []
+            for item in self.tenant_cfg.price_items():
+                if families and item.family not in families:
+                    continue
+                figure = item.allin if item.allin is not None else item.flat
+                if figure is None and item.supply is not None and item.labour is not None:
+                    figure = item.supply + item.labour
+                if figure is None:
+                    continue
+                name = item.short_label or item.label or item.family
+                variant_words = [w for w in (item.variant or '').split('_') if w]
+                if variant_words and not all(w in name.lower() for w in variant_words):
+                    name = f"{' '.join(variant_words)} {name}"
+                figure = float(figure)
+                out.append((name.strip().capitalize(),
+                            int(figure) if figure == int(figure) else figure))
+            return out
+
+        def _build_budget_ask(self, language: str = "english") -> str:
+            """The reply to a "no" on the price tie-down: ask what they had in
+            mind, for the same thing (owner rule, 2026-09-19). Never a reframe
+            and never a discount; their figure is answered next turn."""
+            if self._lang_key(language) == 'shona':
+                return f"Hapana dambudziko. {self._BUDGET_ASK['shona'][0]}?"
+            entry = self._subject_of_our_last_turn()
+            ask = self._BUDGET_ASK['english'][0]
+            if entry:
+                return f"No problem. {ask} in {entry[2]}?"
+            return f"No problem. {ask}?"
+
+        def _build_budget_options_reply(self, budget, language: str = "english") -> str:
+            """Their budget, answered with what we do at or under it.
+
+            Closest to their figure first, three at most, from the tenant's own
+            price rows for the thing they asked about. Nothing at or under it
+            names our most affordable option instead; nothing priced at all says
+            we will plan it around their figure on site. Never a discount and
+            never an invented figure.
+            """
+            is_shona = self._lang_key(language) == 'shona'
+            cur = self.tenant_cfg.currency
+            entry = (self._subject_of_our_last_turn()
+                     or ResponseMixin._invest_subject(
+                         getattr(self.appointment, 'project_type', None)))
+            options = self._budget_price_options(entry[3] if entry else None)
+            fits = sorted((o for o in options if o[1] <= budget),
+                          key=lambda o: -o[1])[:3]
+            money = f"{cur}{budget}"
+
+            if fits:
+                lines = '\n'.join(f"• {n}: from {cur}{f}" for n, f in fits)
+                if is_shona:
+                    return (f"Maita basa. Ne{money}, izvi zvinokwanisika:\n{lines}\n\n"
+                            "Chimwe chazvo chingakukodzerai here, kana kuti tiuye "
+                            "tione nzvimbo tironga zvinoenderana nemari iyoyo?")
+                one = len(fits) == 1
+                return (f"Thanks, that helps. With {money} in mind, "
+                        f"{'this fits' if one else 'these fit'}:\n{lines}\n\n"
+                        f"Would {'that' if one else 'one of those'} work for you, "
+                        f"or should we come and have a quick look and plan it "
+                        f"around that figure?")
+            if options:
+                name, fig = min(options, key=lambda o: o[1])
+                if is_shona:
+                    return (f"Maita basa. Chakachipa chatinacho ndi{name} kubva "
+                            f"{cur}{fig}. Kana tikauya kuzoona nzvimbo tinogona "
+                            f"kutsvaga zvinoswedera pa{money}. Zvingakubatsirai here?")
+                return (f"Thanks, that helps. The most affordable option we have "
+                        f"there is {name.lower()} from {cur}{fig}. If we come and "
+                        f"see the space we can work out what gets you closest to "
+                        f"{money}. Would that help?")
+            if is_shona:
+                return (f"Maita basa. Kana tauya kuzoona nzvimbo tinoronga "
+                        f"zvinoenderana ne{money}. Mungada here kuti tiuye?")
+            return (f"Thanks, that helps. Once we see the space we can plan it "
+                    f"around {money}. Would you like us to come through for a "
+                    f"quick look?")
 
         @classmethod
         def _price_tiedown_signatures(cls) -> tuple:
-            """The fragments that identify the budget tie-down in a past turn."""
-            return tuple(sig for _, sig in cls._PRICE_TIEDOWN.values())
+            """The fragments that identify the budget tie-down in a past turn,
+            the wording retired on 2026-09-19 included: a lead mid-conversation
+            still has it as our last message, and their "no" must still climb
+            the ladder."""
+            return (tuple(sig for _, sig in cls._PRICE_TIEDOWN.values())
+                    + cls._LEGACY_PRICE_TIEDOWN_SIGNATURES)
 
         def _last_assistant_was_price_tiedown(self) -> bool:
             """True when our most recent turn was the budget tie-down — so a 'no'
@@ -1788,20 +2019,10 @@ class ResponseMixin:
                 return kw
 
         def _handle_budget_objection(self, language: str = "english") -> str:
-            """Lead pushed back on price after the budget tie-down. Don't negotiate —
-            reframe the figure as fully all-in (no surprises on the day) and offer to
-            get them the exact number for their space (i.e. the free visit)."""
-            if language == "shona":
-                return (
-                    "Mutengo iwoyo wakasanganisa zvese. Zvigadzirwa, kuiswa, basa "
-                    "rese rapera, pasina zvimwe zvinowedzerwa pazuva racho.\n\n"
-                    "Ndokutorerai mutengo chaiwo wenzvimbo yenyu here?"
-                )
-            return (
-                "That's everything in. Supply, install, fully fitted, no extras on "
-                "the day.\n\n"
-                "Want me to sort you the exact number for your space?"
-            )
+            """A "no" to the price tie-down. Ask what they were hoping to invest
+            in the same thing (owner rule, 2026-09-19); their figure is answered
+            next turn with what fits it. Replaced the all-in reframe."""
+            return self._build_budget_ask(language)
 
         # ── Date-stage timeline-pivot dispatch (Phase 1: AI-classify → code math) ─
         def _friendly_visit_date(self, d) -> str:
@@ -3297,7 +3518,8 @@ class ResponseMixin:
                          if is_shona else
                          f"If you'd rather go freestanding, that's from "
                          f"{_money(cur, free.allin)} all in, mixer included."))
-            parts.append(self._price_tiedown(language))
+            # Named for the fixture being replaced: "... for a new basin?".
+            parts.append(self._price_tiedown(language, subject=key))
             return '\n\n'.join(parts)
 
         def _asks_about_labour(self, message: str) -> bool:
@@ -4259,6 +4481,22 @@ class ResponseMixin:
                     self.appointment.add_conversation_message("assistant", reply)
                     print(f"💸 Budget objection after price tie-down: '{incoming_message[:60]}'")
                     return reply
+
+                # ...and the figure they give to "how much were you hoping to
+                # invest?" is answered with what we do at or under it.
+                if self._last_assistant_was_budget_ask():
+                    _bfig = self._budget_figure(incoming_message)
+                    if _bfig:
+                        from bot.whatsapp_webhook import detect_language_simple as _dls_f
+                        try:
+                            _flang = _dls_f(incoming_message)
+                        except Exception:
+                            _flang = 'english'
+                        reply = self._build_budget_options_reply(_bfig, _flang)
+                        self.appointment.add_conversation_message("user", incoming_message)
+                        self.appointment.add_conversation_message("assistant", reply)
+                        print(f"💸 Budget figure {_bfig}: options offered")
+                        return reply
 
                 # ── MATERIALS REQUEST ────────────────────────────────────────────────
                 # "I need plumbing material" is a request we can act on, whatever
@@ -7308,6 +7546,8 @@ class ResponseMixin:
         def handle_service_inquiry(self, intent, message):
             """Public entry: build the priced reply, then guarantee the approximate-
             price disclaimer is attached (protected price-clarity behaviour)."""
+            # The tie-down names what was priced ("... for a new tub?").
+            self._pricing_subject = intent
             reply = self._handle_service_inquiry_impl(intent, message)
             # The item they asked the price of IS their job — record it, exactly as
             # the multi-item (_build_combined_price_reply) and quote
@@ -8453,7 +8693,9 @@ class ResponseMixin:
                 # (the structured paths do this; the LLM here often forgets).
                 if answer and '$' in answer:
                     answer = self._ensure_price_disclaimer('pricing', answer)
-                    if not self._last_assistant_was_tiedown() and 'budget' not in answer.lower():
+                    if (not self._last_assistant_was_tiedown()
+                            and not any(sig in answer.lower()
+                                        for sig in self._price_tiedown_signatures())):
                         _low = answer.lower()
                         _is_shona = any(t in _low for t in (
                             'kubva', 'inotangira', 'munoda', 'tiuye', 'ne install',
