@@ -654,6 +654,47 @@ def _sale_is_open(appointment) -> bool:
     return True
 
 
+def _answering_the_close(uclass, appointment) -> bool:
+    """Is the lead ANSWERING the close rather than waiting to be given it?
+
+    `book_visit` renders the close itself (why we visit, what it costs, two
+    days to pick from) and returns before extraction, so it may only run
+    BEFORE the lead has answered it. Afterwards it is the repeat pitch, and
+    worse, it swallows the answer: the slot they just named is never stored,
+    nothing is booked and the plumber is never told. Barmak 263773380494 said
+    "Yes" and got the close again, then said "Monday 10 am" and got it a third
+    time, which the reply check then rewrote into "Monday 10 am works. We will
+    come and do the site visit then." on a row that held no slot at all
+    (prod, 2026-09-19).
+
+    Three signs, any one enough: this turn carries a slot (or hands us the
+    choice), or our LATEST message already asked them when to come. Only the
+    latest counts, the same rule as the area resolver: an ask three turns back
+    has been answered or abandoned. The router then takes the turn, and its
+    extraction and booking steps are the one path that books.
+    """
+    try:
+        from bot.unified_classifier import uc_extracted, uc_datetime_flexible
+        slot = uc_extracted(uclass).get('availability')
+        if slot and str(slot).strip().lower() not in ('null', 'none'):
+            return True
+        if uc_datetime_flexible(uclass) is True:
+            return True
+    except Exception:
+        logger.warning('Could not read the slot off the turn', exc_info=True)
+    history = getattr(appointment, 'conversation_history', None) or []
+    for turn in reversed(history):
+        if isinstance(turn, dict) and turn.get('role') == 'assistant':
+            try:
+                from bot.views.plumbot.response_mixin import (
+                    asks_visit_availability)
+                return asks_visit_availability(turn.get('content') or '')
+            except Exception:
+                logger.warning('Could not read our last ask', exc_info=True)
+                return False
+    return False
+
+
 def _asks_us_something(uclass) -> bool:
     """Did this turn carry a question for us?
 
@@ -737,6 +778,17 @@ def decide_move(uclass, appointment):
         move = apply_plan_path_gate('book_visit', appointment)
 
     if move not in DRIVABLE_MOVES:
+        return None
+
+    # The close is made ONCE. After that the lead is answering it, and the
+    # router's extraction and booking steps are what turn the answer into a
+    # booking; re-rendering the close skips them and re-pitches a lead who has
+    # already said yes. A booking already on file or half-made is the same.
+    if move == 'book_visit' and (
+            str(getattr(appointment, 'status', '') or '') == 'confirmed'
+            or _booking_half_made(appointment)
+            or _answering_the_close(uclass, appointment)):
+        logger.info('book_visit held back: the lead is answering the close')
         return None
 
     # A closing pleasantry ENDS the turn, so it must never swallow a question.

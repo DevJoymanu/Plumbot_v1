@@ -9089,6 +9089,42 @@ try:
                         project_description='x', customer_area='Budiriro',
                         photos_at='2026-09-05',
                         plan_status='plan_uploaded')) is None)
+        # The close is made ONCE. book_visit returns before extraction, so a
+        # lead answering it with a slot must reach the router or the slot is
+        # never stored (barmak 263773380494, 2026-09-19: "Yes" and then
+        # "Monday 10 am" each got the close again, and nothing was booked).
+        _slot_turn = _uc(next_move='book_visit', move_confidence=0.95,
+                         state_update={'want_level': 'wants_it'},
+                         extracted={'availability': '2026-09-21T10:00'})
+        results.log("routing: a slot in the turn is the answer, not a new close",
+                    _ctl.decide_move(_slot_turn, _ready) is None)
+        results.log("routing: a free hand is the answer too",
+                    _ctl.decide_move(dict(_wants, datetime_flexible=True),
+                                     _ready) is None)
+        _asked = _FakeLead(
+            project_description='full ensuite redo', customer_area='Budiriro',
+            photos_at='2026-09-05',
+            history=[{'role': 'assistant',
+                      'content': 'The visit is free. Tomorrow or Monday?'},
+                     {'role': 'user', 'content': 'Yes'}])
+        results.log("routing: a yes to our own close is never closed again",
+                    _ctl.decide_move(_wants, _asked) is None)
+        _asked_long_ago = _FakeLead(
+            project_description='full ensuite redo', customer_area='Budiriro',
+            photos_at='2026-09-05',
+            history=[{'role': 'assistant',
+                      'content': 'The visit is free. Tomorrow or Monday?'},
+                     {'role': 'user', 'content': 'let me check with my wife'},
+                     {'role': 'assistant', 'content': 'No problem at all.'},
+                     {'role': 'user', 'content': 'ok we are ready'}])
+        results.log("routing: only our LATEST message counts as the close",
+                    _ctl.decide_move(_wants, _asked_long_ago) == 'book_visit')
+        _half = _FakeLead(project_description='full ensuite redo',
+                          customer_area='Budiriro', photos_at='2026-09-05')
+        _half.scheduled_datetime = '2026-09-21 10:00'
+        _half.status = 'pending'
+        results.log("routing: a half-made booking is never closed again",
+                    _ctl.decide_move(_wants, _half) is None)
         results.log("routing: moves outside the drivable set stay with the router",
                     _ctl.decide_move(
                         _uc(next_move='show_work', move_confidence=0.95),
@@ -10858,6 +10894,27 @@ for _ok in ("Shall I lock that in for you?",
     results.log("booking claim: not a claim, left alone (%s)" % _ok[:34],
                 _suc(_ok, _pending) == (_ok, False), got=repr(_suc(_ok, _pending)))
 
+# A promise to turn up at a named moment is the same claim in other words
+# (barmak 263773380494, 2026-09-19, written by the reply check on a row that
+# held no slot). The acknowledgement stays, exactly as for "we'll confirm".
+_out_c, _hit_c = _suc("Great, Monday 10 am works. We will come and do the "
+                      "site visit then.", _no_slot)
+results.log(
+    "booking claim: a promise to come then is dropped, the ack kept",
+    _hit_c and _out_c == "Great, Monday 10 am works.", got=repr(_out_c),
+)
+for _claim in ("We'll come on Monday at 10am.",
+               "I will be there tomorrow.",
+               "See you on Monday.",
+               "See you then."):
+    _o, _h = _suc("Thanks. %s" % _claim, _pending)
+    results.log("booking claim: dropped (%s)" % _claim[:34],
+                _h and _claim not in _o, got=repr(_o))
+for _ok in ("Once you pick a day, we'll come through and have a look at the space.",
+            "Shall we come on Monday then?"):
+    results.log("booking claim: not a claim, left alone (%s)" % _ok[:34],
+                _suc(_ok, _pending) == (_ok, False), got=repr(_suc(_ok, _pending)))
+
 # Inert on a confirmed lead — which is what lets the REAL confirmation copy
 # through untouched, since it only ever sends after status='confirmed'.
 _real = ("Perfect, thanks Tendai. You're all set for your visit on Thursday, "
@@ -11409,6 +11466,85 @@ results.log(
         _ask_one_day._visit_slot_labels(True)) is True,
     got=repr(_ask_one_day._visit_slot_labels(True)),
 )
+
+# -- A part of the week is an ANSWER, and it narrows the offer ---------------
+# "Let's make a date midweek" went to the retry paraphrase, which asked
+# "earlier midweek or later?", a second vague question about the range the
+# lead had just given (barmak 1162, 2026-09-19). Read it deterministically and
+# offer two real slots inside it.
+from bot.views.plumbot.availability_mixin import week_part_of as _wpo
+from unittest import mock as _mock_wp
+
+for _msg, _days in (("Let's make a date midweek", (1, 2, 3)),
+                    ("mid-week is best", (1, 2, 3)),
+                    ("sometime in the middle of next week", (1, 2, 3)),
+                    ("early next week", (0, 1)),
+                    ("later in the week please", (3, 4)),
+                    ("end of the week", (3, 4))):
+    _p = _wpo(_msg)
+    results.log("week part: %r is read" % _msg, bool(_p) and _p[0] == _days,
+                got=repr(_p))
+for _msg in ("midweek, say Wednesday", "tomorrow midweek", "next week",
+             "ok thanks", "Monday 10 am"):
+    results.log("week part: %r is not a range answer" % _msg,
+                _wpo(_msg) is None, got=repr(_wpo(_msg)))
+results.log("week part: 'next week' is noted with the range",
+            _wpo("midweek next week")[2] is True
+            and _wpo("midweek")[2] is False)
+
+
+class _FakeWeekPicker:
+    _get_next_two_available_days = _AvailabilityMixin._get_next_two_available_days
+
+    def __init__(self, part, closed=()):
+        self._week_part = part
+        self.tenant_cfg = _ty.SimpleNamespace(
+            is_open_on=lambda wd, _c=frozenset(closed): wd not in _c)
+
+
+# Saturday 2026-09-19, the day it happened.
+_sat = _slot_tz.localize(_dt_slot(2026, 9, 19, 10, 0))
+with _mock_wp.patch('django.utils.timezone.now', return_value=_sat):
+    _mid = _FakeWeekPicker(_wpo("midweek"))._get_next_two_available_days()
+    _late = _FakeWeekPicker(_wpo("later in the week"))._get_next_two_available_days()
+    _mid_tue_shut = _FakeWeekPicker(_wpo("midweek"), closed=(1,))._get_next_two_available_days()
+    _mid_all_shut = _FakeWeekPicker(_wpo("midweek"), closed=(1, 2, 3))._get_next_two_available_days()
+    _plain = _FakeWeekPicker(None)._get_next_two_available_days()
+results.log("week part: midweek offers Tuesday and Wednesday",
+            [d.weekday() for d in _mid] == [1, 2], got=repr(_mid))
+results.log("week part: later in the week offers Thursday and Friday",
+            [d.weekday() for d in _late] == [3, 4], got=repr(_late))
+results.log("week part: a day the tenant is shut is skipped inside the range",
+            [d.weekday() for d in _mid_tue_shut] == [2, 3], got=repr(_mid_tue_shut))
+results.log("week part: a range the tenant is shut for falls back, never empty",
+            _mid_all_shut == _plain and len(_plain) == 2, got=repr(_mid_all_shut))
+
+
+class _FakeWeekReply(_FakeSelfSlots):
+    _week_part_reply = ResponseMixin._week_part_reply
+
+    def _get_next_two_available_days(self):
+        # Records that the range was live while the slots were picked.
+        self.saw_part = getattr(self, '_week_part', None)
+        return self._days
+
+
+_wr = _FakeWeekReply(
+    [_slot_d1, _slot_d2],
+    {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)],
+     _slot_d2: [_slot_at(_slot_d2, 9), _slot_at(_slot_d2, 14)]})
+_wr_out = _wr._week_part_reply("Let's make a date midweek")
+results.log(
+    "week part: the reply says the range back and offers two real slots",
+    _wr_out.startswith("Midweek works for us. What works better for you, ")
+    and ' at 9am or ' in _wr_out and _wr_out.count('?') == 1
+    and 'earlier' not in _wr_out.lower()
+    and _wr.saw_part and _wr.saw_part[0] == (1, 2, 3)
+    and getattr(_wr, '_week_part', None) is None,
+    got=repr(_wr_out),
+)
+results.log("week part: no range named means no reply from this path",
+            _wr._week_part_reply("Monday 10 am") is None)
 
 # -- The fence: what makes an LLM safe on a slot the customer must trust -----
 _one = ['tomorrow at 9am']

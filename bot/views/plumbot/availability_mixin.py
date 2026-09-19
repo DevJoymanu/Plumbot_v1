@@ -28,6 +28,44 @@ from ...utils import (
 )
 from ...whatsapp_cloud_api import whatsapp_api
 
+
+# A part of the week named instead of a day: "midweek", "early next week",
+# "later in the week". It is an ANSWER to the availability ask, not a vague
+# one: it tells us which days to offer. Read deterministically, because left
+# to the retry paraphrase the model answered "Let's make a date midweek" with
+# "earlier midweek or later?", a second question about a range the lead had
+# just given us (barmak 1162, 2026-09-19). Each entry: pattern, the weekdays
+# it covers (0=Monday), and the phrase we say back.
+_WEEK_PARTS = (
+    (re.compile(r"\bmid[\s-]?week\b|\bmiddle\s+of\s+(?:the\s+|next\s+)?week\b"
+                r"|\bpakati\s+pe?(?:ne)?vhiki\b", re.IGNORECASE),
+     (1, 2, 3), 'midweek'),
+    (re.compile(r"\b(?:early|beginning|start)\s+(?:in\s+|of\s+)?(?:the\s+|next\s+)?week\b",
+                re.IGNORECASE),
+     (0, 1), 'early in the week'),
+    (re.compile(r"\b(?:end|later)\s+(?:in\s+|of\s+)?(?:the\s+|next\s+)?week\b",
+                re.IGNORECASE),
+     (3, 4), 'later in the week'),
+)
+_NAMED_DAY_RE = re.compile(
+    r"\b(?:today|tomorrow|tmrw|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b",
+    re.IGNORECASE)
+
+
+def week_part_of(message):
+    """(weekdays, phrase, next_week) for a named part of the week, else None.
+
+    A named DAY wins ("midweek, say Wednesday" is a day, and extraction takes
+    it), so this only answers when the range is all they gave us.
+    """
+    msg = message or ''
+    if _NAMED_DAY_RE.search(msg):
+        return None
+    for pattern, days, phrase in _WEEK_PARTS:
+        if pattern.search(msg):
+            return days, phrase, bool(re.search(r'\bnext\s+week\b', msg, re.I))
+    return None
+
 try:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
@@ -224,16 +262,33 @@ class AvailabilityMixin:
             from datetime import timedelta
             sa_tz = pytz.timezone('Africa/Johannesburg')
             today = timezone.now().astimezone(sa_tz).date()
-            results = []
-            check = today + timedelta(days=1)
-            # Bounded: a tenant closed every day would otherwise spin forever.
-            for _ in range(14):
-                if len(results) >= 2:
-                    break
-                if self.tenant_cfg.is_open_on(check.weekday()):
-                    results.append(check)
-                check += timedelta(days=1)
-            return results
+
+            def _scan(start, wanted=None):
+                found, check = [], start
+                # Bounded: a tenant closed every day would otherwise spin forever.
+                for _ in range(14):
+                    if len(found) >= 2:
+                        break
+                    if (self.tenant_cfg.is_open_on(check.weekday())
+                            and (wanted is None or check.weekday() in wanted)):
+                        found.append(check)
+                    check += timedelta(days=1)
+                return found
+
+            # The lead named a part of the week this turn (`week_part_of`, set
+            # per turn by generate_response, never stored): offer days inside
+            # it. A range the tenant is shut for falls back to the plain scan
+            # rather than offering nothing.
+            part = getattr(self, '_week_part', None)
+            if part:
+                days, _phrase, next_week = part
+                start = today + timedelta(days=1)
+                if next_week:
+                    start = max(start, today + timedelta(days=7 - today.weekday()))
+                ranged = _scan(start, set(days))
+                if ranged:
+                    return ranged
+            return _scan(today + timedelta(days=1))
 
 
         def _get_two_available_times_for_date(self, date_obj) -> list:

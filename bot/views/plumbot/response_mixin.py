@@ -1012,7 +1012,17 @@ _BOOKING_CLAIM_RE = re.compile(
     r"|\b(?:it|that|this)(?:'s| is)\s+(?:all\s+)?(?:confirmed|booked)\b"
     r"|\bconsider\s+it\s+(?:booked|done)\b"
     r"|\byour\s+(?:visit|appointment|booking)\s+is\s+(?:confirmed|booked)\b"
-    r"|\b(?:visit|appointment|booking)\s+is\s+now\s+(?:confirmed|booked)\b",
+    r"|\b(?:visit|appointment|booking)\s+is\s+now\s+(?:confirmed|booked)\b"
+    # A promise to TURN UP at a named moment is the same claim in other words:
+    # "Monday 10 am works. We will come and do the site visit then." (barmak
+    # 263773380494, 2026-09-19, no slot on the row). Anchored on "then", a day
+    # or a clock time, so the pitch ("we'll come through and have a look at
+    # the space") is not a claim and stays.
+    r"|\b(?:we|i)(?:'ll|\s+will)\s+(?:come|be\s+there|be\s+with\s+you|see\s+you)\b"
+    r"[^.!?]*\b(?:then|tomorrow|(?:mon|tues|wednes|thurs|fri|satur|sun)day"
+    r"|at\s+\d)"
+    r"|\bsee\s+you\s+(?:then|tomorrow|on\s+\w+"
+    r"|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b",
     re.IGNORECASE,
 )
 
@@ -1052,7 +1062,9 @@ def strip_unbacked_confirmation(reply: str, appointment):
     parts = []
     for part in reply.split(MESSAGE_SPLIT_MARKER):
         sentences = _split_sentences(part)
-        kept = [x for x in sentences if not _BOOKING_CLAIM_RE.search(x)]
+        # A question is never a claim ("Shall we come on Monday then?").
+        kept = [x for x in sentences
+                if x.rstrip().endswith('?') or not _BOOKING_CLAIM_RE.search(x)]
         if len(kept) == len(sentences):
             parts.append(part)
             continue
@@ -1505,6 +1517,32 @@ class ResponseMixin:
                 return composed
 
             return self._scripted_availability_ask(slots, purpose, is_shona)
+
+        def _week_part_reply(self, message):
+            """The availability ask, narrowed to the part of the week they named.
+
+            Deterministic end to end: `week_part_of` reads the range, the slot
+            resolver picks free slots inside it, the approved script words the
+            ask. Returns None when no part of the week was named.
+            """
+            from .availability_mixin import week_part_of
+            part = week_part_of(message)
+            if not part:
+                return None
+            from bot.repeated_question_detector import detect_language_simple
+            from bot.controller_templates import question_without_ack
+            is_shona = detect_language_simple(message or '') == 'shona'
+            self._week_part = part
+            try:
+                slots = self._visit_slot_labels(is_shona)
+            finally:
+                self._week_part = None
+            ask = self._scripted_availability_ask(
+                slots, self._describe_project_context(), is_shona)
+            if is_shona:
+                return ask
+            phrase = part[1]
+            return f"{phrase[0].upper()}{phrase[1:]} works for us. {question_without_ack(ask)}"
 
         def _ask_needs_composing(self, slots) -> bool:
             """Is this a shape the approved script does not cover?
@@ -4881,6 +4919,19 @@ class ResponseMixin:
                         self.lead_has_no_time_preference(
                             incoming_message, classification)):
                     return self._handle_all_day_response()
+
+                # They named a PART of the week ("let's make a date midweek").
+                # That is an answer, so it is never a retry: say it back and
+                # offer two real slots inside it. Left to the retry paraphrase
+                # the model asked "earlier midweek or later?" (barmak 1162,
+                # 2026-09-19), a second vague question about the range they
+                # had just given us.
+                if next_question == 'availability_date':
+                    week_reply = self._week_part_reply(incoming_message)
+                    if week_reply:
+                        self._set_question_retry_count(
+                            next_question, max(retry_count, 1))
+                        return week_reply
 
                 if next_question == "name":
                     return self._handle_name_step(incoming_message, updated_fields)
