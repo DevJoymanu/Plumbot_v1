@@ -97,6 +97,17 @@ def _read_pending(appointment) -> Optional[dict]:
     return None
 
 
+def in_delay_flow(appointment) -> bool:
+    """True while the delay flow is waiting on the lead's answer (timeframe,
+    confirm, access check-in or email). Read by the webhook, which sends these
+    scripted steps past the model reader."""
+    try:
+        pending = _read_pending(appointment) or {}
+    except Exception:
+        return False
+    return (pending.get('category') or '').startswith('delay_')
+
+
 def _clear_pending(appointment) -> None:
     """Remove the pending-clarification tag from internal_notes."""
     notes = appointment.internal_notes or ""
@@ -2120,11 +2131,18 @@ def _build_delay_reply(message: str, appointment) -> str:
     subtype = _classify_delay_subtype(message, appointment)
 
     if subtype == 'brush_off':
-        # Soft brush-off — instead of just letting the lead go, make one
-        # value-add attempt: offer the portfolio (past projects + full pricing)
-        # by email so they have something detailed to weigh while they decide or
-        # when they come back. Park the lead so the scheduler stays silent
-        # (P0 state-guard) if they ghost; parking does not block inbound replies.
+        # Soft brush-off. The delay flow is ONE order for every kind of delay
+        # (owner rule, 2026-09-19): first a contextual reply that gets the
+        # timeframe, THEN the email, and the portfolio goes out once we have it.
+        # This branch used to open with the email ask (or, with an address on
+        # file, fire the portfolio before a word about timing), so a brush-off
+        # lead was asked for a contact detail before we knew when to come back.
+        # The timeframe answer lands in _handle_delay_timeframe_answer, which
+        # asks for the email and sends the portfolio.
+        #
+        # Park the lead so the scheduler stays silent (P0 state-guard) if they
+        # ghost; parking does not block inbound replies, and a timeframe answer
+        # unparks it (_store_delay_followup_date).
         try:
             appointment.mark_parked(save=True)
         except Exception:
@@ -2133,55 +2151,25 @@ def _build_delay_reply(message: str, appointment) -> str:
         # check-back date to weigh it against, and they've just told us they're
         # stepping away. (Same rule as the check-back path below.)
         release_deferred_visit(appointment, reason='brush-off')
-        # Already have their email → send the portfolio now, then ask for a rough
-        # follow-up date so we check back in proactively.
-        if getattr(appointment, 'customer_email', None):
-            try:
-                from bot.customer_emails import send_delay_quote_email_async
-                send_delay_quote_email_async(appointment)
-            except Exception:
-                logger.exception("brush_off portfolio email failed — apt %s",
-                                 getattr(appointment, 'pk', None))
-            notes = appointment.internal_notes or ''
-            if '[DELAY_QUOTE_SENT]' not in notes:
-                appointment.internal_notes = f'{notes}\n[DELAY_QUOTE_SENT]'.strip()
-                appointment.save(update_fields=['internal_notes'])
-            _write_pending(appointment, 'delay_timeframe', '')
-            # Isolate the real objection once before conceding — if they answer
-            # "the price", _delay_breakout_inquiry catches it and routes to the
-            # price tie-down handler; a timeframe is captured here; anything vague
-            # re-asks. Either way we still add value (portfolio) and keep a date.
+        _write_pending(appointment, 'delay_timeframe', '')
+        _note_timeframe_asked(appointment)
+        if _lead_speaks_shona(message):
             return (
-                # A statement, not a question. The concrete ask at the end of
-                # this reply is the one we need answered, and people answer
-                # the LAST question they are given, so a probe in front of it
-                # just costs us the answer we actually wanted.
-                "Totally fair. If it is the price or the timing holding you "
-                "back, say so and I will help you weigh it up.\n\n"
-                "No pressure either way — I've just emailed our portfolio of past "
-                "projects plus a more detailed pricing guide, so you've got "
-                "everything to weigh up.\n\n"
-                "And the free on-site visit is the no-commitment way to get a real "
-                "number — roughly when are you hoping to get this sorted? Even "
-                "'next week' or 'end of the month' is enough for me to hold you a "
-                "slot you can move later."
+                "Hapana dambudziko, hapana kumanikidzwa. Kana iri mari kana "
+                "nguva iri kukunetsai, ndiudzei tizvikurukure.\n\n"
+                "Munenge muchida kuzviita rini zvakadaro? Kunyangwe vhiki "
+                "rinouya kana kupera kwemwedzi zvakakwana kuti tizokubatai "
+                "panguva yakanaka."
             )
-        # Otherwise ask for their email; the reply funnels into the existing
-        # delay_email step, which captures it and sends the portfolio PDF.
-        _write_pending(appointment, 'delay_email', '')
-        # Same isolate-first move; pending is delay_email here, so the concrete
-        # ask is the email. A "price"/product reply (no '@') still breaks out to
-        # the right handler via _delay_breakout_inquiry.
+        # Isolate the real objection once before asking: if they answer "the
+        # price", _delay_breakout_inquiry catches it and routes to the price
+        # tie-down handler. It is a statement, not a question, because people
+        # answer the LAST question they are given.
         return (
-            # A statement, not a question. The concrete ask at the end of
-            # this reply is the one we need answered, and people answer the
-            # LAST question they are given, so a probe in front of it just
-            # costs us the answer we actually wanted.
-            "Totally fair. If it is the price or the timing holding you "
-            "back, say so and I will help you weigh it up.\n\n"
-            "Either way, I can send you something worth a look while you "
-            f"decide. {_EMAIL_VALUE_CLAUSE}\n\n"
-            "What's the best email for it?"
+            "Totally fair, no pressure at all. If it's the price or the timing "
+            "holding you back, say so and I'll help you weigh it up.\n\n"
+            "Roughly when are you hoping to get this sorted? Even next week or "
+            "end of the month is enough for us to check back at the right time."
         )
 
     if subtype == 'comparison_shopping':
@@ -2198,6 +2186,7 @@ def _build_delay_reply(message: str, appointment) -> str:
             logger.exception("comparison_shopping portfolio send failed — apt %s",
                              getattr(appointment, 'pk', None))
         _write_pending(appointment, 'delay_timeframe', message)
+        _note_timeframe_asked(appointment)
         intro = (
             "Smart to compare. I'm sending through some of our past jobs now so "
             "you can weigh us on quality, not just price.\n\n"
@@ -2219,6 +2208,7 @@ def _build_delay_reply(message: str, appointment) -> str:
         return _build_access_checkin_reply(message, appointment)
 
     _write_pending(appointment, 'delay_timeframe', message)
+    _note_timeframe_asked(appointment)
     # Phase 1 of the reasoning controller: this is the slow lead branch, and it
     # is the first thing to render from bot/controller_templates.py instead of
     # a fixed string. Two things change. The copy is the owner's voice rather
@@ -2534,19 +2524,6 @@ def _note_delay_followup_channel(appointment, due_dt):
             "for appointment=%s — WhatsApp follow-up",
             due_dt, free_until, getattr(appointment, 'id', None),
         )
-
-
-def _checkback_is_free_on_whatsapp(appointment) -> bool:
-    """True when the agreed check-back lands inside this lead's free WhatsApp
-    window, so we can reach them right here at the moment they named.
-
-    Set by _note_delay_followup_channel, which runs inside
-    _store_delay_followup_date, so it is already decided by the time the flow
-    reaches the email ask. When it is true there is nothing an email buys us:
-    asking for one is asking for a contact detail we do not need, and it is the
-    ask leads push back on ("just send it here").
-    """
-    return _DELAY_CHANNEL_WA_TAG in (getattr(appointment, 'internal_notes', '') or '')
 
 
 def _friendly_iso(iso_date):
@@ -2901,6 +2878,22 @@ def _read_delay_reask(appointment) -> int:
     return int(m.group(1)) if m else 0
 
 
+def _note_timeframe_asked(appointment) -> None:
+    """Record that step 1 of the delay flow already asked for the timeframe.
+
+    _reask_delay_timeframe counts its OWN asks, so a step-1 reply that asked
+    "roughly when?" and got a vague answer was asked the same thing again
+    before the email pivot. Counting the step-1 ask means the next miss moves
+    straight on to the email and the portfolio: nobody is asked "when?" twice.
+    """
+    if _read_delay_reask(appointment) >= 1:
+        return
+    notes = re.sub(r'\n?\[DELAY_TF_REASK\] \d+', '',
+                   appointment.internal_notes or '').strip()
+    appointment.internal_notes = f"{notes}\n{_DELAY_TF_REASK_TAG} 1".strip()
+    appointment.save(update_fields=['internal_notes'])
+
+
 def _clear_delay_reask(appointment) -> None:
     notes = appointment.internal_notes or ''
     if _DELAY_TF_REASK_TAG in notes:
@@ -3058,36 +3051,49 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
             )
         from bot.customer_emails import send_delay_quote_email_async
         send_delay_quote_email_async(appointment, follow_up_date_str=friendly_date)
-        return (
-            f"Got it, no problem. We'll check back {when}.\n\n"
-            "I've also sent a written quote and our portfolio — past projects plus "
-            "a more detailed pricing guide — to your email. "
-            "If anything changes just send us a message — we'll be right here."
-        )
-
-    # The date they named is inside their free WhatsApp window, so we can just
-    # message them here when it comes round. No email needed, so none is asked
-    # for — the follow-up cron re-checks the window at send time anyway.
-    if _checkback_is_free_on_whatsapp(appointment):
-        logger.info("Check-back %s is reachable on WhatsApp — skipping the email ask",
-                    iso_date)
+        _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
         if is_shona:
             return (
                 f"Zvakanaka, hapana dambudziko. Tichadzoka kwamuri {when}.\n\n"
-                "Kana pane chinochinja tisati tasvika ipapo, ingotumirai meseji."
+                "Ndakutumirai portfolio yedu yemabasa atakamboita nemitengo "
+                "yacho pa email yenyu. Kana pane chinochinja, ingotumirai meseji."
             )
         return (
             f"Got it, no problem. We'll check back with you {when}.\n\n"
-            "If anything changes before then, just send a message."
+            "I've sent our portfolio of past jobs with the pricing to your "
+            "email, so you've got it to look over. If anything changes, just "
+            "send us a message."
         )
 
-    # Outside the free window, email is the only way to reach them on the day,
-    # so ask for it alongside the presumptive date confirmation.
+    # Step 2: the email, then the portfolio (owner rule, 2026-09-19). Asked
+    # whatever the channel: this used to be skipped when the check-back fell
+    # inside the free WhatsApp window, which meant a lead who deferred on day
+    # one never received the portfolio at all. The [DELAY_CHANNEL] tag is still
+    # written, so the check-back itself goes out on WhatsApp when it can; a
+    # lead who would rather not give an address gets the PDF here instead
+    # (_handle_delay_email_answer).
+    return _delay_email_ask(appointment, iso_date, when, is_shona)
+
+
+def _delay_email_ask(appointment, iso_date, when, is_shona=False) -> str:
+    """The delay flow's email ask: confirm the check-back in the lead's own
+    words, then ask for the address the portfolio goes to. The reply lands in
+    the delay_email step, which captures it and sends the portfolio."""
     _write_pending(appointment, 'delay_email', iso_date or '')
+    when = f" {when}" if when else ""
+    if is_shona:
+        return (
+            f"Zvakanaka, hapana dambudziko. Tichadzoka kwamuri{when}.\n\n"
+            "Pakati apa ndingakutumirai portfolio yedu yemabasa atakamboita "
+            "nemitengo yacho, kuti muve nezvekutarisa. Inouya sePDF "
+            "yamunogona kuvhura chero nguva.\n\n"
+            "Ndeipi email yamungada kuti titumire?"
+        )
     return (
-        f"Got it, no problem. We'll check back {when} — and I'll "
-        f"send a written quote and our portfolio over too.\n\n{_EMAIL_VALUE_CLAUSE}\n\n"
-        "What's the best email for that?"
+        f"Got it, no problem. We'll check back with you{when}.\n\n"
+        "In the meantime I'll send you our portfolio of past jobs with the "
+        f"pricing, so you've got something to look over. {_EMAIL_VALUE_CLAUSE}\n\n"
+        "What's the best email for it?"
     )
 
 
@@ -3143,34 +3149,13 @@ def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> st
             "If anything changes just send us a message — we'll be right here."
         )
 
-    # Reachable free on WhatsApp at the agreed moment — confirm and stop there
-    # rather than asking for an address we don't need.
-    if _checkback_is_free_on_whatsapp(appointment):
-        # The message on hand here is just "yes", so the phrase leans on the
-        # time they named earlier in the flow rather than this turn's words.
-        is_shona = _lead_speaks_shona(message)
-        phrase   = _checkback_when_phrase(iso_date, message, appointment,
-                                          is_shona=is_shona)
-        when = f" {phrase}" if phrase else ""
-        logger.info("Check-back reachable on WhatsApp — skipping the email ask (step 4)")
-        if is_shona:
-            return (
-                f"Zvakanaka, tichadzoka kwamuri{when}.\n\n"
-                "Kana pane chinochinja tisati tasvika ipapo, ingotumirai meseji."
-            )
-        return (
-            f"Perfect, we'll check back with you{when}.\n\n"
-            "If anything changes before then, just send a message."
-        )
-
-    # Step 4 — ask for email with quote framing
-    _write_pending(appointment, 'delay_email', iso_date or '')
-    return (
-        "Perfect.\n\n"
-        "We'll also send you a proper written quote and our portfolio. "
-        f"{_EMAIL_VALUE_CLAUSE}\n\n"
-        "What's the best email for it?"
-    )
+    # Step 4: the email, then the portfolio, whatever the channel (see
+    # _handle_delay_timeframe_answer). The message on hand here is just "yes",
+    # so the phrase leans on the time they named earlier in the flow.
+    is_shona = _lead_speaks_shona(message)
+    phrase = _checkback_when_phrase(iso_date, message, appointment,
+                                    is_shona=is_shona)
+    return _delay_email_ask(appointment, iso_date, phrase, is_shona)
 
 
 # ── Why the LEAD is better off giving us an email ────────────────────────────
@@ -3531,10 +3516,19 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
     appointment.save(update_fields=['internal_notes', 'is_delayed'])
 
     if iso_date:
+        is_shona = _lead_speaks_shona(message)
+        phrase = _checkback_when_phrase(iso_date, None, appointment,
+                                        is_shona=is_shona)
+        when = f" {phrase}" if phrase else ""
+        if is_shona:
+            return (
+                "Zvakanaka, portfolio yedu irikuuya ku email yenyu izvozvi.\n\n"
+                f"Tichadzoka kwamuri{when}. Kana pane chinochinja, ingotumirai meseji."
+            )
         return (
-            "Got it! I'll have that sent across to you shortly.\n\n"
-            "We'll also check back in with you on the agreed date. "
-            "Speak soon!"
+            "Got it, thanks. Our portfolio is on its way to your inbox now.\n\n"
+            f"We'll check back in with you{when}. If anything changes before "
+            "then, just send a message."
         )
     # No agreed date yet (e.g. soft brush-off led with the portfolio offer) — ask
     # for a rough follow-up date so we check back proactively instead of waiting.

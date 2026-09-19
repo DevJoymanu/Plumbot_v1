@@ -3907,8 +3907,14 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # answering, dispatch on offered_date vs today — >7 days out parks the lead;
         # within a week keeps booking. DeepSeek already resolved the date; code only
         # does the math + state transition. No extra API call (reuses _uclass).
+        # Not while the delay flow is waiting on this very answer: its handler
+        # does the same near/far math AND then asks for the email the portfolio
+        # goes to. Taking "end of next month" here parked the lead and the email
+        # was never asked (live scenario, 2026-09-19).
+        from .out_of_scope_handler import in_delay_flow as _in_delay_flow
         if _next_question in ('availability_date', 'availability_time') and \
-                uc_pivoted_to_timeline(_uclass):
+                uc_pivoted_to_timeline(_uclass) and \
+                not _in_delay_flow(appointment):
             _pivot_reply = plumbot._dispatch_timeline_pivot(
                 _next_question,
                 uc_offered_date(_uclass),
@@ -4387,7 +4393,8 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             return
 
         # -- STEP 1b: Out-of-scope / delay / complaint --------------------------
-        from .out_of_scope_handler import handle_out_of_scope
+        from .out_of_scope_handler import handle_out_of_scope, in_delay_flow
+        _was_in_delay_flow = in_delay_flow(appointment)
         oos_reply = handle_out_of_scope(
             message_body, appointment,
             precomputed=uc_as_oos_classification(_uclass),
@@ -4403,7 +4410,23 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 'complaint': 'escalate_to_human',
                 'out_of_scope': 'out_of_scope_redirect',
             }.get(uc_intent(_uclass), 'out_of_scope_redirect'))
-            oos_reply = finalise_outbound(oos_reply, appointment, message_body)
+            # check=False for a delay-flow step: its whole job is the ask at
+            # the end (the timeframe, then the email the portfolio goes to), and
+            # the model reader kept "tidying" that ask away. "Roughly when are
+            # you hoping to get this sorted?" went out as "I'll save your number
+            # and check in another time", and the email ask as a bare check-back
+            # confirmation, so the lead was never asked and the portfolio never
+            # went. Every deterministic rule in the chain still runs.
+            # visit_note=False while the flow is still WAITING on them: the note
+            # reads "roughly when are you hoping to get this sorted?" as the
+            # availability ask and REPLACES it with the visit pitch, which is a
+            # re-pitch to a lead who has just deferred. A near timeframe that
+            # pivots to booking clears the wait, so that ask keeps its note.
+            _delay_step = (_was_in_delay_flow or in_delay_flow(appointment)
+                           or uc_intent(_uclass) == 'delay_signal')
+            oos_reply = finalise_outbound(oos_reply, appointment, message_body,
+                                          check=not _delay_step,
+                                          visit_note=not in_delay_flow(appointment))
             appointment.add_conversation_message("assistant", oos_reply)
             appointment.last_outbound_at = timezone.now()
             appointment.last_contacted_at = appointment.last_outbound_at

@@ -1,0 +1,24 @@
+# Delay flow order (owner rule, 2026-09-19): after ANY delay signal, the first
+# reply is contextual and gets the timeframe; only then is the email asked, and
+# the portfolio goes to it. A brush-off used to open with the email ask, and a
+# check-back inside the free WhatsApp window never asked for an email at all,
+# so that lead never got the portfolio.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> I want to redo my bathroom
+reject: US$
+
+> Maybe later, just saving your number for now
+expect: when
+reject: email
+
+> End of next month
+expect: email
+expect: portfolio
+reject: written quote
+
+> me@example.com
+expect: portfolio
+reject: what's the best email

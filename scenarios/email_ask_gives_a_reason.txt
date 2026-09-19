@@ -16,10 +16,15 @@
 expect: what area are you in
 reject: US$
 
+# Delay order (owner rule, 2026-09-19): the timeframe first, then the email.
 > Ndiri kuchitungwiza ndichakubatayi ndapedza kuronga mari
-expect: email
-expect: other quotes
+reject: email
 reject: what area are you in
+reject: book you a time
+
+> Kupera kwemwedzi unouya
+expect: email
+expect: portfolio
 
 # The reason has to be in the ask itself, not just the word "email".
 > Ko email yacho munoda yei

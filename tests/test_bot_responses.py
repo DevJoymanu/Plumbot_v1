@@ -9538,10 +9538,11 @@ results.log(
     got='turn1/turn2 both ask when' ,
 )
 
-# ── A check-back inside the free window is done on WhatsApp, not by email ───
-# If we can reach them here at the moment they named, an email buys nothing —
-# and it is the ask leads push back on ("just send it here, I don't usually
-# have data"). Outside the window email is the only way, so it is still asked.
+# ── After the timeframe, the email is ALWAYS asked (owner rule, 2026-09-19) ──
+# The delay flow is timeframe first, then email + portfolio. It used to skip the
+# email when the check-back fell inside the free WhatsApp window, so a lead who
+# deferred on day one never got the portfolio. The channel tag is still written,
+# so the check-back itself goes out on WhatsApp when it can.
 from datetime import timedelta as _td
 from django.utils import timezone as _tz
 from bot.out_of_scope_handler import _handle_delay_timeframe_answer as _hdta
@@ -9574,16 +9575,80 @@ try:
     _inside = _FakeWindowAppt(72)      # window open for three more days
     _r_in = _hdta('ndichakubatayi', {}, _inside)
     results.log(
-        "check-back: inside the free window we say we'll message here, no email ask",
-        'email' not in _r_in.lower() and 'check back with you' in _r_in.lower()
+        "check-back: inside the free window the email + portfolio are still asked",
+        'email' in _r_in.lower() and 'portfolio' in _r_in.lower()
+        and 'check back with you' in _r_in.lower()
         and '[DELAY_CHANNEL] whatsapp' in _inside.internal_notes,
         got=repr(' '.join(_r_in.split())[:140]),
     )
     results.log(
-        "check-back: the WhatsApp confirmation still names the agreed day",
+        "check-back: the email ask never claims a written quote exists",
+        'written quote' not in _r_in.lower(),
+        got=repr(' '.join(_r_in.split())[:140]),
+    )
+    results.log(
+        "check-back: the email ask still names the agreed day",
         any(d in _r_in for d in ('Monday', 'Tuesday', 'Wednesday', 'Thursday',
                                  'Friday', 'Saturday', 'Sunday')),
         got=repr(' '.join(_r_in.split())[:140]),
+    )
+
+    # Brush-off: step 1 is the timeframe, never the email (owner rule).
+    from bot.out_of_scope_handler import _build_delay_reply as _bdr
+    _real_sub = _oos._classify_delay_subtype
+    _oos._classify_delay_subtype = lambda _m, _a: 'brush_off'
+
+    class _FakeBrushAppt(_FakeWindowAppt):
+        phone_number = 'whatsapp:+263770000000'
+        def mark_parked(self, save=True):
+            pass
+
+    try:
+        _ba = _FakeBrushAppt(72)
+        _rb = _bdr('Maybe later, just saving your number for now', _ba)
+        results.log(
+            "delay order: a brush-off is asked its timeframe first, no email ask",
+            'when' in _rb.lower() and 'email' not in _rb.lower()
+            and 'category=delay_timeframe' in _ba.internal_notes,
+            got=repr(' '.join(_rb.split())[:140]),
+        )
+        # Their timeframe then gets the email ask, which carries the portfolio.
+        # Pinned three weeks out: a near date is readiness and books instead.
+        _oos._compute_followup_date = lambda _m, _d=None: (
+            (_tz.localdate() + _td(days=21)).isoformat(),
+            (_tz.localdate() + _td(days=21)).strftime('%A %d %B'))
+        _rb2 = _hdta('end of the month', {}, _ba)
+        _oos._compute_followup_date = _fixed_date
+        results.log(
+            "delay order: the brush-off's timeframe answer asks for the email",
+            'email' in _rb2.lower() and 'portfolio' in _rb2.lower(),
+            got=repr(' '.join(_rb2.split())[:140]),
+        )
+        # A vague answer after step 1 moves on to the email, never "when?" again.
+        _bb = _FakeBrushAppt(72)
+        _bdr('Maybe later', _bb)
+        _oos._compute_followup_date = lambda _m, _d=None: (None, None)
+        _rb3 = _hdta('not sure', {}, _bb)
+        results.log(
+            "delay order: a vague answer to step 1 pivots to the email, no second 'when?'",
+            'email' in _rb3.lower() and 'roughly when' not in _rb3.lower(),
+            got=repr(' '.join(_rb3.split())[:140]),
+        )
+        _oos._compute_followup_date = _fixed_date
+    finally:
+        _oos._classify_delay_subtype = _real_sub
+
+    # The model reader must not rewrite a delay step: it "tidied" the timeframe
+    # and email asks away, so the lead was never asked and got no portfolio.
+    from bot.out_of_scope_handler import in_delay_flow as _idf
+    import inspect as _insp, bot.whatsapp_webhook as _wh
+    _src = _insp.getsource(_wh._generate_and_schedule_reply)
+    results.log(
+        "delay order: a delay step skips the model reader and the timeline pivot",
+        _idf(_ba) and not _idf(_FakeWindowAppt(72))
+        and 'check=not _delay_step' in _src
+        and 'not _in_delay_flow(appointment)' in _src,
+        got=f"in_delay_flow={_idf(_ba)}",
     )
 
     _outside = _FakeWindowAppt(4)      # window shuts tonight
