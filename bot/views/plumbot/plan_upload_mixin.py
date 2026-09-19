@@ -155,7 +155,7 @@ class PlanUploadMixin:
             
                 service_name = self.appointment.project_type.replace('_', ' ').title()
             
-                upload_message = f"""Perfect! Since you have a plan for your {service_name}, I'll need you to send it to me so our plumber can review it.
+                upload_message = f"""Perfect! Since you have a plan for your {service_name}, I'll need you to send it to me so we can review it.
 
  PLAN UPLOAD INSTRUCTIONS:
 
@@ -169,7 +169,7 @@ class PlanUploadMixin:
     • Plumbing connections
     • Any special requirements
 
-    Once you send the plan, I'll forward it to our plumber immediately. Send your first image or document now."""
+    Once you send the plan, we'll look at it straight away. Send your first image or document now."""
 
                 return upload_message
 
@@ -201,7 +201,7 @@ class PlanUploadMixin:
 
     If you have more images or documents to send, please continue. 
 
-    When you're finished sending everything, just type "done" or "finished" and I'll send it all to the plumber."""
+    When you're finished sending everything, just type "done" or "finished" and we'll go through it all."""
 
             except Exception as e:
                 print(f"❌ Error in plan upload flow: {str(e)}")
@@ -251,13 +251,13 @@ class PlanUploadMixin:
                 # ✅ Customer-friendly wording
                 if customer_name:
                     intro_message = (
-                        f"Hi {customer_name}, I've forwarded your {service_name} "
-                        "plan to our plumber for review."
+                        f"Hi {customer_name}, we've got your {service_name} "
+                        "plan and we're going through it."
                     )
                 else:
                     intro_message = (
-                        f"Thanks! I've forwarded your {service_name} "
-                        "plan to our plumber for review."
+                        f"Thanks! We've got your {service_name} "
+                        "plan and we're going through it."
                     )
 
                 completion_message = f""" PLAN SENT SUCCESSFULLY!
@@ -265,15 +265,15 @@ class PlanUploadMixin:
         {intro_message}
 
  NEXT STEPS:
-        • Our plumber will review your plan within 24 hours
-        • They'll contact you directly on this number: {self.phone_number.replace('whatsapp:', '')}
-        • They'll discuss the project details and provide a quote
-        • Once approved, they'll book your appointment or message you to complete booking
+        • We'll review your plan within 24 hours
+        • We'll contact you directly on this number: {self.phone_number.replace('whatsapp:', '')}
+        • We'll go through the project details and give you a quote
+        • Once you're happy, we'll book your appointment or message you to complete booking
 
-{f''' PLUMBER DIRECT CONTACT:
-        If you need to reach them directly: {plumber_number.replace('+263', '0').replace('+', '')}
+{f''' DIRECT CONTACT:
+        If you need to reach us directly: {plumber_number.replace('+263', '0').replace('+', '')}
 ''' if plumber_number else ''}
-        You don't need to do anything now — just wait for their call. They're very responsive!
+        You don't need to do anything now, we'll be in touch shortly.
 
         Questions? Feel free to ask here anytime 
         """
@@ -284,7 +284,7 @@ class PlanUploadMixin:
                 print(f"❌ Error completing plan upload: {str(e)}")
                 return (
                     "Your plan has been uploaded successfully. "
-                    "Our plumber will review it and contact you within 24 hours."
+                    "We'll review it and contact you within 24 hours."
                 )
 
 
@@ -334,19 +334,17 @@ class PlanUploadMixin:
                 remaining_hours = int(24 - hours_since)
                 return f""" PLAN STATUS UPDATE:
 
-    Your plan was sent {int(hours_since)} hours ago. Our plumber typically responds within 24 hours.
+    Your plan was sent {int(hours_since)} hours ago. We usually respond within 24 hours.
 
     Expected contact: Within the next {remaining_hours} hours
 
-    If it's urgent, you can call directly: 0774819901
-
-    Otherwise, they'll definitely contact you today!"""
+    We'll be in touch with you today."""
             else:
                 return """I see it's been over 24 hours since your plan was sent. Let me check on this for you.
 
-    Please call our plumber directly at 0774819901 - they may have tried to reach you already.
+    We may have tried to reach you already, so please keep an eye on your phone.
 
-    I'll also send them a follow-up message now."""
+    I'm chasing it up now."""
 
 
         def handle_plan_change_request(self):
@@ -358,7 +356,7 @@ class PlanUploadMixin:
 
     Please send your revised plan materials now (images or PDF). 
 
-    I'll make sure the plumber gets the updated version and knows it replaces the previous one."""
+    We'll make sure we work from the updated version and set the previous one aside."""
 
 
         def handle_urgent_plan_request(self):
@@ -388,17 +386,15 @@ class PlanUploadMixin:
                         getattr(self.appointment, 'tenant', None)
                     ).send_text_message(plumber, urgent_message)
             
-                return """ I've marked your plan review as URGENT and notified our plumber immediately.
+                return """ I've marked your plan review as URGENT.
 
-    They should contact you within the next few hours.
-
-    For immediate assistance, you can also call: 0774819901
+    We'll contact you within the next few hours.
 
     I understand this is time-sensitive!"""
 
             except Exception as e:
                 print(f"❌ Error handling urgent request: {str(e)}")
-                return "I've noted this is urgent. Please call our plumber directly at 0774819901 for immediate assistance."
+                return "I've noted this is urgent. We'll get back to you as quickly as we can."
 
 
         def verify_plan_question_not_asked_recently(self):

@@ -22,8 +22,14 @@ from bot.test_console import is_test_sender
 
 # ── Pipeline plumbing (single implementation for REPL, CLI and web) ──────────
 
-def history(sender):
-    appt = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}").first()
+def history(sender, tenant=None):
+    """The test lead's transcript ON THIS TENANT. The same scenario run as two
+    tenants uses the same 999 number, and an unscoped lookup read the OTHER
+    tenant's lead, reporting a real reply as silence."""
+    leads = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
+    if tenant is not None:
+        leads = leads.filter(tenant=tenant)
+    appt = leads.first()
     return (appt.conversation_history or []) if appt else []
 
 
@@ -48,11 +54,11 @@ def send_message(sender, message, media_wait: float = 60.0, tenant=None):
     from bot.whatsapp_webhook import handle_text_message
 
     def _new_replies(before_count):
-        entries = history(sender)[before_count:]
+        entries = history(sender, tenant=tenant)[before_count:]
         return [(e.get("content") or "") for e in entries
                 if isinstance(e, dict) and e.get("role") == "assistant"]
 
-    before = len(history(sender))
+    before = len(history(sender, tenant=tenant))
     handle_text_message(
         sender, {"body": message},
         message_id=f"wamid.TESTIN{uuid.uuid4().hex}",

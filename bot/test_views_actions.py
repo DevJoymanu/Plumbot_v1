@@ -11466,3 +11466,55 @@ class AdvanceTheSaleTests(TestCase):
         self.assertTrue(
             '?' in (reply or ''),
             f'the reply must move the sale on, got: {reply!r}')
+
+
+class MaterialsListPriceBookTests(TestCase):
+    """A photographed materials list is priced from the business's OWN figures.
+
+    Owner decision 2026-09-18: unit prices come from the tenant's own quote
+    lines and templates, never a guess. The hard rule underneath is the
+    multi-tenant one: no other business's figure may price this lead's list,
+    and a GLOBAL template is the operator's, not the tenant's.
+    """
+
+    def setUp(self):
+        from .models import TenantPriceItem
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.barmak = Tenant.objects.create(
+            name='Barmak Plumbing', slug='barmak-plumbing')
+        barmak_lead = make_lead(7301, tenant=self.barmak)
+        quote = Quotation.objects.create(appointment=barmak_lead)
+        QuotationItem.objects.create(quotation=quote, description='15mm Copper Elbow',
+                                     quantity=10, unit_price=Decimal('0.85'))
+        template = QuotationTemplate.objects.create(
+            name='Operator starter', tenant=self.homebase, is_global=True)
+        QuotationTemplateItem.objects.create(
+            template=template, description='22mm copper tee',
+            quantity=1, unit_price=Decimal('9.99'))
+        TenantPriceItem.objects.create(tenant=self.barmak, family='basin',
+                                       supply=Decimal('50'), labour=Decimal('20'))
+        self.lines = ['60 x 15mm copper elbows (cap)', '4 x 22mm copper tees (cap)',
+                      '3 x wash hand basins']
+
+    def _priced(self, tenant):
+        from .materials_list import price_list, tenant_price_book
+        from .tenant_config import get_config
+        return price_list(self.lines, tenant_price_book(tenant), get_config(tenant))
+
+    def test_the_business_prices_its_list_from_its_own_quote(self):
+        priced = self._priced(self.barmak)
+        items = {row[2]: row[3] for row in priced['rows']}
+        self.assertEqual(items['15mm copper elbows (cap)'], Decimal('0.85'))
+        self.assertEqual(items['wash hand basins'], Decimal('50'))
+        self.assertEqual(priced['labour_total'], Decimal('60'))
+
+    def test_another_business_figure_never_prices_this_list(self):
+        priced = self._priced(self.homebase)
+        self.assertNotIn('15mm copper elbows (cap)',
+                         [row[2] for row in priced['rows']])
+
+    def test_a_global_template_is_not_the_tenant_price(self):
+        for tenant in (self.homebase, self.barmak):
+            priced = self._priced(tenant)
+            self.assertIn('22mm copper tees (cap)', priced['unpriced'])

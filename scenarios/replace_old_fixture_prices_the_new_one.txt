@@ -1,0 +1,16 @@
+# "Replace my old X with a new one" gets the NEW fixture's starting prices
+# (owner rule, 2026-09-18): supply, install, and the mixer where the fixture
+# takes one, all from the tenant's own figures.
+#
+# Before: a basin replacement was priced as a VANITY UNIT (the classifier maps
+# basin to vanity), and no reply carried a mixer, so the lead met it on the
+# quote. The fixture now comes from the customer's own words.
+#
+# Also guards the owner's voice rule: we, never "the plumber".
+
+> How much to change my old basin to a new one?
+expect: new basin
+expect: install
+reject: vanity
+reject: the plumber
+reject: our plumber

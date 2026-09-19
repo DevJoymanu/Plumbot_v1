@@ -394,8 +394,20 @@ def strip_known_questions(reply: str, appointment):
     out_parts = []
 
     for part in reply.split(MESSAGE_SPLIT_MARKER):
-        kept = []
-        for sentence in _split_sentences(part):
+        # Split KEEPING the whitespace between sentences, and put each kept
+        # sentence back behind its own separator. Rejoining with " " flattened
+        # every paragraph break after a full stop in EVERY reply, even when
+        # nothing was dropped: the owner-approved materials-list reply lost its
+        # three closing paragraphs into one block (2026-09-18).
+        pieces = re.split(r'(?<=[.!?])(\s+)', part or '')
+        rebuilt = ''
+        pending_sep = ''
+        for i in range(0, len(pieces), 2):
+            sentence = pieces[i]
+            sep_after = pieces[i + 1] if i + 1 < len(pieces) else ''
+            if not sentence.strip():
+                pending_sep = pending_sep or sep_after
+                continue
             redundant = next(
                 (key for key, matcher, _ in _KNOWN_FIELD_QUESTIONS
                  if state.get(key) and '?' in sentence and matcher.search(sentence)),
@@ -404,9 +416,13 @@ def strip_known_questions(reply: str, appointment):
             if redundant:
                 caught.append(redundant)
                 continue
-            kept.append(sentence)
-        out_parts.append(" ".join(kept).strip())
+            rebuilt += (pending_sep if rebuilt else '') + sentence
+            pending_sep = sep_after
+        out_parts.append(rebuilt.strip())
 
+    if not caught:
+        # Nothing was re-asked: the reply goes out exactly as composed.
+        return reply, []
     cleaned = MESSAGE_SPLIT_MARKER.join(p for p in out_parts if p)
     if not cleaned.strip():
         if caught:
@@ -958,9 +974,10 @@ def dequalify_free_visit(lead, message: str) -> str:
     already said.
     """
     cleaned, _ = strip_repeat_free_visit(message, lead)
-    # A follow-up is a text message like any other: no dash punctuation.
-    from bot.utils import strip_dashes
-    return strip_dashes(cleaned)
+    # A follow-up is a text message like any other: no dash punctuation, and
+    # the business speaks as "we", never "the plumber" (owner rule).
+    from bot.utils import strip_dashes, speak_as_we
+    return strip_dashes(speak_as_we(cleaned))
 
 
 def _visit_fact_line(bot) -> str:
@@ -2025,7 +2042,7 @@ class ResponseMixin:
                         "in their own words — is the only thing they're looking to get "
                         "sorted (e.g. \"Is a shower room the only thing you're looking to "
                         "get sorted?\"). Zimbabwean English. No emojis, no markdown. "
-                        "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
+                        "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung). "
                         "Invent nothing — no prices or details not in the reference."
                     )
                 else:
@@ -2994,6 +3011,256 @@ class ResponseMixin:
                         f"or starting with one?")
             joined = ", ".join(names[:-1]) + f" and {names[-1]}"
             return f"Are you looking to do all of them, {joined}, or starting with one?"
+
+        # ── A photo of fixtures: ask what the JOB is ─────────────────────────
+        # A bare photo of a tub tells us WHAT, never what they want DONE with
+        # it. The old ack asked "Is it the tub you're looking to get sorted?",
+        # a yes/no whose best answer ("yes") left the project description as
+        # empty as before, so the next turn had to ask it again. The picture
+        # is also genuinely ambiguous: a lead sends the tub they HAVE (fix it)
+        # as often as a tub they WANT (fit one like this). So the question is
+        # this-or-that between exactly those two, naming the fixture back, and
+        # whichever half they pick IS the description.
+        #
+        # Order is the order the fixtures are named back. `tap` and `basin` sit
+        # at the end because they are usually PART of another fixture (a
+        # cubicle has a mixer, a vanity has a basin) and must not read as a
+        # second item; `_ACCESSORY_OF` drops them when their host is in frame.
+        # Pipes, drains and tiles are not fixtures anyone asks us to "fit one
+        # like this" of, so they fall back to the generic question.
+        _SEEN_FIXTURE_ORDER = ('shower', 'tub', 'toilet', 'chamber', 'vanity',
+                               'geyser', 'basin', 'tap')
+        _SEEN_FIXTURE_NOUN = {
+            'shower': 'shower cubicle', 'tub': 'tub', 'toilet': 'toilet',
+            'chamber': 'side chamber', 'vanity': 'vanity', 'geyser': 'geyser',
+            'basin': 'basin', 'tap': 'tap',
+        }
+        _ACCESSORY_OF = {
+            'tap': {'shower', 'tub', 'vanity', 'basin', 'toilet'},
+            'basin': {'vanity'},
+        }
+        # What vision says when something is visibly wrong. Read per SENTENCE
+        # and skipped in a negated one, because vision routinely closes with
+        # "No leaks or damage are visible", which is the opposite of a fault.
+        _SEEN_FAULT_RE = re.compile(
+            r'\b(leak\w*|drip\w*|broken|crack\w*|damaged?|rust\w*|block\w*|'
+            # stain(ed|s) and never stain\w*: "stainless steel" is a finish.
+            r'burst|corrod\w*|missing|loose|mou?ld\w*|stain(?:ed|s)?|faulty|'
+            r'not working|worn)\b')
+        _SEEN_NEGATION_RE = re.compile(r"\b(no|not|without|none|nothing)\b|n't\b")
+
+        def _seen_fixtures(self, description: str) -> list:
+            """The installable fixtures vision named, in naming order."""
+            fams = self._product_families_in(description or '')
+            kept = [f for f in self._SEEN_FIXTURE_ORDER if f in fams]
+            return [f for f in kept
+                    if not (self._ACCESSORY_OF.get(f, set()) & set(kept))]
+
+        def _seen_fault(self, description: str) -> bool:
+            """Did vision report something visibly wrong (not merely absent)?"""
+            for sentence in re.split(r'[.;!?]+', (description or '').lower()):
+                if (self._SEEN_FAULT_RE.search(sentence)
+                        and not self._SEEN_NEGATION_RE.search(sentence)):
+                    return True
+            return False
+
+        def _seen_fixture_question(self, description: str,
+                                   is_shona: bool = False):
+            """The clarifying question for a photo showing fixtures we fit.
+
+            None when vision named nothing installable, so the caller keeps its
+            generic ask. One question, this-or-that, the fixture named in the
+            words we fit it by, no price (they showed us a tub, they did not
+            ask what one costs), no emoji, no dash.
+            """
+            fixtures = self._seen_fixtures(description)
+            if not fixtures:
+                return None
+            names = [self._SEEN_FIXTURE_NOUN[f] for f in fixtures]
+            many = len(names) > 1
+            if many:
+                joiner = ' ne ' if is_shona else ' and '
+                named = ', '.join(names[:-1]) + joiner + names[-1]
+            else:
+                named = names[0]
+
+            if self._seen_fault(description):
+                # Something is visibly wrong, so it is most likely THEIRS: the
+                # repair leads, replacement is the other half.
+                if is_shona:
+                    return (f"Muri kuda kuti tigadzirise {named}, "
+                            f"kana kuti tiise {'zvitsva' if many else 'imwe itsva'}?")
+                if many:
+                    return (f"Is it a repair on the {named} you're after, "
+                            f"or are you looking to replace them?")
+                return (f"Is it a repair on that {named} you're after, "
+                        f"or are you looking to replace it?")
+
+            if is_shona:
+                if many:
+                    return (f"Muri kuda kuiswa {named}, kana kuti "
+                            f"ndezvamunazvo zvinoda kugadziriswa?")
+                return (f"Muri kuda kuiswa {named} yakadai, kana kuti "
+                        f"ndeyamunayo inoda kugadziriswa?")
+            if many:
+                return (f"Are you looking to get the {named} fitted, "
+                        f"or is it work on the ones you have?")
+            article = 'an' if named[0] in 'aeiou' else 'a'
+            return (f"Is that {article} {named} you'd like us to fit for you, "
+                    f"or is it the one you have that needs some work?")
+
+        # ── "Replace my old X with a new one": price the NEW fixture ─────────
+        # Owner rule, 2026-09-18: a lead asking what it costs to replace an old
+        # fixture gets the starting prices of the NEW one, supply and install,
+        # plus the mixer where that fixture takes one. Before this a basin
+        # replacement came back priced as a VANITY UNIT (the classifier maps
+        # basin to vanity) and no reply carried a mixer, so the lead met the
+        # mixer as a surprise on the quote.
+        #
+        # The fixture comes from the customer's OWN words, never the carried
+        # intent (customer-words-override-gates). Figures are the tenant's own:
+        # supply and install off its price list, the mixer off that row's
+        # parts or else the tenant's own quote lines. No figure, no line.
+        _REPLACE_VERB_RE = re.compile(
+            r"\b(replac\w*|chang\w*|swap\w*|take\s+out|rip\s+out|remov\w*|"
+            r"upgrad\w*|kuchinj\w*)\b", re.IGNORECASE)
+        # A PART of a fixture being replaced is a repair, not a new fixture:
+        # "replace the toilet seat", "change the geyser element".
+        _REPLACE_PART_RE = re.compile(
+            r"\b(washers?|seals?|valves?|elements?|thermostats?|flush\w*|"
+            r"handles?|cartridges?|seats?|lids?|hinges?|flappers?|pipes?|"
+            r"heads?|hoses?|taps?|mixers?)\b", re.IGNORECASE)
+        # (fixture key, price-list rows to try, noun, mixer to add)
+        _REPLACE_FIXTURES = (
+            ('kitchen_sink', r"\bkitchen\s+sinks?\b|\bsinks?\b",
+             (('kitchen-sink', ''), ('kitchen_sink', ''), ('sink', '')),
+             'kitchen sink', 'sink mixer'),
+            ('vanity', r"\bvanit\w*\b", (('vanity', ''),), 'vanity unit', 'basin mixer'),
+            ('basin', r"\b(?:wash\s*hand\s*)?basins?\b", (('basin', ''),), 'basin', 'basin mixer'),
+            ('toilet', r"\btoilets?\b|\bwc\b|\bloo\b", (('toilet', ''),), 'toilet', ''),
+            ('shower', r"\bshowers?\b|\bcubicles?\b", (('shower', ''),), 'shower cubicle', 'shower mixer'),
+            ('tub', r"\b(?:bath\s*)?tubs?\b|\bbaths?\b|\bbathtubs?\b", (('tub', ''),),
+             'built-in tub', 'bath mixer'),
+            ('geyser', r"\bgeysers?\b", (('geyser', ''),), 'geyser', ''),
+            ('chamber', r"\bchambers?\b", (('chamber', ''),), 'side chamber', ''),
+        )
+
+        def _replacement_fixture(self, message: str):
+            """The ONE fixture a replacement price ask is about, or None.
+
+            None when there is no replacement verb, when it is a part being
+            replaced (a repair), or when the message names several fixtures
+            (the combined-price path answers those).
+            """
+            msg = (message or '').lower()
+            if not self._REPLACE_VERB_RE.search(msg):
+                return None
+            found = []
+            for key, pattern, rows, noun, mixer in self._REPLACE_FIXTURES:
+                if re.search(pattern, msg):
+                    # "vanity basin" is one fixture; a sink named inside
+                    # "kitchen sink" is the same one.
+                    if key == 'basin' and any(f[0] == 'vanity' for f in found):
+                        continue
+                    found.append((key, rows, noun, mixer))
+            if len(found) != 1:
+                return None
+            # The part check runs on what is left once the fixture name is
+            # taken out, so "shower cubicle" is not read as a shower HEAD job
+            # and "basin" never trips on its own mixer.
+            rest = re.sub(self._REPLACE_FIXTURES[
+                [f[0] for f in self._REPLACE_FIXTURES].index(found[0][0])][1], ' ', msg)
+            if self._REPLACE_PART_RE.search(rest):
+                return None
+            return found[0]
+
+        def _mixer_price(self, row, mixer: str):
+            """The tenant's own price for the mixer this fixture takes, or None."""
+            if not mixer:
+                return None
+            for part in (getattr(row, 'parts', None) or []):
+                if isinstance(part, dict) and 'mixer' in str(part.get('name', '')).lower() \
+                        and part.get('amount') not in (None, ''):
+                    return part.get('amount')
+            try:
+                from bot.materials_list import tenant_price_book, match_score
+                best, best_score = None, 0.0
+                for desc, price, _src in tenant_price_book(getattr(self.appointment, 'tenant', None)):
+                    score = match_score(mixer, desc)
+                    if score > best_score:
+                        best, best_score = price, score
+                return best
+            except Exception:
+                return None
+
+        def _replacement_price_reply(self, message: str, language: str = 'english'):
+            """Starting prices of the NEW fixture for a replacement ask, or None."""
+            found = self._replacement_fixture(message)
+            if not found:
+                return None
+            key, rows, noun, mixer = found
+            freestanding = key == 'tub' and re.search(
+                r"\bfree[\s-]?standing\b|\bstand[\s-]?alone\b", (message or '').lower())
+            if freestanding:
+                # Priced as its own build, which already carries its mixer.
+                rows, noun, mixer = (('tub', 'freestanding'),), 'freestanding tub', ''
+            cfg = self.tenant_cfg
+            row = None
+            for family, variant in rows:
+                row = cfg.price_item(family, variant)
+                if row is not None:
+                    break
+            if row is None:
+                return None
+            from bot.materials_list import _money
+            cur = cfg.currency
+            is_shona = self._lang_key(language) == 'shona'
+            lines = []
+            total = 0
+            if row.supply is not None and row.labour is not None:
+                lines.append((f"{noun.capitalize()}: kubva {_money(cur, row.supply)}" if is_shona
+                              else f"New {noun}: from {_money(cur, row.supply)}"))
+                lines.append((f"Kuisa: kubva {_money(cur, row.labour)}" if is_shona
+                              else f"Install: from {_money(cur, row.labour)}"))
+                total = float(row.supply) + float(row.labour)
+            elif row.allin is not None or row.flat is not None:
+                figure = row.allin if row.allin is not None else row.flat
+                has_mixer = any(isinstance(p, dict) and 'mixer' in str(p.get('name', '')).lower()
+                                for p in (getattr(row, 'parts', None) or []))
+                with_mixer = (' nemixer' if is_shona else ', mixer included') if has_mixer else ''
+                lines.append((f"{noun.capitalize()} nekuisa{with_mixer}: kubva {_money(cur, figure)}"
+                              if is_shona else
+                              f"New {noun}, supplied and installed{with_mixer}: "
+                              f"from {_money(cur, figure)}"))
+                total = float(figure)
+                # Its mixer is already inside that one figure.
+                mixer = '' if has_mixer else mixer
+            else:
+                return None
+            mixer_price = self._mixer_price(row, mixer)
+            if mixer_price:
+                lines.append((f"{mixer.capitalize()}: kubva {_money(cur, mixer_price)}" if is_shona
+                              else f"{mixer.capitalize()}: from {_money(cur, mixer_price)}"))
+                total += float(mixer_price)
+
+            head = (f"Kuti tiise {noun} itsva, mitengo yedu inotangira pa:" if is_shona
+                    else f"To replace it with a new {noun}, our starting prices are:")
+            all_in = (f"Zvese pamwe chete, kubva {_money(cur, total)}." if is_shona
+                      else f"All in, that's from {_money(cur, total)}.")
+            # One all-in line already IS the total; saying it twice reads odd.
+            parts = [head, '\n'.join(lines)] + ([all_in] if len(lines) > 1 else [])
+
+            # A tub has two builds. The freestanding one carries its own mixer.
+            if key == 'tub' and not freestanding:
+                free = cfg.price_item('tub', 'freestanding')
+                if free is not None and free.allin is not None:
+                    parts.append(
+                        (f"Kana muchida freestanding, inotangira pa {_money(cur, free.allin)} zvese pamwe chete."
+                         if is_shona else
+                         f"If you'd rather go freestanding, that's from "
+                         f"{_money(cur, free.allin)} all in, mixer included."))
+            parts.append(self._price_tiedown(language))
+            return '\n\n'.join(parts)
 
         def _asks_about_labour(self, message: str) -> bool:
             """True when the customer is asking specifically about labour / install
@@ -5442,7 +5709,7 @@ class ResponseMixin:
     - No markdown, no bold, no bullet points in the question itself
     - One question only — never stack two questions
     - No emojis at all, at any retry count
-    - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
+    - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung).
     - Never say "just checking in", "following up", "hope you're well"
     - Never use the customer's name (we may not know it)
     - Sound like a real person texting, not a bot
@@ -7008,6 +7275,16 @@ class ResponseMixin:
                     language = detect_language(message)
                     print(f"🌍 Detected language: {language}")
 
+                    # "How much to replace my old X with a new one?" is priced
+                    # as the NEW fixture from the customer's own words, supply,
+                    # install and its mixer, whatever intent was carried in
+                    # (a basin used to come back priced as a vanity unit).
+                    if self._asks_price_figure(message):
+                        _replacement = self._replacement_price_reply(message, language)
+                        if _replacement:
+                            print("🔁 Replacement ask priced as the new fixture")
+                            return _replacement
+
                     plumber_number = self.appointment.plumber_contact()
 
                     # Has the customer already committed to a site visit or given their location?
@@ -7725,9 +8002,9 @@ class ResponseMixin:
         NEVER stack two questions in one message.
         NEVER use contractions — write "we will" not "we'll", "they will" not "they'll".
         NEVER use emojis, not one, not at the end, not anywhere.
-        Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
+        Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung).
         Use "we" not "I" or "our" — you represent the whole team.
-        The plumber's name is {self.appointment.plumber_display_name()}.
+        The plumber's name is {self.appointment.plumber_display_name()}. ONLY say it if they ask who is coming or who they are dealing with; otherwise always say 'we'.
 
         CURRENT FLOW:
         1. service_type or pending
@@ -8053,7 +8330,7 @@ class ResponseMixin:
         - ONLY give prices, sizes, or measurements if the customer EXPLICITLY asked about price or size. If they did not ask, do NOT mention any prices, sizes, or specifications — just acknowledge what they want and keep it moving. The pricing guide above is for reference only; never volunteer it unprompted.
         - When you DO quote a price, always show the supply + install split using ONLY the figures in the pricing guide above — e.g. "Shower cubicles from US$170 all-in (supply from US$130 + install from US$40)". Never invent figures.
         - Zimbabwean English. No bold, no bullets. Do NOT end with a question.
-        - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung).
+        - Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung).
 
         HOW IT SHOULD SOUND — these show REGISTER only. They deliberately carry no
         figures: any price must come from the pricing guide above, which belongs to

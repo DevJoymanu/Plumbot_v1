@@ -185,6 +185,109 @@ def _dash_replacement(before: str, after: str) -> str:
     return ', '
 
 
+# ── WE, never "the plumber" (owner rule, restated 2026-09-18) ────────────────
+# The business speaks as one: "once we see the space", "we'll come through",
+# never "once the plumber sees the space" or "our plumber will come". The
+# owner had asked for this before and it did not stick, because it lived only
+# in the copy, and every new string or model reply brought a third party back.
+# So, like strip_dashes, it is enforced on the FINAL text at the outbound
+# choke points (finalise_outbound, the transcript log, delayed_response, the
+# cron copy) and pinned by TEST 0. Source copy should still say "we"; this is
+# the net under it, not a licence to write "the plumber".
+_WE_PLUMBER_RE = re.compile(
+    r"\b(the|our|your)\s+plumber(s)?\b(\s*['’]s)?", re.IGNORECASE)
+# After these words "the plumber" is the OBJECT: "meet the plumber" -> "meet
+# us", "speak with the plumber" -> "speak with us".
+_WE_OBJECT_BEFORE_RE = re.compile(
+    r"\b(to|with|for|from|by|meet|call|contact|reach|ask|tell|let|about|of|at"
+    r"|see|phone|message|text|email|hear)\s*$", re.IGNORECASE)
+_WE_ADVERBS = frozenset({
+    'always', 'also', 'usually', 'normally', 'then', 'just', 'still', 'only',
+    'first', 'now', 'typically', 'generally', 'personally', 'directly',
+    'actually', 'often', 'sometimes',
+})
+_WE_IRREGULAR = {'is': 'are', 'was': 'were', 'has': 'have', 'does': 'do',
+                 'goes': 'go', 'needs': 'need', "isn't": "aren't",
+                 "wasn't": "weren't", "hasn't": "haven't", "doesn't": "don't"}
+# Words ending in "s" that are not a third-person verb.
+_WE_NOT_VERBS = frozenset({
+    'this', 'his', 'its', 'as', 'us', 'plus', 'yes', 'perhaps', 'across',
+    'various', 'previous', 'serious', 'always', 'sometimes', 'is',
+})
+
+
+def _we_verb(word: str) -> str:
+    """'sees' -> 'see', 'is' -> 'are', 'will' -> 'will'."""
+    low = word.lower()
+    if low in _WE_IRREGULAR:
+        return _WE_IRREGULAR[low]
+    if low in _WE_NOT_VERBS or not low.endswith('s') or low.endswith('ss'):
+        return word
+    if low.endswith('ies') and len(low) > 4:
+        return word[:-3] + 'y'
+    if low.endswith(('sses', 'shes', 'ches', 'xes', 'zes', 'oes')):
+        return word[:-2]
+    return word[:-1]
+
+
+def speak_as_we(text: str) -> str:
+    """Rewrite "the plumber" / "our plumber" / "your plumber" as WE.
+
+    Subject -> "we" with its verb agreed ("the plumber sees" -> "we see",
+    "our plumber is" -> "we are"); object -> "us" ("meet the plumber" -> "meet
+    us"); possessive -> "our". Two shapes are left alone on purpose: a NAME in
+    apposition ("our plumber Takudzwa", the answer to a lead who asked who is
+    coming) and "the plumber's name", which only ever answers that question.
+    "a plumber" is generic ("still looking for a plumber?") and untouched.
+    Idempotent, so the choke points can all apply it.
+    """
+    if not text or 'plumber' not in text.lower():
+        return text
+    out = []
+    pos = 0
+    for m in _WE_PLUMBER_RE.finditer(text):
+        if m.start() < pos:
+            continue
+        before = text[:m.start()]
+        after = text[m.end():]
+        det = m.group(1)
+        cap = det[:1].isupper() and (not before.strip()
+                                     or before.rstrip()[-1:] in '.!?\n')
+        possessive = bool(m.group(3))
+        name = re.match(r"\s+([A-Z][a-z]+)\b", after)
+        if (possessive and re.match(r"\s*name\b", after, re.IGNORECASE)) or (
+                not possessive and name and name.group(1).lower() not in _WE_ADVERBS
+                and name.group(1) not in ('I', 'We')):
+            continue
+        out.append(text[pos:m.start()])
+        if possessive:
+            out.append('Our' if cap else 'our')
+            pos = m.end()
+            continue
+        if _WE_OBJECT_BEFORE_RE.search(before):
+            out.append('us')
+            pos = m.end()
+            continue
+        out.append('We' if cap else 'we')
+        pos = m.end()
+        # Agree the verb: skip adverbs ("the plumber usually comes").
+        words = re.match(r"((?:\s+(?:%s))*)(\s+)([A-Za-z']+)" % '|'.join(_WE_ADVERBS),
+                         text[pos:], re.IGNORECASE)
+        if words:
+            out.append(words.group(1) + words.group(2) + _we_verb(words.group(3)))
+            pos += words.end()
+        # The rest of the SENTENCE still points back at the plumber: "our
+        # plumber will lock in your price when they come out" must become
+        # "...when we come out", not keep a third party in the same breath.
+        end = re.search(r'[.!?\n]', text[pos:])
+        stop = pos + end.start() if end else len(text)
+        tail = re.sub(r"\b(he|she)['’]s\b", "we're", text[pos:stop])
+        out.append(re.sub(r"\b(he|she|they)\b", 'we', tail))
+        pos = stop
+    out.append(text[pos:])
+    return ''.join(out)
+
+
 def strip_dashes(text: str) -> str:
     """Take the dash punctuation out of customer-facing copy.
 

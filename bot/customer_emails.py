@@ -163,7 +163,9 @@ def _contact_buttons(apt):
         parts.append(
             f'<a href="tel:+{call}" style="display:inline-block;'
             f'border:1.5px solid #555;color:#333;text-decoration:none;'
-            f'padding:9px 16px;border-radius:4px;font-size:14px;"> Call {_plumber_name(apt).title()}</a>'
+            # "Call us", never the plumber by name: the business speaks as WE
+            # (owner rule, 2026-09-18).
+            f'padding:9px 16px;border-radius:4px;font-size:14px;"> Call us</a>'
         )
     if len(parts) == 1:
         return ''
@@ -276,7 +278,7 @@ def _send(apt, subject, html, attachment=None, attachment_name="HomeBase_Portfol
     if wa:
         contact_lines += f"WhatsApp: https://wa.me/{wa}\n"
     if call:
-        contact_lines += f"Call {_plumber_name(apt).title()}: +{call}\n"
+        contact_lines += f"Call us: +{call}\n"
     plain = (
         f"{subject}\n\n"
         f"Service: {_service(apt)}\n"
@@ -664,7 +666,7 @@ def build_booking_confirmation_email(apt):
         f'<p>Hi {name},</p>'
         f'<p>Your appointment is confirmed. Here are the details:</p>'
         f'{_apt_card(apt)}'
-        '<p>Our plumber will call you 30 minutes before arrival. '
+        '<p>We will call you 30 minutes before we arrive. '
         'Please ensure someone is home and the work area is accessible.</p>'
         f'{_wa_nudge(apt)}'
         f'<p>See you then! <br><strong>{_business_name(apt)}</strong></p>'
@@ -830,17 +832,17 @@ _REMINDER_CONFIGS = {
     },
     'morning': {
         'subject': "Today at {time} — {service}",
-        'intro':   'Good morning! Your plumber arrives <strong>today at {time}</strong>.',
-        'footer':  'Our plumber will call you 30 minutes before arrival.',
+        'intro':   'Good morning! We arrive <strong>today at {time}</strong>.',
+        'footer':  'We will call you 30 minutes before we arrive.',
     },
     'two_hours': {
         'subject': "On the way — arriving at {time}",
-        'intro':   'Your plumber is on the way — arriving in approximately <strong>2 hours</strong>.',
+        'intro':   'We are on the way, arriving in approximately <strong>2 hours</strong>.',
         'footer':  'Please ensure access is ready.',
     },
     'thirty_mins': {
         'subject': "Arriving in 30 minutes — {time}",
-        'intro':   'Your plumber is <strong>30 minutes away</strong>.',
+        'intro':   'We are <strong>30 minutes away</strong>.',
         'footer':  'Please make sure the entrance is accessible.',
     },
 }

@@ -1420,7 +1420,7 @@ class Appointment(models.Model):
         return f"{messages} messages. Last: {last_message}"
 
     def add_conversation_message(self, role, content, message_id=None, quoted=None,
-                                 image_description=None):
+                                 image_description=None, materials_list=None):
         """Add a message to conversation history.
 
         message_id — the WhatsApp WAMID for this message. Stored so that a later
@@ -1432,6 +1432,9 @@ class Appointment(models.Model):
         optional JSON key (never a column, per CLAUDE.md); read back by
         latest_image_description so a later "how much is this?" can resolve to
         the fixture in the picture.
+        materials_list — the lines of a written materials list the customer
+        photographed (bot/materials_list.py). Optional JSON key, like
+        image_description; read back when they ask what the list comes to.
         """
         try:
             # Ensure conversation_history is a list
@@ -1450,6 +1453,19 @@ class Appointment(models.Model):
                 return
             content = str(content)
 
+            # The bot speaks as WE, never "the plumber" (owner rule). Applied
+            # here as well as at send time (delayed_response) with the same
+            # idempotent function, so the transcript holds what was SENT and
+            # the outbound WAMID stamp still matches its entry. A staff
+            # member's own typed message is theirs and is left as written.
+            # Per PART, like the send: a split reply is logged by the recursive
+            # calls below, one part each.
+            from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _MSM
+            if (role == 'assistant' and _MSM not in content
+                    and not content.lstrip().startswith(('[MANUAL', '[BULK MANUAL'))):
+                from bot.utils import speak_as_we
+                content = speak_as_we(content)
+
             # A reply may carry MESSAGE_SPLIT_MARKER, meaning "send this as two
             # messages". Logged whole it puts a control character in the
             # transcript and denies each half its own WAMID, so a customer
@@ -1466,6 +1482,7 @@ class Appointment(models.Model):
                         message_id=message_id if _i == 0 else None,
                         quoted=quoted if _i == 0 else None,
                         image_description=image_description if _i == 0 else None,
+                        materials_list=materials_list if _i == 0 else None,
                     )
                 return
 
@@ -1517,6 +1534,8 @@ class Appointment(models.Model):
                 message["quoted"] = quoted
             if image_description:
                 message["image_description"] = image_description
+            if materials_list:
+                message["materials_list"] = list(materials_list)
 
             # Append to history
             self.conversation_history.append(message)

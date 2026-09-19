@@ -6511,53 +6511,522 @@ try:
     class _SeeBot(_RM3):
         appointment = None
 
-    def _seen_q(desc):
-        _b = _SeeBot()
-        _f = {x for x in _b._product_families_in(desc) if x in _b._FAMILY_DISPLAY}
-        _q = _b._confirm_intent_question(_f)
-        if _q is None and len(_f) == 1:
-            _q = (f"Is it the {_b._FAMILY_DISPLAY[next(iter(_f))]} "
-                  f"you're looking to get sorted?")
-        return _q
+    def _seen_q(desc, is_shona=False):
+        return _SeeBot()._seen_fixture_question(desc, is_shona=is_shona)
 
+    # A yes/no ("Is it the tub you're looking to get sorted?") answered "yes"
+    # still leaves the project description empty. The clarifier is this-or-
+    # that between fitting one like it and working on the one they have, so
+    # either answer IS the description.
     _one = _cma2('service_type', 'pending', 'image',
                  seen_question=_seen_q("A shower cubicle with a glass panel, a "
                                        "shower tray, a mixer and a shower head."))
-    results.log("bare photo: one fixture is named back, not re-asked",
-                "Is it the shower" in _one
-                and "describe what you'd like done" not in _one, got=_one)
+    results.log("photo clarifier: one fixture is named back as a fit-or-fix choice",
+                "shower cubicle you'd like us to fit" in _one
+                and "the one you have" in _one
+                and "describe what you'd like done" not in _one
+                and "looking to get sorted" not in _one, got=_one)
 
     _two = _cma2('service_type', 'pending', 'image',
                  seen_question=_seen_q("A freestanding bath with a floor-standing "
                                        "mixer tap and a standard close-coupled "
                                        "toilet are visible."))
-    results.log("bare photo: two fixtures get the scope confirm, not a describe ask",
-                "both the tub and toilet" in _two
-                and "describe what you'd like done" not in _two, got=_two)
+    results.log("photo clarifier: two fixtures are named together, fit or fix",
+                "the tub and toilet fitted" in _two
+                and "the ones you have" in _two, got=_two)
 
-    # A cubicle photo also matches the 'tap' family. That must not read as two
-    # items — the customer sees one thing in that picture.
+    # A visible fault means it is most likely THEIR fixture: repair leads.
+    _fault = _seen_q("A geyser with rust around the base and water dripping "
+                     "from the pressure valve.")
+    results.log("photo clarifier: a visible fault leads with the repair",
+                _fault == "Is it a repair on that geyser you're after, "
+                          "or are you looking to replace it?", got=_fault)
+
+    # Vision routinely says what is NOT wrong. A negated sentence is no fault.
+    _clean = _seen_q("A white toilet and basin. No leaks or damage are visible.")
+    results.log("photo clarifier: 'no leaks visible' is not a fault",
+                _clean is not None and "repair" not in _clean, got=_clean)
+    results.log("photo clarifier: 'stainless steel' is a finish, not a stain",
+                "repair" not in (_seen_q("A stainless steel basin with a mixer tap.") or ''))
+
+    # A cubicle photo also matches 'tap', and a vanity carries a basin. Parts
+    # of a fixture must not read as more items: the customer sees one thing.
     _b3 = _SeeBot()
-    results.log("bare photo: accessory families never inflate the fixture count",
-                {x for x in _b3._product_families_in(
-                    "A shower cubicle with a mixer and a shower head.")
-                 if x in _b3._FAMILY_DISPLAY} == {'shower'})
+    results.log("photo clarifier: accessory families never inflate the fixture count",
+                _b3._seen_fixtures("A shower cubicle with a mixer and a shower head.")
+                == ['shower']
+                and _b3._seen_fixtures("A vanity unit with a basin and a tap.")
+                == ['vanity'])
+    # A tap on its own IS the fixture.
+    results.log("photo clarifier: a lone tap is still a fixture we fit",
+                "tap" in (_seen_q("A dripping kitchen tap.") or ''))
 
-    # Nothing plumbing-related in frame: fall back to the generic ask.
+    # Mirror the lead's language.
+    _sn = _seen_q("A freestanding bath.", is_shona=True) or ''
+    results.log("photo clarifier: a Shona lead is asked in Shona",
+                "Muri kuda" in _sn and "tub" in _sn, got=_sn)
+
+    # One question, no dash, no emoji, never a price.
+    for _q in (_one, _two, _fault, _clean, _sn):
+        results.log("photo clarifier: one question, no dash, no price",
+                    _q.count('?') == 1 and ' - ' not in _q and '—' not in _q
+                    and 'US$' not in _q, got=_q)
+
+    # Nothing we fit in frame (pipes and tiles included): the generic ask.
     _none = _cma2('service_type', 'pending', 'image', seen_question=_seen_q("A garden fence."))
-    results.log("bare photo: an unreadable photo still asks the generic question",
+    results.log("photo clarifier: an unreadable photo still asks the generic question",
                 "describe what you'd like done" in _none, got=_none)
+    results.log("photo clarifier: pipes and tiles are not 'fit one like this'",
+                _seen_q("Exposed copper pipes along a tiled wall.") is None)
 
     # The picture cannot answer where they live or when they are free.
-    _area = _cma2('area', 'pending', 'image', seen_question="Is it the tub you're looking to get sorted?")
-    results.log("bare photo: a seen fixture never displaces the area question",
+    _area = _cma2('area', 'pending', 'image', seen_question=_seen_q("A freestanding bath."))
+    results.log("photo clarifier: a seen fixture never displaces the area question",
                 "Whereabouts are you based?" in _area, got=_area)
 
-    # Still no price: they showed us a tub, they did not ask what it costs.
-    results.log("bare photo: showing us a fixture never volunteers a price",
-                'US$' not in _one and 'US$' not in _two)
+    # A burst of photos gets ONE ack, so it must read every photo in the burst,
+    # and language comes from what they TYPED, not vision's English.
+    from bot.whatsapp_webhook import (
+        _photo_burst_description as _pbd, _last_typed_customer_text as _ltt)
+
+    class _BurstAppt:
+        conversation_history = [
+            {'role': 'user', 'content': 'Mhoro'},
+            {'role': 'assistant', 'content': 'Makadii'},
+            {'role': 'user', 'content': '[Sent image] A freestanding bath.',
+             'image_description': 'A freestanding bath.'},
+            {'role': 'user', 'content': '[Sent image] A close-coupled toilet.',
+             'image_description': 'A close-coupled toilet.'},
+        ]
+
+        def latest_image_description(self):
+            return 'A close-coupled toilet.'
+
+    _burst = _pbd(_BurstAppt())
+    results.log("photo clarifier: every photo in the burst is read",
+                'bath' in _burst and 'toilet' in _burst, got=_burst)
+    results.log("photo clarifier: language comes from typed text, not a photo turn",
+                _ltt(_BurstAppt()) == 'Mhoro')
 except Exception as e:
-    results.log("bare photo: names back what vision saw", False, got=str(e))
+    results.log("photo clarifier: asks what the job is", False, got=str(e))
+
+# ---- WE, never "the plumber" (owner rule, restated 2026-09-18) --------------
+# The business speaks as one. The owner had asked before and it did not stick,
+# because it lived only in the copy. It is enforced at every outbound choke
+# point by bot.utils.speak_as_we and pinned here: if a change removes it from
+# a choke point, or a new customer string names the plumber, this fails.
+try:
+    from bot.utils import speak_as_we as _saw
+    _we_cases = [
+        ("Your exact quote is confirmed once the plumber sees the space.",
+         "Your exact quote is confirmed once we see the space."),
+        ("The site visit is free, our plumber will come to you.",
+         "The site visit is free, we will come to you."),
+        ("Our plumber will lock in your exact price when they come out.",
+         "We will lock in your exact price when we come out."),
+        ("Your plumber is on the way.", "We are on the way."),
+        ("Your plumber arrives today at 9am.", "We arrive today at 9am."),
+        ("you meet the plumber and see how we work.", "you meet us and see how we work."),
+        ("If you'd like to speak with the plumber directly, just say.",
+         "If you'd like to speak with us directly, just say."),
+        ("The plumber usually comes within the hour.", "We usually come within the hour."),
+        ("The plumber has the details. The plumber's van is outside.",
+         "We have the details. Our van is outside."),
+    ]
+    for _src, _want in _we_cases:
+        _got = _saw(_src)
+        results.log(f"we voice: {_src[:45]!r}", _got == _want, got=_got)
+        results.log(f"we voice is idempotent: {_src[:30]!r}", _saw(_got) == _got)
+    results.log("we voice: a named answer to 'who is coming' is left alone",
+                _saw("Our plumber Takudzwa handles the hands-on work.")
+                == "Our plumber Takudzwa handles the hands-on work."
+                and _saw("The plumber's name is Takudzwa.") == "The plumber's name is Takudzwa.")
+    results.log("we voice: a generic 'a plumber' is untouched",
+                _saw("Still looking for a plumber?") == "Still looking for a plumber?")
+
+    # Every choke point applies it. Removing it from any one lets the third
+    # party back in on that path.
+    import inspect as _insp_we
+    import re
+    import bot.whatsapp_webhook as _wh_we
+    import bot.models as _mdl_we
+    import bot.views.plumbot.response_mixin as _rm_we
+    results.log("we voice: finalise_outbound applies it",
+                'speak_as_we(' in _insp_we.getsource(_wh_we.finalise_outbound))
+    results.log("we voice: delayed_response applies it to every part it sends",
+                'speak_as_we(' in _insp_we.getsource(_wh_we.delayed_response))
+    results.log("we voice: the transcript log applies it, so WAMID stamps still match",
+                'speak_as_we(' in _insp_we.getsource(
+                    _mdl_we.Appointment.add_conversation_message))
+    results.log("we voice: cron follow-up copy applies it",
+                'speak_as_we(' in _insp_we.getsource(_rm_we.dequalify_free_visit))
+
+    # Customer copy outside the WhatsApp net says "we" at source.
+    import bot.customer_emails as _ce_we
+    import bot.views.plumbot.plan_upload_mixin as _pu_we
+    for _mod in (_ce_we, _pu_we):
+        _src_txt = _insp_we.getsource(_mod)
+        _leaks = re.findall(r"['\"][^'\"\n]*\b(?:[Oo]ur|[Yy]our) plumber\b[^'\"\n]*['\"]",
+                            _src_txt)
+        results.log(f"we voice: no 'our/your plumber' customer copy in {_mod.__name__}",
+                    not _leaks, got=_leaks[:3])
+    results.log("we voice: the plan-upload flow never sends Homebase's number",
+                '0774819901' not in _insp_we.getsource(_pu_we))
+except Exception as e:
+    import traceback as _tb_we
+    results.log("we voice: speak as the business", False, got=_tb_we.format_exc()[-500:])
+
+# ---- "Replace my old X with a new one": price the NEW fixture ---------------
+# Owner rule 2026-09-18: supply, install and the mixer where the fixture takes
+# one, from the tenant's own figures. A basin replacement used to come back
+# priced as a VANITY UNIT, and no reply ever carried a mixer.
+try:
+    from bot.views.plumbot.response_mixin import ResponseMixin as _RMR
+
+    class _RRow:
+        def __init__(self, supply=None, labour=None, allin=None, parts=None):
+            self.supply, self.labour, self.allin, self.flat = supply, labour, allin, None
+            self.parts = parts or []
+
+    class _RCfg:
+        currency = 'US$'
+        _rows = {
+            ('basin', ''): _RRow(35, 30, 65, [{'name': 'basin mixer', 'amount': 45}]),
+            ('toilet', ''): _RRow(90, 50, 140),
+            ('tub', ''): _RRow(150, 85, 235, [{'name': 'bath mixer', 'amount': 75}]),
+            ('tub', 'freestanding'): _RRow(None, None, 720,
+                                           [{'name': 'tub', 'amount': 400},
+                                            {'name': 'mixer', 'amount': 200},
+                                            {'name': 'install', 'amount': 120}]),
+            ('vanity', ''): _RRow(160, 90, 250),
+        }
+
+        def price_item(self, family, variant=''):
+            return self._rows.get((family, variant))
+
+    class _RBot(_RMR):
+        appointment = None
+        tenant_cfg = _RCfg()
+
+    _rb = _RBot()
+    _basin = _rb._replacement_price_reply("How much to change my old basin to a new one?") or ''
+    results.log("replace: a basin is priced as a BASIN, never a vanity unit",
+                "To replace it with a new basin" in _basin and "vanity" not in _basin.lower(),
+                got=_basin)
+    results.log("replace: supply, install and the mixer, then the total",
+                "New basin: from US$35\nInstall: from US$30\nBasin mixer: from US$45" in _basin
+                and "All in, that's from US$110." in _basin, got=_basin)
+    _toilet = _rb._replacement_price_reply("How much to replace my old toilet with a new one?") or ''
+    results.log("replace: a fixture with no mixer gets no mixer line",
+                "New toilet: from US$90" in _toilet and "mixer" not in _toilet.lower(),
+                got=_toilet)
+    _tub = _rb._replacement_price_reply("replace my old bath tub with a new one, how much") or ''
+    results.log("replace: a tub gets the built-in build with its mixer, and the freestanding option",
+                "Bath mixer: from US$75" in _tub and "All in, that's from US$310." in _tub
+                and "freestanding, that's from US$720 all in, mixer included" in _tub, got=_tub)
+    _free = _rb._replacement_price_reply(
+        "How much to replace my old bath with a new freestanding tub?") or ''
+    results.log("replace: a named freestanding tub is priced as that build, mixer included, once",
+                "New freestanding tub, supplied and installed, mixer included: from US$720" in _free
+                and _free.count("US$720") == 1, got=_free)
+    results.log("replace: no mixer price on file means no mixer line, never a guess",
+                "mixer" not in (_rb._replacement_price_reply(
+                    "how much to replace my old vanity with a new one") or 'mixer').lower())
+    results.log("replace: replacing a PART is a repair, not a new fixture",
+                _rb._replacement_fixture("How much to replace the toilet seat?") is None
+                and _rb._replacement_fixture("change the geyser element") is None
+                and _rb._replacement_fixture("replace the shower head") is None)
+    results.log("replace: two fixtures go to the combined path",
+                _rb._replacement_fixture("replace my old toilet and basin") is None)
+    results.log("replace: no replacement verb, no replacement reply",
+                _rb._replacement_fixture("how much is a basin") is None)
+    results.log("replace: a fixture the tenant does not price falls through",
+                _rb._replacement_price_reply("replace my old geyser with a new one") is None)
+    _sn_r = _rb._replacement_price_reply("Marii kuchinja basin yekare?", 'shona') or ''
+    results.log("replace: a Shona lead reads Shona", _sn_r.startswith("Kuti tiise basin itsva"),
+                got=_sn_r[:60])
+    for _r in (_basin, _toilet, _tub, _free):
+        results.log("replace: one question, no dash, closes on the budget tie-down",
+                    _r.count('?') == 1 and ' - ' not in _r and _r.endswith("budget?"),
+                    got=_r[-80:])
+    import inspect as _insp_r
+    results.log("replace: the price handler asks this BEFORE any carried intent",
+                _insp_r.getsource(_RMR._handle_service_inquiry_impl).index(
+                    '_replacement_price_reply(')
+                < _insp_r.getsource(_RMR._handle_service_inquiry_impl).index(
+                    'structured_pricing = build_structured_pricing'))
+except Exception as e:
+    import traceback as _tb_r
+    results.log("replace: price the new fixture", False, got=_tb_r.format_exc()[-500:])
+
+# ---- A photographed materials list: priced ONLY when asked, from OUR prices -
+# Owner request 2026-09-18: a lead sends the list their builder wrote ("60x
+# 15mm cu elbows (cap)...") and asks what it comes to. Every figure must be the
+# business's own (its quote/template lines, then its fixture price list), a
+# line nothing matches is left for the quote, labour appears only when asked,
+# and labour carries the point that one job costs less to fit than the same
+# fittings one at a time.
+try:
+    from decimal import Decimal as _MD
+    from bot.materials_list import (
+        parse_line as _mpl, match_score as _mms, fixture_family as _mff,
+        looks_like_materials_list as _mlook, list_lines_in_history as _mhist,
+        price_list as _mprice, build_list_price_reply as _mreply)
+
+    results.log("materials: vision's list description is recognised",
+                _mlook("A handwritten written materials list on lined paper.")
+                and _mlook("A list of plumbing materials written in a notebook.")
+                and not _mlook("A white toilet and a basin."))
+
+    results.log("materials: '6 x 22 x 15mm reducers' is six reducers of two sizes",
+                _mpl("6 x 22 x 15mm copper reducers (cap)")
+                == (_MD(6), '', '22 x 15mm copper reducers (cap)'))
+    results.log("materials: '3x3/4 stop cocks' keeps the 3/4 as a size",
+                _mpl("3x3/4 brass stop cocks") == (_MD(3), '', '3/4 brass stop cocks'))
+    results.log("materials: a leading size is not a quantity",
+                _mpl("22mm copper pipe") == (_MD(1), '', '22mm copper pipe'))
+    results.log("materials: weights and pairs keep their unit",
+                _mpl("2kgs window putty") == (_MD(2), 'kg', 'window putty')
+                and _mpl("3 pairs fixation bolts") == (_MD(3), 'pair', 'fixation bolts'))
+    results.log("materials: a heading is not an item", _mpl("# Sanitary") is None)
+
+    results.log("materials: a brand note does not stop a match",
+                _mms("15mm copper elbows (cap)", "15mm Copper Elbow") > 0)
+    results.log("materials: 'cu' is copper", _mms("15mm cu elbows", "15mm copper elbow") > 0)
+    results.log("materials: a different size is a different item",
+                _mms("22mm copper elbows", "15mm copper elbow") == 0)
+    results.log("materials: a female elbow is never the plain elbow",
+                _mms("22mm female elbows (cap)", "22mm copper elbow") == 0
+                and _mms("15mm female couplings", "15mm male coupling") == 0)
+    results.log("materials: a float valve is never the angle valve",
+                _mms("float valve", "½ angle valve") == 0
+                and _mms("basin mixers", "basin mixer pillar type") > 0
+                and _mms("22mm cu tees (cap)", "22mm cu tee (cap)") > 0)
+    # The plumber's own shorthand on Barmak's sent quotes (2026-09-18).
+    results.log("materials: c.f.i is the female fitting, and only that",
+                _mms("15mm female elbows (cap)", "15mm c.f.i elbow (cap)") > 0
+                and _mms("15mm copper elbows (cap)", "15mm c.f.i elbow (cap)") == 0
+                and _mms("basic fitting kit", "basi copper female tting kit") == 0)
+    results.log("materials: the plumber's shorthand is read as the same item",
+                _mms("flux paste", "soldering flux nasco") > 0
+                and _mms("25mm VSP adaptors", "25mm vsp") > 0
+                and _mms("chasing combs", "chasing com") > 0
+                and _mms("bath combinations", "tub combination p-trap") > 0
+                and _mms("sink combination", "sink combination p-trap drop-in") > 0
+                and _mms("silicone sealant (clear)", "silicone cleare") > 0)
+    results.log("materials: a close couple set is the plumber's quoted close couple",
+                _mms("close couple sets", "water closet close couple") > 0
+                and _mms("15mm male couplings (cap)", "water closet close couple") == 0)
+    results.log("materials: a sink combination is never the bath combination",
+                _mms("sink combination", "tub combination p-trap") == 0)
+    _sized = [('32mm basin waste outlet', _MD('6'), 'quote'),
+              ('22mm cu pipe', _MD('35'), 'quote'), ('15mm cu pipe', _MD('25'), 'quote')]
+    _sp = _mprice(['3 x basin wastes', '2 x copper pipes'], _sized, None)
+    results.log("materials: a size-silent line takes the ONE sized price, never picks between two",
+                [r[2] for r in _sp['rows']] == ['basin wastes']
+                and _sp['unpriced'] == ['copper pipes'], got=_sp)
+    results.log("materials: copper is never priced as pvc",
+                _mms("25mm copper tees", "25mm pvc tee") == 0)
+    results.log("materials: an accessory is never the fixture",
+                _mms("3 x basin mixers", "Wash hand basin") == 0
+                and _mff("basin mixers") is None and _mff("bath wastes") is None
+                and _mff("wash hand basins") == 'basin' and _mff("bath tubs") == 'tub'
+                and _mff("close couple sets") == 'toilet')
+
+    # Two shots of the same page are ONE page.
+    class _ListAppt:
+        tenant = None
+        sent_pricing_intents = []
+        conversation_history = [
+            {'role': 'user', 'content': '[Sent image] list',
+             'materials_list': ['3 x 22mm copper pipes', '60 x 15mm copper elbows (cap)']},
+            {'role': 'user', 'content': '[Sent image] list again',
+             'materials_list': ['3 x 22mm copper pipes', '60 x 15mm copper elbows (cap)']},
+            {'role': 'user', 'content': '[Sent image] page 2',
+             'materials_list': ['3 x wash hand basins', '3 x basin mixers']},
+        ]
+
+        def save(self, *a, **k):
+            pass
+
+    results.log("materials: a page photographed twice is priced once",
+                _mhist(_ListAppt()) == ['3 x 22mm copper pipes',
+                                         '60 x 15mm copper elbows (cap)',
+                                         '3 x wash hand basins', '3 x basin mixers'],
+                got=_mhist(_ListAppt()))
+
+    class _Row:
+        def __init__(self, supply, labour):
+            self.supply, self.labour = supply, labour
+
+    class _ListCfg:
+        currency = 'US$'
+
+        def price_item(self, family, variant=''):
+            return {'basin': _Row(50, 20)}.get(family)
+
+    _book = [('15mm Copper Elbow', _MD('0.85'), 'quote'),
+             ('22mm copper pipe', _MD('38'), 'quote')]
+    _lines = _mhist(_ListAppt())
+    _priced = _mprice(_lines, _book, _ListCfg())
+    _mat = _mreply(_priced, 'US$', include_labour=False, is_shona=False)
+    # The owner-approved reply (2026-09-18), pinned line by line.
+    results.log("materials: opens with the prices we have for now",
+                _mat.startswith("These are the prices I have for now on your list:\n\n"),
+                got=_mat[:80])
+    results.log("materials: priced from the business's own lines, names cleaned for the customer",
+                "60 x 15mm copper elbows: US$51 (US$0.85 each)" in _mat
+                and "3 x 22mm copper pipes: US$114 (US$38 each)" in _mat
+                and "(cap)" not in _mat, got=_mat)
+    results.log("materials: the fixture price list covers a fixture line",
+                "3 x wash hand basins: US$150 (US$50 each)" in _mat, got=_mat)
+    results.log("materials: one total for the items priced",
+                "That comes to about US$315 for these items." in _mat, got=_mat)
+    results.log("materials: unpriced items are never listed, never 'still getting prices'",
+                "basin mixers" not in _mat and "still getting" not in _mat
+                and "don't have a price" not in _mat, got=_mat)
+    results.log("materials: everything else, the final price and the labour wait for the visit",
+                "For everything else on the list and the final price, we would "
+                "need to come and see the place. That also lets us give you an "
+                "accurate figure for the labour. Because it's all one job, the "
+                "labour usually comes in lower than pricing each fitting on its own."
+                in _mat, got=_mat)
+    results.log("materials: closes on this week or next week",
+                _mat.endswith("When would suit you for us to come and have a look, "
+                              "this week or next week?"), got=_mat[-100:])
+    results.log("materials: labour figures only when asked", "Fitting" not in _mat)
+    _lab = _mreply(_priced, 'US$', include_labour=True, is_shona=False)
+    results.log("materials: labour asked for is priced from the business's own rate",
+                "Fitting 3 x wash hand basins: US$60" in _lab
+                and "That's about US$60." in _lab, got=_lab)
+    results.log("materials: the bundling point carries no invented figure",
+                "%" not in _lab and "%" not in _mat)
+    for _r in (_mat, _lab):
+        results.log("materials: one question, no dash, no emoji",
+                    _r.count('?') == 1 and ' - ' not in _r and '—' not in _r,
+                    got=_r[-120:])
+
+    # Everything priced: there is no "everything else" to mention.
+    _all = _mreply(_mprice(['3 x 22mm copper pipes'], _book, _ListCfg()), 'US$',
+                   include_labour=False, is_shona=False)
+    results.log("materials: a fully priced list drops 'everything else'",
+                "For the final price, we would need to come and see the place." in _all
+                and "everything else" not in _all, got=_all)
+
+    # Nothing on file: no figure, straight to the visit.
+    _none = _mreply(_mprice(['8 x chasing combs'], [], _ListCfg()), 'US$',
+                    include_labour=False, is_shona=False)
+    results.log("materials: nothing on file names no figure and goes to the visit",
+                "US$" not in _none
+                and _none.startswith("To price everything on your list properly, "
+                                     "we would need to come and see the place."),
+                got=_none)
+
+    # A lead who has booked is never pitched the visit again.
+    _booked = _mreply(_priced, 'US$', include_labour=False, is_shona=False,
+                      visit_booked=True)
+    results.log("materials: a booked lead is not asked for a day again",
+                "this week or next week" not in _booked and '?' not in _booked
+                and "we'll confirm it when we come and see the place" in _booked,
+                got=_booked[-200:])
+
+    _sn = _mreply(_priced, 'US$', include_labour=False, is_shona=True)
+    results.log("materials: a Shona lead reads Shona",
+                _sn.startswith("Heino mitengo") and "vhiki rino" in _sn, got=_sn[:80])
+
+    from bot.materials_list import display_item as _mdisp
+    results.log("materials: brand notes go, a bracketed material moves in front",
+                _mdisp("25mm plain tees (pvc)") == "25mm PVC plain tees"
+                and _mdisp("soldering wires (Nasco red)") == "soldering wires"
+                and _mdisp("shower roses & arms") == "shower roses and arms"
+                and _mdisp("15mm cu elbows (cap)") == "15mm copper elbows",
+                got=[_mdisp("25mm plain tees (pvc)"), _mdisp("15mm cu elbows (cap)")])
+
+    # The router step: never volunteers, answers only a price ask about the
+    # list, and never lets the list answer a question about something else.
+    from bot.whatsapp_webhook import _materials_list_price_reply as _mlr
+
+    class _ListBot(_RM3):
+        def __init__(self, appt):
+            self.appointment = appt
+
+    _la = _ListAppt()
+    _lb = _ListBot(_la)
+    results.log("materials: a list is never priced unasked",
+                _mlr(_lb, _la, "ok thanks") is None
+                and _mlr(_lb, _la, "I need all of it by Friday") is None)
+    _asked = _mlr(_lb, _la, "How much for everything on the list?") or ''
+    results.log("materials: 'how much for the list' gets the list",
+                "come and see the place" in _asked, got=_asked)
+    results.log("materials: a fixture the list lacks is a new question",
+                _mlr(_ListBot(_ListAppt()), _ListAppt(),
+                     "How much is a shower cubicle?") is None)
+    results.log("materials: a labour question is answered even without 'how much'",
+                "accurate figure for the labour" in (
+                    _mlr(_ListBot(_ListAppt()), _ListAppt(),
+                         "And to fit it all, what's the labour?") or ''))
+
+    class _BookedAppt(_ListAppt):
+        status = 'confirmed'
+        scheduled_datetime = None
+
+    # A business that charges for the visit says so once, before the close,
+    # and the chain's own fee note is kept off this reply so it cannot swap
+    # the approved close for "Want me to book you a time?".
+    _fee = _mreply(_priced, 'US$', include_labour=False, is_shona=False,
+                   visit_cost="The call-out to quote is US$20.")
+    results.log("materials: a charged call-out is stated before the approved close",
+                "on its own. The call-out to quote is US$20.\n\nWhen would suit you"
+                in _fee, got=_fee[-220:])
+    import inspect as _insp_ml
+    import bot.whatsapp_webhook as _wh_ml
+    _gen_src = _insp_ml.getsource(_wh_ml._generate_and_schedule_reply)
+    results.log("materials: the list reply skips the chain's fee note and model reader",
+                "visit_note=False" in _gen_src and "check=False" in _gen_src)
+    results.log("materials: every other reply still gets the fee note by default",
+                _insp_ml.signature(_wh_ml.finalise_outbound)
+                .parameters['visit_note'].default is True)
+
+    # The memory check used to rejoin sentences with a space, so every
+    # paragraph break after a full stop was lost from every reply.
+    from bot.views.plumbot.response_mixin import strip_known_questions as _skq
+
+    class _NoState:
+        conversation_history = []
+        customer_area = 'Borrowdale'
+        customer_name = ''
+        project_description = ''
+        project_type = ''
+        scheduled_datetime = None
+        status = 'pending'
+        tenant = None
+
+    _para = ("That comes to about US$315 for these items.\n\nFor the final price, "
+             "we would need to come and see the place.\n\nWhen would suit you?")
+    results.log("memory check: a reply with nothing re-asked keeps its paragraphs",
+                _skq(_para, _NoState())[0] == _para, got=_skq(_para, _NoState())[0])
+    _reask = ("Got it.\n\nThat comes to about US$315.\n\nWhat area are you in?")
+    _kept = _skq(_reask, _NoState())[0]
+    results.log("memory check: dropping a re-asked question keeps the other paragraph breaks",
+                _kept == "Got it.\n\nThat comes to about US$315.", got=_kept)
+
+    _ba = _BookedAppt()
+    results.log("materials: the router tells the builder a booked lead is booked",
+                "this week or next week" not in (
+                    _mlr(_ListBot(_ba), _ba, "How much for the list?") or 'x week or next week'))
+
+    # The ack for a list asks the one thing a list cannot say.
+    from bot.whatsapp_webhook import (
+        _compose_media_ack as _cma4, _materials_list_question as _mlq)
+    _lack = _cma4('project_description', 'pending', 'image',
+                  seen_question=_mlq(), is_materials_list=True)
+    results.log("materials: the ack thanks them for the list and asks supply or fit",
+                _lack.startswith("Got your list, thanks.")
+                and "just the materials on the list" in _lack
+                and "US$" not in _lack, got=_lack)
+except Exception as e:
+    import traceback as _tb_ml
+    results.log("materials: list pricing", False, got=_tb_ml.format_exc()[-600:])
 
 # ---- An inbound photo must carry its WAMID, or quoting it breaks silently -
 try:

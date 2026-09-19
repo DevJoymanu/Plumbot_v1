@@ -442,30 +442,160 @@ def _media_ack_reply(appointment: "Appointment", media_type: str,
 
     # We just LOOKED at their photo. Asking "could you describe what you'd like
     # done" after seeing a freestanding tub is the same absurdity as asking it
-    # after they send the plan: name the fixtures back and confirm scope instead.
+    # after they send the plan. But naming it back as a yes/no ("Is it the tub
+    # you're looking to get sorted?") was no better: "yes" still told us nothing
+    # about the JOB. So when the picture shows fixtures we fit, ask the one
+    # contextual question whose answer IS the description: fit one like this,
+    # or work on the one they have (see ResponseMixin._seen_fixture_question).
     seen_question = None
+    is_list = False
     try:
-        seen = appointment.latest_image_description()
-        if seen and next_q in ('service_type', 'project_description'):
-            # Only fixtures we can NAME count. A photo of a cubicle also matches
-            # 'tap', which would read as two items and bounce us to the generic
-            # question — the customer sees one thing in that picture, not two.
-            fams = {f for f in plumbot._product_families_in(seen)
-                    if f in plumbot._FAMILY_DISPLAY}
-            seen_question = plumbot._confirm_intent_question(fams)
-            if seen_question is None and len(fams) == 1:
-                only = plumbot._FAMILY_DISPLAY.get(next(iter(fams)))
-                if only:
-                    seen_question = (
-                        f"Is it the {only} you're looking to get sorted?"
-                    )
+        from .repeated_question_detector import detect_language_simple
+        is_shona = detect_language_simple(
+            _last_typed_customer_text(appointment)) == 'shona'
+        seen = _photo_burst_description(appointment)
+        from .materials_list import looks_like_materials_list
+        is_list = looks_like_materials_list(seen)
+        if is_list:
+            # A list names the job's parts, never whether we are fitting them,
+            # and it is not a price ask: nothing is priced until they ask
+            # (owner rule, 2026-09-18). The one thing worth asking is the
+            # thing the list cannot say.
+            if next_q in ('service_type', 'project_description'):
+                seen_question = _materials_list_question(is_shona)
+        elif seen and next_q in ('service_type', 'project_description'):
+            seen_question = plumbot._seen_fixture_question(seen, is_shona=is_shona)
     except Exception as exc:
         print(f"Media ack could not read the photo description: {exc}")
 
     return _compose_media_ack(
         next_q, appointment.status, media_type, is_plan_document,
-        seen_question=seen_question,
+        seen_question=seen_question, is_materials_list=is_list,
     )
+
+
+def _materials_list_price_reply(plumbot, appointment, message_body: str,
+                                classification=None):
+    """The priced materials list, when the customer ASKED what it comes to.
+
+    None whenever this is not that question, so the router carries on:
+      * no list on file;
+      * no price ask ("how much", "cost", "marii", or a labour question);
+      * the message names a fixture the list does not have ("how much is a
+        shower cubicle?" is a new question, and the list must not answer it).
+    Labour goes in only when they ask about labour or fitting (owner rule,
+    2026-09-18), and it carries the point that one job fitted together costs
+    less labour than the same fittings one at a time.
+
+    Every figure is the business's own (bot/materials_list.py): its quote and
+    template lines, then its fixture price list. A second identical ask gets a
+    one-line recap, never the whole block again.
+    """
+    from .materials_list import (
+        list_lines_in_history, tenant_price_book, price_list,
+        build_list_price_reply)
+    lines = list_lines_in_history(appointment)
+    if not lines:
+        return None
+    msg = message_body or ''
+    asks_labour = plumbot._asks_about_labour(msg)
+    if not (plumbot._asks_price_figure(msg, classification=classification)
+            or (asks_labour and '?' in msg)):
+        return None
+    list_text = ' '.join(lines)
+    if plumbot._product_families_in(msg) - plumbot._product_families_in(list_text):
+        return None
+
+    from .repeated_question_detector import detect_language_simple
+    lang = detect_language_simple(msg)
+    is_shona = lang == 'shona'
+    tenant = getattr(appointment, 'tenant', None)
+    cfg = plumbot.tenant_cfg
+    priced = price_list(lines, tenant_price_book(tenant), cfg)
+
+    # Never pitch the visit to a lead who has already committed to one: the
+    # close tells them the rest is done on the day instead.
+    visit_booked = (getattr(appointment, 'status', None) == 'confirmed'
+                    or bool(getattr(appointment, 'scheduled_datetime', None)))
+
+    sent_key = (f"materials_list_labour_{len(lines)}" if asks_labour
+                else f"materials_list_{len(lines)}")
+    if _has_sent_pricing_for_intent(appointment, sent_key) and priced['rows']:
+        from .materials_list import _about, list_close
+        total = _about(cfg.currency, priced['materials_total'])
+        recap = (f"Maererano nemitengo yandatumira pamusoro, list yenyu inosvika "
+                 f"{total}." if is_shona else
+                 f"Going by the prices I sent above, your list comes to about {total}.")
+        return f"{recap} {list_close(is_shona, visit_booked)}"
+
+    # The owner-approved shape (2026-09-18): the prices we have, one total,
+    # the rest and the accurate labour at the visit, a this-week-or-next close.
+    # The call-out fee, once, for a business that charges one. The chain's own
+    # note is switched off for this reply (it would replace the approved
+    # close), so the once-only fee rule is kept here instead. A free visit
+    # adds nothing, which keeps the approved copy exactly as written.
+    visit_cost = ''
+    if not visit_booked:
+        try:
+            from bot.views.plumbot.response_mixin import visit_price_already_stated
+            if not visit_price_already_stated(appointment, cfg):
+                visit_cost = cfg.visit_cost_sentence(is_shona=is_shona)
+        except Exception as _fee_exc:
+            print(f"Could not resolve the visit fee for the list reply: {_fee_exc}")
+    reply = build_list_price_reply(
+        priced, cfg.currency, include_labour=asks_labour, is_shona=is_shona,
+        visit_booked=visit_booked, visit_cost=visit_cost,
+    )
+    _mark_pricing_intent_sent(appointment, sent_key)
+    return reply
+
+
+def _materials_list_question(is_shona: bool = False) -> str:
+    """Asked when a materials list arrives: supply only, or supply and fit.
+
+    Either answer is the project description, and it decides whether labour
+    belongs in the price when they ask for one.
+    """
+    if is_shona:
+        return "Muri kuda zvinhu izvi chete, kana kuti tizviisewo?"
+    return ("Are you after just the materials on the list, "
+            "or would you like us to fit them as well?")
+
+
+def _photo_burst_description(appointment) -> str:
+    """Everything vision saw in the photos sent since our last message.
+
+    The ack is debounced, so three quick shots (the tub, the toilet, the
+    geyser) get ONE reply. Reading only the latest photo named one fixture back
+    and ignored the other two. Falls back to the latest description on record
+    when the burst holds none, which is what the ack read before.
+    """
+    history = getattr(appointment, 'conversation_history', None) or []
+    seen = []
+    for entry in reversed(history):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('role') == 'assistant':
+            break
+        if entry.get('image_description'):
+            seen.append(str(entry['image_description']))
+    if seen:
+        return ' '.join(reversed(seen))
+    return appointment.latest_image_description() or ''
+
+
+def _last_typed_customer_text(appointment) -> str:
+    """The last thing the lead TYPED, for language detection.
+
+    A photo turn is logged as "[Sent image] <vision's English>", so reading
+    the latest user turn would call every Shona lead English the moment they
+    send a picture.
+    """
+    for entry in reversed(getattr(appointment, 'conversation_history', None) or []):
+        if (isinstance(entry, dict) and entry.get('role') == 'user'
+                and not _is_media_turn(str(entry.get('content') or ''))):
+            return str(entry.get('content') or '')
+    return ''
 
 
 def _description_is_a_plan(description: str) -> bool:
@@ -490,13 +620,16 @@ def _description_is_a_plan(description: str) -> bool:
 
 def _compose_media_ack(next_question, status: str, media_type: str,
                        is_plan_document: bool = False,
-                       seen_question: str = None) -> str:
+                       seen_question: str = None,
+                       is_materials_list: bool = False) -> str:
     """
     Pure copy builder — no DB, no network — so every branch is pinned in the
     TEST 0 gate. See _media_ack_reply for why the state matters.
     """
     if is_plan_document:
         ack = "Thanks for sending the plan."
+    elif is_materials_list:
+        ack = "Got your list, thanks."
     elif media_type == 'video':
         ack = "Got the video, thanks."
     else:
@@ -891,8 +1024,13 @@ def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event
         # acknowledgement + the question — see MESSAGE_SPLIT_MARKER). Normalise to a
         # clean list; strip any stray marker so it can never reach the customer.
         parts = list(reply) if isinstance(reply, (list, tuple)) else [reply]
+        # speak_as_we is the net under EVERY bot send, including the paths that
+        # skip finalise_outbound (the booking confirmation, the media ack). The
+        # transcript log applies the same function, so the WAMID stamp below
+        # still finds the entry it belongs to.
+        from bot.utils import speak_as_we
         parts = [
-            str(p).replace(MESSAGE_SPLIT_MARKER, ' ').strip()
+            speak_as_we(str(p).replace(MESSAGE_SPLIT_MARKER, ' ').strip())
             for p in parts if p and str(p).strip()
         ]
         if not parts:
@@ -3121,7 +3259,7 @@ def _mark_stop_requested(appointment) -> None:
 
 
 def finalise_outbound(reply: str, appointment, message_body: str = None,
-                      check: bool = True) -> str:
+                      check: bool = True, visit_note: bool = True) -> str:
     """Every rewrite a reply gets between composition and the wire.
 
     Extracted because STEP 0 (multi-intent compose) sent its own reply
@@ -3194,9 +3332,20 @@ def finalise_outbound(reply: str, appointment, message_body: str = None,
         print("✂️  Free-visit claim already made — not repeating it")
 
     # ...and the other half of the rule: state it with the availability ask.
-    reply, _noted = ensure_visit_price_note(reply, appointment, message_body)
-    if _noted:
-        print("💬 Visit price stated once, with the availability ask")
+    # `visit_note=False` is for copy that states the visit cost ITSELF and must
+    # keep its own close (the owner-approved materials-list reply): the note
+    # REPLACES the availability question, which would swap that close out.
+    if visit_note:
+        reply, _noted = ensure_visit_price_note(reply, appointment, message_body)
+        if _noted:
+            print("💬 Visit price stated once, with the availability ask")
+
+    # We, never "the plumber" (owner rule): the business speaks as one.
+    from bot.utils import speak_as_we
+    _as_we = speak_as_we(reply)
+    if _as_we != reply:
+        print("🧑‍🔧 'The plumber' rewritten as 'we'")
+        reply = _as_we
 
     # Nobody types an em dash on a phone.
     _undashed = strip_dashes(reply)
@@ -3774,6 +3923,41 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 threading.Thread(
                     target=delayed_response, args=(sender, _pivot_reply, delay, message_id), kwargs={'tenant': tenant},
                     daemon=True,
+                ).start()
+                return
+
+        # ── A PHOTOGRAPHED MATERIALS LIST, PRICED ON REQUEST ─────────────────
+        # Ahead of the FAQ and every pricing step: "how much for all of this?"
+        # after a list is about THE LIST, and the FAQ's cost triggers or the
+        # fixture price paths would answer a different question (a tub price,
+        # the visit fee). Delay, complaint and out-of-scope still win.
+        if uc_intent(_uclass) not in ('delay_signal', 'complaint', 'out_of_scope'):
+            try:
+                _list_reply = _materials_list_price_reply(
+                    plumbot, appointment, message_body, classification=_uclass)
+            except Exception as _list_exc:
+                print(f"⚠️ Materials list pricing failed: {_list_exc}")
+                _list_reply = None
+            if _list_reply:
+                print("🧾 Priced the customer's materials list")
+                # check=False skips only the model reader: this is a fixed
+                # template of the business's own figures, and a reader
+                # "refining" a forty-line price list can only garble it. Every
+                # deterministic rule in the chain still runs.
+                # visit_note=False: the reply states a charged call-out fee
+                # itself and keeps the approved this-week-or-next close.
+                _list_reply = finalise_outbound(_list_reply, appointment,
+                                                message_body, check=False,
+                                                visit_note=False)
+                appointment.add_conversation_message("assistant", _list_reply)
+                appointment.last_outbound_at = timezone.now()
+                appointment.last_contacted_at = appointment.last_outbound_at
+                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+                delay = get_random_delay(sender=sender)
+                threading.Thread(
+                    target=delayed_response,
+                    args=(sender, _list_reply, delay, message_id),
+                    kwargs={'tenant': tenant}, daemon=True,
                 ).start()
                 return
 
@@ -4868,12 +5052,36 @@ def handle_media_message(sender, media_data, media_type, message_id=None,
         # highlights their OWN photo to ask "this one, how much?" resolves to
         # None and the reply loses the picture they were pointing at — the
         # silent-quote-break CLAUDE.md warns every new send path about.
+        # A photographed materials list is read line by line (a second, high
+        # detail vision call, paid only for an image already seen to be a
+        # list), so a later "how much for all of this?" can be priced from the
+        # business's own figures. See bot/materials_list.py.
+        list_lines = []
+        if image_description and file_bytes and not is_plan_document:
+            try:
+                from .materials_list import looks_like_materials_list
+                if looks_like_materials_list(image_description):
+                    from .services.vision import transcribe_materials_list
+                    list_lines = transcribe_materials_list(
+                        file_bytes, mime_type, tenant=tenant)
+                    print(f"Materials list read: {len(list_lines)} line(s)")
+            except Exception as list_err:
+                print(f"Could not read the materials list: {list_err}")
+
         if image_description:
             print(f"Vision saw: {image_description[:120]}")
+            # The lines go in the logged TEXT as well as the key: the plumber
+            # reads the transcript, and two pages both described as "a written
+            # materials list" would otherwise be identical turns, and
+            # add_conversation_message drops an identical repeat, page 2 with it.
+            _content = f"[Sent {media_type}] {image_description}"
+            if list_lines:
+                _content += "\n" + "\n".join(list_lines)
             appointment.add_conversation_message(
-                "user", f"[Sent {media_type}] {image_description}",
+                "user", _content,
                 message_id=message_id, quoted=quoted_text,
                 image_description=image_description,
+                materials_list=list_lines or None,
             )
         else:
             appointment.add_conversation_message(

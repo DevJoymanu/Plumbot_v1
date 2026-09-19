@@ -34,9 +34,26 @@ _INSTRUCTION = (
     "in ordinary words a plumber would use: bath, corner bath, freestanding "
     "bath, shower cubicle, shower tray, toilet, wall-hung toilet, basin, "
     "vanity, geyser, tap, mixer, pipe. If it is a drawing or floor plan rather "
-    "than a photo, say so. If there is no plumbing in it, say so plainly. "
+    "than a photo, say so. If it is a handwritten or printed list of materials "
+    "or items, say it is a written materials list and do not read out its "
+    "lines. If there is no plumbing in it, say so plainly. "
     "Describe only what you can see. Do not guess, do not price anything, and "
     "do not address the customer."
+)
+
+# A written materials list, read line by line. This is the ONE case that gets a
+# second call per image: the describe call runs at detail=low (512x512), which
+# is enough to see that a page is a list and nowhere near enough to read forty
+# handwritten lines, and the priced reply needs every one of them. Only an
+# image the first call already called a list pays for this.
+_LIST_INSTRUCTION = (
+    "This is a customer's handwritten or printed list of plumbing materials. "
+    "Transcribe it. One item per line, written as: <quantity> x <item>. Keep "
+    "every size exactly as written (15mm, 22 x 15mm, 3/4). Write 'cu' as "
+    "copper. Correct obvious spelling mistakes, but never change a quantity or "
+    "a size. Keep brand notes in brackets as written, e.g. (cap). A heading on "
+    "the page goes on its own line starting with #. Output only the lines, "
+    "nothing else."
 )
 
 
@@ -106,7 +123,27 @@ def describe_customer_image(file_bytes, mime_type, tenant=None):
                      log_label="a customer image")
 
 
-def _describe(file_bytes, mime_type, instruction, log_label):
+def transcribe_materials_list(file_bytes, mime_type, tenant=None):
+    """The lines of a written materials list, or [] when it cannot be read.
+
+    Same contract as describe_customer_image: never raises, and an empty
+    result means the caller carries on without it.
+    """
+    raw = _describe(file_bytes, mime_type, _LIST_INSTRUCTION,
+                    log_label="a materials list", detail="high",
+                    max_tokens=1500, timeout=45)
+    if not raw:
+        return []
+    lines = []
+    for line in raw.splitlines():
+        line = line.strip().strip('`').strip()
+        if line and not line.lower().startswith(('here is', "here's", 'sure')):
+            lines.append(line)
+    return lines
+
+
+def _describe(file_bytes, mime_type, instruction, log_label,
+              detail="low", max_tokens=150, timeout=20):
     """Shared single multimodal call. See the module docstring."""
     if not file_bytes:
         return None
@@ -134,16 +171,16 @@ def _describe(file_bytes, mime_type, instruction, log_label):
                         # and identifying a fixture does not need full res.
                         "image_url": {
                             "url": f"data:{mime};base64,{b64}",
-                            "detail": "low",
+                            "detail": detail,
                         },
                     },
                 ],
             }],
             model=VISION_MODEL,
             temperature=0,
-            max_tokens=150,
+            max_tokens=max_tokens,
             retries=2,
-            timeout=20,
+            timeout=timeout,
         )
     except Exception as exc:
         logger.warning("Vision describe failed (%s) — continuing without it", exc)

@@ -148,8 +148,14 @@ classifiers are AI-primary with keyword fallback.)
   non-price on `_yes_tiedown` (context-aware: property-scope question once a
   job is on the table, "What are you looking to get sorted?" on a cold opener).
   Never stack two questions in one reply.
-- The plumber is **Takudzwa** (+263774819901) everywhere — one prior fix
-  introduced a second name in adjacent turns.
+- **Speak as WE, never "the plumber" (owner rule, repeated because it kept
+  being lost).** "Once we see the space", "we'll come through", "we'll call
+  you", never "the plumber sees the space", "our plumber will come" or "your
+  plumber is on the way". The business is one voice, not a bot fronting a
+  tradesman. Write copy that way at source; `bot.utils.speak_as_we` is the net
+  at every outbound choke point and TEST 0 (`we voice:`) fails if it is removed.
+  Only a lead who asks who is coming gets the name, and it is the tenant's own
+  (`plumber_display_name()`), never a hardcoded Homebase name or number.
 
 ## Objection & exit playbook
 

@@ -3348,7 +3348,7 @@ def _resolve_email_attempt_ai(message: str, appointment=None):
                     "WhatsApp \"reply\" that responds to what they actually said and "
                     "either asks them to re-send the email or offers to send it here "
                     "on WhatsApp. Match their language (English or Shona). No emojis; "
-                    "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Hyphens inside words are fine (on-site, all-in, wall-hung). "
+                    "Never use a dash as punctuation: no em dashes, no en dashes, no ' - ' between clauses. Use a comma, a full stop or a new sentence. Speak as the business: always 'we' ('we will come and have a look', 'once we see the space'), never 'the plumber' or 'our plumber'. Hyphens inside words are fine (on-site, all-in, wall-hung). "
                     "one or two sentences.\n"
                     "Reply with strict JSON only."
                 )},
