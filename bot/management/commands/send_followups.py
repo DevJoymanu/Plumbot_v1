@@ -67,18 +67,22 @@ SA_TIMEZONE = pytz.timezone('Africa/Johannesburg')
 
 # ─── Contact windows (local time, half-open) ─────────────────────────────────
 # Each entry is (open_hour, open_minute, close_hour, close_minute) in CAT.
-# Two windows a day, around the hours the owner wants leads contacted in:
-# 12:33-14:33 and 16:02-19:33 (owner rule, 2026-09-06, widening the previous
-# 12:33-13:57 / 16:03-18:30). Half-open, so the last possible send in each is
-# 14:32 and 19:32; the off-minute edges keep sends off obvious bot times.
+# ONE window a day, 08:03-20:33 (owner rule, 2026-09-21, replacing the two
+# blocks 12:33-14:33 and 16:02-19:33). Half-open, so the last possible send is
+# 20:32; the off-minute edges keep sends off obvious bot times.
+#
+# Why one long window: the 4h floor (FOLLOWUP_MIN_GAP_HOURS) allowed at most
+# two sends a day inside the old ~5.5 sendable hours, so a standard 24h lead
+# got 1 to 3 touches instead of four. Twelve and a half hours fits three a day.
+# Everything below that walks the windows still takes a LIST, so a second
+# block can come back without touching the helpers.
 #
 # This is the ONE definition. Anything else that needs to know when we may
 # message a lead reads it from here — _next_window_open, _window_moment_before
 # and the plan-path follow-up all do — because two copies of a sending window
 # drift within a month and the second one is always the one nobody updates.
 CONTACT_WINDOWS = [
-    (12, 33, 14, 33),
-    (16, 2, 19, 33),
+    (8, 3, 20, 33),
 ]
 
 # ─── How many follow-ups ──────────────────────────────────────────────────────
@@ -100,9 +104,11 @@ FOLLOWUP_CAP_PER_REPLY = 4
 # What a proactive touch looks like in the transcript. Every loop stamps its own
 # prefix as it sends, so the transcript is the one place that knows the total
 # regardless of which counter each loop keeps.
+# '[JOB DATE FOLLOW-UP]' is job_date_ladder.TRANSCRIPT_MARKER, the -7/-3 touches.
 PROACTIVE_MARKERS = (
     '[AUTO FOLLOW-UP]', '[AUTOMATIC FOLLOW-UP]',
     '[DELAY NUDGE', '[PARKED NUDGE', '[DELAY REACTIVATION]',
+    '[JOB DATE FOLLOW-UP]',
 )
 
 
@@ -329,10 +335,10 @@ FOLLOWUP_WINDOW_MARGIN_HOURS = 1.5
 # absolute offsets rolled forward into the same contact window arrive at the
 # same minute, and a cron catching up after an outage fires whatever is due.
 #
-# THE CONSEQUENCE IS FEWER TOUCHES ON A SHORT WINDOW, and that is the trade the
-# rule makes. The sendable hours are two blocks a day (CONTACT_WINDOWS), so a
-# 4h floor allows at most two sends per day; a standard 24h lead therefore gets
-# TWO touches rather than four. The cap of four is a ceiling, not a quota, and
+# THE CONSEQUENCE CAN BE FEWER TOUCHES ON A SHORT WINDOW, and that is the trade
+# the rule makes. The sendable hours are one 12.5h block a day (CONTACT_WINDOWS),
+# so a 4h floor allows at most three sends per day and a standard 24h lead can
+# lose a touch to the night. The cap of four is a ceiling, not a quota, and
 # the count is read off the schedule everywhere (max_followups_for), so the UI
 # chip, the dashboard due-list, the LLM prompt and cron retirement all follow.
 FOLLOWUP_MIN_GAP_HOURS = 4.0
@@ -566,6 +572,7 @@ class Command(BaseCommand):
         self._nudge_delay_flow_ghosts(now_local, dry_run)
         self._nudge_parked_leads(now_local, dry_run)
         self._process_delayed_reactivations(now_local, dry_run)
+        self._process_job_date_ladder(now_local, dry_run)
 
         self._print_eligibility_breakdown(now_local, force)
         leads = self._get_eligible_leads(now_local, force)
@@ -1068,6 +1075,7 @@ class Command(BaseCommand):
         tomorrow without spamming the same lead.
         """
         import re as _re
+        from django.db.models import Q
         from bot.customer_emails import (
             send_delay_followup_email,
             send_delay_last_check_email,
@@ -1081,6 +1089,14 @@ class Command(BaseCommand):
                 delay_followup_due_at__lte=timezone.now(),
             )
             .exclude(chatbot_paused=True)
+            # A lead on the job-date ladder is followed up by
+            # _process_job_date_ladder at job -7 / -3, and its stored check-back
+            # IS job -7, so this loop would fire the same day with the "back
+            # and settled in?" copy, then a "last check" email four days later.
+            # The near-term check-ins ([DELAY_KIND] pdf/access) are not ladder
+            # touches and still go from here.
+            .exclude(Q(internal_notes__contains='[JOB_DATE]')
+                     & ~Q(internal_notes__contains='[DELAY_KIND]'))
         )
         due = self._exclude_suppressed_states(due)
 
@@ -1345,6 +1361,155 @@ class Command(BaseCommand):
                 logger.error(f'Error reactivating delayed lead {lead.id}: {exc}')
                 self.stdout.write(self.style.ERROR(f'❌ Delayed lead {lead.id}: {exc}'))
 
+    # ─── Job-date ladder (handoff brief Rule 1, owner 2026-09-21) ───────────
+
+    def _process_job_date_ladder(self, now_local, dry_run):
+        """Walk every lead armed with a job date more than a week out.
+
+        WHAT: at job - 7 and job - 3 a touch to the lead (email when we have
+        one, else WhatsApp when the free window is open), and at job - 2, if
+        they have not answered, the plumber's phone-call brief.
+        WHY here: it is the cron that already owns delayed leads and their
+        channel rules; `bot/job_date_ladder.py` holds the dates, state and copy.
+        HOW: one lead per try, so one bad row never stops the run. The state
+        guard (`_exclude_suppressed_states`) runs at the query and
+        `lead_is_suppressed` again right before each send, because a lead can be
+        booked or switched off between two ticks.
+        """
+        from bot import job_date_ladder as ladder
+
+        leads = (
+            Appointment.objects.real()
+            .filter(is_lead_active=True,
+                    internal_notes__contains=ladder.JOB_DATE_TAG)
+            .exclude(chatbot_paused=True)
+        )
+        leads = self._exclude_suppressed_states(leads)
+        for lead in leads:
+            try:
+                self._tick_job_ladder(lead, now_local, dry_run, ladder)
+            except Exception as exc:
+                logger.exception('Job-date ladder failed for lead %s', lead.id)
+                self.stdout.write(self.style.ERROR(f'❌ Job ladder lead {lead.id}: {exc}'))
+
+    def _ladder_due_at(self, lead, day):
+        """The moment a ladder step on `day` goes out: the time the lead named
+        for check-backs if they named one, else 09:00, rolled into the contact
+        window like every other touch."""
+        from bot.out_of_scope_handler import _stored_followup_time
+        hour, minute = _stored_followup_time(lead) or (9, 0)
+        local = SA_TIMEZONE.localize(datetime(day.year, day.month, day.day, hour, minute))
+        return self._next_window_open(local)
+
+    def _tick_job_ladder(self, lead, now_local, dry_run, ladder):
+        """One lead, one tick: at most ONE step fires.
+
+        Stop conditions come first, in this order: nothing armed; the lead is
+        booked or otherwise suppressed (a booked lead is taken off the ladder,
+        a switched-off one is only held, so Resume brings it back); the lead
+        has answered since the first touch (the conversation owns them now, so
+        no second touch and no call). A cron that was down across two steps
+        fires only the LATEST due one, never a burst.
+        """
+        from bot.post_visit import lead_is_suppressed
+
+        job_day = ladder.job_date(lead)
+        at = ladder.step(lead)
+        if job_day is None or at >= ladder.STEP_DONE:
+            return
+        if lead.status == 'confirmed' or lead_is_suppressed(lead):
+            if lead.status == 'confirmed' or getattr(lead, 'job_scheduled_datetime', None):
+                if not dry_run:
+                    ladder.disarm(lead)
+            return
+        if at > ladder.STEP_FIRST and ladder.replied_since_first_touch(lead):
+            if not dry_run:
+                ladder.disarm(lead)
+            self.stdout.write(f'  ↩️  Job ladder lead {lead.id}: replied, ladder closed')
+            return
+
+        today = now_local.date()
+        while at < ladder.STEP_CALL and ladder.step_day(job_day, at + 1) <= today:
+            at += 1
+        if timezone.now() < self._ladder_due_at(lead, ladder.step_day(job_day, at)):
+            return
+
+        if at == ladder.STEP_CALL:
+            self._ladder_call(lead, job_day, today, dry_run, ladder)
+            return
+        self._ladder_touch(lead, at, dry_run, ladder)
+
+    def _ladder_touch(self, lead, at, dry_run, ladder):
+        """A -7 or -3 touch. Email first (brief: it sidesteps the 24h window and
+        any blocking risk), WhatsApp only when there is no email AND the free
+        window is open. Held by the four-touch cap like every other loop. The
+        step advances even when no channel could carry it, so the plumber's
+        call still comes: for a lead with no email and a shut window that call
+        is the only way left to reach them."""
+        from bot.post_visit import lead_is_suppressed
+
+        if dry_run:
+            self.stdout.write(self.style.SUCCESS(
+                f'🧪 Would send job-ladder touch {at + 1} to lead {lead.id}'))
+            return
+
+        sent_via = ''
+        capped = touches_since_last_reply(lead) >= FOLLOWUP_CAP_PER_REPLY
+        if not capped and not lead_is_suppressed(lead):
+            if getattr(lead, 'customer_email', None):
+                from bot.customer_emails import _send
+                subject, html = ladder.touch_email(lead, at)
+                if _send(lead, subject, html, category='delay'):
+                    sent_via = 'email'
+                    lead.add_conversation_message(
+                        'assistant', f'{ladder.TRANSCRIPT_MARKER} (email) {subject}')
+            else:
+                allowed, why = self._delay_wa_allowed(lead)
+                if allowed:
+                    message = dequalify_free_visit(lead, ladder.touch_message(lead, at))
+                    clean = lead.phone_number.replace('whatsapp:', '').replace('+', '').strip()
+                    result = get_client_for_tenant(lead.tenant).send_text_message(clean, message)
+                    logged = f'{ladder.TRANSCRIPT_MARKER} {message}'
+                    lead.add_conversation_message('assistant', logged)
+                    # Stamp the WAMID so a quoted reply to this touch resolves.
+                    try:
+                        wamid = (result or {}).get('messages', [{}])[0].get('id')
+                    except Exception:
+                        wamid = None
+                    lead.attach_message_id('assistant', logged, wamid)
+                    sent_via = 'WhatsApp'
+                else:
+                    logger.info('Job ladder touch for lead %s has no channel: %s',
+                                lead.id, why)
+        ladder.advance(lead, at + 1, timezone.now())
+        self.stdout.write(self.style.SUCCESS(
+            f'✅ Job ladder touch {at + 1} for lead {lead.id} '
+            f'({sent_via or ("capped" if capped else "no channel")})'))
+
+    def _ladder_call(self, lead, job_day, today, dry_run, ladder):
+        """job - 2 with no reply: the plumber phones. Skipped once the job date
+        itself has passed (a cron back from an outage should not ask him to
+        call about a day that is gone). Either way the ladder is finished and
+        the lead leaves the delay queue: from here a person owns it."""
+        import re as _re
+
+        if dry_run:
+            self.stdout.write(self.style.SUCCESS(
+                f'🧪 Would send the plumber a call brief for lead {lead.id}'))
+            return
+        if job_day >= today:
+            ok = ladder.send_call_brief(lead)
+            self.stdout.write(self.style.SUCCESS(
+                f'📞 Call brief for lead {lead.id} '
+                f'{"sent to the plumber" if ok else "FAILED to send"}'))
+            if not ok:
+                return      # retried next tick; the step is not advanced
+        ladder.advance(lead, ladder.STEP_DONE, timezone.now())
+        lead.is_delayed = False
+        lead.internal_notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '',
+                                      lead.internal_notes or '').strip()
+        lead.save(update_fields=['is_delayed', 'internal_notes'])
+
     # ─── Delay-email state helpers (internal_notes-backed, no migration) ─────
 
     def _read_delay_email_count(self, notes: str) -> int:
@@ -1491,7 +1656,16 @@ class Command(BaseCommand):
 
         next_q  = self._get_next_question(lead)
         attempt = lead.followup_count + 1   # 1-based attempt number
-        result  = self._generate_message(lead, next_q, attempt)
+        # The second touch to a qualified lead who went quiet is the plumber
+        # handoff (brief Rule 2), deterministic and never model-written: no
+        # model call at the handoff. Everything else takes the owner's script.
+        handoff = self._handoff_touch(lead, attempt)
+        if handoff:
+            next_q = 'plumber_handoff'
+            result = {'message': handoff, 'ai_generated': False,
+                      'template_fallback': False}
+        else:
+            result = self._generate_message(lead, next_q, attempt)
         message = dequalify_free_visit(lead, result['message'])
 
         if dry_run:
@@ -1519,6 +1693,11 @@ class Command(BaseCommand):
         lead.save()
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
+        if handoff:
+            from bot.plumber_link import LINK_SENT_TAG
+            if LINK_SENT_TAG not in (lead.internal_notes or ''):
+                lead.internal_notes = f'{lead.internal_notes or ""}\n{LINK_SENT_TAG}'.strip()
+                lead.save(update_fields=['internal_notes'])
 
         tag = '🤖 AI' if result['ai_generated'] else '📄 Template'
         self.stdout.write(
@@ -1529,6 +1708,42 @@ class Command(BaseCommand):
             )
         )
         return {'status': 'sent', **result}
+
+    # The follow-up number that hands a quiet, qualified lead to the plumber's
+    # own line (brief Rule 2: "on the second follow-up"). Counted since their
+    # last reply, like every attempt number here.
+    HANDOFF_ATTEMPT = 2
+
+    def _handoff_touch(self, lead, attempt):
+        """The plumber-handoff follow-up for a qualified lead gone quiet, or ''.
+
+        WHAT: the second follow-up, for a lead who has given all three fields
+        (service type, description, area) and was asked to book, is the
+        plumber's wa.me link with the free-online-quote and formal-PDF offer.
+        WHY: in the ghosted path (no delay signal) the handoff is the LAST
+        resort, so the first touch still gets the owner's script and only the
+        second hands over.
+        HOW: '' (so the owner's script goes instead) when this is not the
+        second attempt, a field is missing ('other' is not a service type),
+        the link already went out (the delay flow sends it too), or the tenant
+        has no plumber number. Pinned by "plumber link: ghosted" in TEST 0.
+        """
+        if attempt != self.HANDOFF_ATTEMPT:
+            return ''
+        from bot.lead_handoff import service_label
+        from bot.plumber_link import LINK_SENT_TAG, quote_offer
+        if not (service_label(lead) and (lead.project_description or '').strip()
+                and (lead.customer_area or '').strip()):
+            return ''
+        if LINK_SENT_TAG in (lead.internal_notes or ''):
+            return ''
+        offer = quote_offer(lead)
+        if not offer:
+            return ''
+        name = (lead.customer_name or '').strip()
+        hi = f'Hi {name}' if name else 'Hi there'
+        return (f"{hi}, if a visit doesn't suit right now, there's another way "
+                f"to get your price.\n\n{offer}")
 
     # ─── Timing ───────────────────────────────────────────────────────────────
 
@@ -2115,6 +2330,26 @@ Output ONLY the message text. No labels, no quotes around it, no explanation."""
             logger.warning(
                 f'AI follow-up too short ({len(message)} chars) for lead {lead.id} '
                 f'— falling back to template'
+            )
+            return self._template_message(lead, next_question, attempt)
+
+        # The fence (bot/copy_fence.py). The model REWORDS the owner's script; it
+        # may not ADD to it. Until this, the rewrite was held to the script's
+        # question count (fit_to_template) and a 20-character floor, and nothing
+        # else, on a path with sampled drift of about 1 in 5: it could name a
+        # price, promise something free or discounted, or offer a day and time
+        # nobody had checked the diary for. Anything in the rewrite that is not
+        # in the script (a figure, a promise word, a day word, a clock time), or
+        # a rewrite 60% longer than the script, sends the owner's script instead,
+        # which is always correct on its own. A day or price in a follow-up must
+        # come from code, never from the model's reading of the conversation.
+        from bot.copy_fence import fence_holds
+        fence_ok, fence_why = fence_holds(message, template_text,
+                                          check_slots=True, max_growth=1.6)
+        if not fence_ok:
+            logger.warning(
+                f'AI follow-up rejected by the fence ({fence_why}) for lead '
+                f'{lead.id} — sending the owner script instead'
             )
             return self._template_message(lead, next_question, attempt)
 

@@ -44,6 +44,7 @@ from openai import OpenAI
 
 from .services.clients import HUMAN_VOICE
 from .utils import business_name_for
+from bot import copy_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -1344,10 +1345,14 @@ def _extract_followup_date_ai(message: str):
                     "- Shona: 'mangwana'=tomorrow, 'svondo rinouya'=next week, "
                     "'mwedzi unotevera'=next month, 'mugovera'=Saturday\n\n"
                     "The date MUST be today or later — never in the past.\n"
-                    "If the message has NO usable timeframe — e.g. 'I'll get in touch', "
-                    "'not sure yet', 'soon', 'will let you know', a bare '...' or another "
-                    "vague reply — set has_timeframe to false and follow_up_date to "
-                    "null. Do NOT guess a date in that case.\n\n"
+                    "A VAGUE range is still a timeframe: 'month end', 'mid next week', "
+                    "'early next month', 'in a few weeks', 'soon', 'after payday'. "
+                    "ASSUME one date inside that range and return it; never treat a "
+                    "range as missing, because the customer is never asked to narrow "
+                    "a range they already gave.\n"
+                    "Only when the message has NO time content at all — e.g. 'I'll get "
+                    "in touch', 'not sure yet', 'will let you know', a bare '...' — set "
+                    "has_timeframe to false and follow_up_date to null.\n\n"
                     "Reply with strict JSON only, no prose."
                 )},
                 {"role": "user", "content": (
@@ -1513,7 +1518,21 @@ def _compute_followup_date(timeframe_message: str):
     when the API is unavailable (and powers the offline regression gate).
     Returns (None, None) when there is no usable timeframe — the caller re-asks
     rather than fabricating a date.
+
+    A VAGUE timeframe is read first, deterministically (`bot.vague_dates`):
+    "month end", "mid next week", "early next month", "in a few weeks" is an
+    answer, so we assume a date inside it and never ask again (owner rule,
+    2026-09-21). Before this, a range neither reader placed got "Roughly when
+    are you thinking?" back, the question they had just answered, and the
+    keyword parser put "early next month" and "end of October" on the 15th.
+    Pinned by the "vague date" cases in TEST 0.
     """
+    from bot.vague_dates import resolve as _resolve_vague
+    frame = _resolve_vague(timeframe_message)
+    if frame is not None:
+        logger.info("Vague timeframe '%s' -> assumed %s (%s)",
+                    (timeframe_message or '')[:60], frame.anchor, frame.phrase)
+        return frame.anchor.isoformat(), frame.anchor.strftime('%A %d %B')
     ai = _extract_followup_date_ai(timeframe_message)
     if ai and ai[0]:
         return ai
@@ -1723,6 +1742,11 @@ _TIMEFRAME_RE = re.compile(
     r'|in\s+a\s+week'                   # "in a week"
     r'|in\s+a\s+month'                  # "in a month"
     r'|in\s+two\s+weeks'                # "in two weeks"
+    # Word numbers, as the digit branches above: "rather in two months" was
+    # not read as a timeframe while "in 3 months" was, so a lead correcting
+    # the job-date ladder's follow-up date in words was taken for a declined
+    # email (bot/test_handoff.py, the new-date case).
+    r'|\b(?:two|three|four|five|six)\s+(?:weeks?|months?)\b'
     r'|fortnight'                       # "fortnight"
     r'|weekend'                         # "this weekend", "over the weekend"
     r'|tomorrow'                        # "tomorrow", "call you tomorrow"
@@ -2969,7 +2993,7 @@ def _reask_delay_timeframe(message: str, appointment) -> str:
             "No problem at all. Let me send our catalog over so you've got "
             "something to weigh up while you decide, and I'll set a reminder to "
             f"check back in.\n\n{_EMAIL_VALUE_CLAUSE}\n\n"
-            "What's the best email for it?"
+            f"{copy_catalog.BEST_EMAIL_ASK}"
         )
 
     # First miss — ask once for a rough timeframe.
@@ -3015,28 +3039,74 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     if _timeframe_is_near(iso_date) and not _is_self_initiated_defer(message):
         logger.info("Near-term timeframe — booking the visit instead of parking")
         look = f"a quick look at {_service_space_label(appointment)} — 20 minutes or so"
+        # One copy of the close both branches below end on, so a rewording
+        # cannot reach one branch and miss the other.
+        _pop_round = f"We'll pop round for {look} and confirm the exact figure on the spot."
         if _timeframe_names_specific_day(message):
             # We already have the day — ask only for a time. Say the day back the
             # way they said it ("Friday works", not "Friday 05 September works").
             day_back = _checkback_when_phrase(iso_date, message, bare=True) or friendly_date
             return (
                 f"Nice one — {day_back} works. What time suits you? "
-                f"We'll pop round for {look} and confirm the exact figure on the spot."
+                f"{_pop_round}"
             )
-        # Vague near range ("this weekend") — pin the actual day too.
+        # A vague near range ("midweek", "this week", "this weekend", "in the
+        # next few days") is an answer too. `_compute_followup_date` has
+        # already assumed a day inside it (bot.vague_dates first), so say that
+        # day and ask only the time, the same shape as a named day above. This
+        # used to ask "What day and time works for you?", a second question
+        # about the range they had just given (owner rule, 2026-09-21, pinned
+        # by the "vague date" cases in TEST 0 and bot/test_handoff.py).
+        from bot.job_date_ladder import ordinal
+        from bot.tenant_config import get_config
+        from datetime import date as _d
+        day = _d.fromisoformat(iso_date[:10])
+        # This is a VISIT day, so it must be one the lead's own tenant works:
+        # "this weekend" placed on a Saturday offered Homebase's closed day.
+        # Rolled forward at most a week; a tenant open no day keeps the date.
+        try:
+            cfg = get_config(getattr(appointment, 'tenant', None))
+            for _ in range(7):
+                if cfg.is_open_on(day.weekday()):
+                    break
+                day += timedelta(days=1)
+        except Exception:
+            logger.warning("Could not check the tenant's working days", exc_info=True)
         return (
-            "Nice one — let's get you in this side. What day and time works for you? "
-            f"We'll pop round for {look} and confirm the exact figure on the spot."
+            f"Nice one, let's say {day.strftime('%A')} the {ordinal(day.day)} "
+            f"then. What time suits you? {_pop_round}"
         )
 
     # Presumptively commit: mark the lead delayed and store the agreed date now,
     # rather than gating on a separate confirmation step.
     mark_delay_signal(appointment, message)
+    is_shona = _lead_speaks_shona(message)
+
+    # More than a week out, the date they named is the JOB date and we follow
+    # up a week BEFORE it (handoff brief Rule 1, owner 2026-09-21): the check-back
+    # stored is job - 7, the job-date ladder is armed for the -7/-3 touches and
+    # the plumber's -2 call, and the lead is ASKED about that literal date. A
+    # week or less out (only a self-initiated defer reaches here) keeps the old
+    # shape: check back on the day they named. Pinned by "job ladder" in TEST 0.
+    from bot import job_date_ladder as _ladder
+    try:
+        from datetime import date as _d
+        _job_day = _d.fromisoformat(iso_date[:10])
+    except ValueError:
+        _job_day = None
+    if _job_day is not None and _ladder.applies(_job_day):
+        _checkback = _ladder.first_followup_date(_job_day)
+        _store_delay_followup_date(appointment, _checkback.isoformat(),
+                                   source_message=message)
+        _ladder.arm(appointment, _job_day)
+        return _ladder_delay_reply(appointment, _job_day, _checkback,
+                                   friendly_date, is_shona)
+    # A near date replaces any far one armed earlier in the thread.
+    _ladder.disarm(appointment)
     _store_delay_followup_date(appointment, iso_date, source_message=message)
 
     # Say the moment back in their own words; the formal date is only the
     # fallback for a date too far out to name naturally.
-    is_shona = _lead_speaks_shona(message)
     when = _checkback_when_phrase(iso_date, message, appointment,
                                   is_shona=is_shona) or f"on {friendly_date}"
 
@@ -3093,7 +3163,90 @@ def _delay_email_ask(appointment, iso_date, when, is_shona=False) -> str:
         f"Got it, no problem. We'll check back with you{when}.\n\n"
         "In the meantime I'll send you our portfolio of past jobs with the "
         f"pricing, so you've got something to look over. {_EMAIL_VALUE_CLAUSE}\n\n"
-        "What's the best email for it?"
+        f"{copy_catalog.BEST_EMAIL_ASK}"
+    )
+
+
+def _plumber_offer_once(appointment) -> str:
+    """The plumber's free-online-quote offer (link included), at most once.
+
+    WHAT: `plumber_link.quote_offer`, prefixed with a blank line, or ''.
+    WHY: the brief sends the link with the portfolio on EVERY delay signal, and
+    the portfolio can go out from three different branches of this flow; one
+    tag means one link whichever branch gets there first.
+    HOW: '' when already sent, or when the tenant has no plumber number (never
+    another tenant's number). Tags the lead as it hands the text over.
+    """
+    from bot.plumber_link import LINK_SENT_TAG, quote_offer
+    if LINK_SENT_TAG in (getattr(appointment, 'internal_notes', '') or ''):
+        return ''
+    try:
+        offer = quote_offer(appointment)
+    except Exception:
+        logger.exception("Plumber quote link failed — apt %s",
+                         getattr(appointment, 'pk', None))
+        return ''
+    if not offer:
+        return ''
+    _append_note_tag(appointment, LINK_SENT_TAG)
+    return f"\n\n{offer}"
+
+
+def _ladder_delay_reply(appointment, job_day, checkback, friendly_date,
+                        is_shona=False) -> str:
+    """The delay reply for a job date more than a week out (brief, Rule 1).
+
+    WHAT: two WhatsApp messages in one turn. First the permission question for
+    the literal follow-up date (job - 7) with the reason; then the portfolio,
+    either "sent to your email" (address on file) or the email ask, plus the
+    plumber's quote link once the portfolio is actually going out.
+    WHY two parts: the brief asks both things in one go, and `finalise_outbound`
+    keeps ONE question per message part, so a single part would lose one of
+    them. MESSAGE_SPLIT_MARKER makes it one turn, one question each.
+    HOW: the email ask writes the `delay_email` pending step carrying the
+    CHECK-BACK date, so the answer handler confirms that date, not the job's.
+    Shona leads keep the existing Shona copy with the check-back date; the
+    permission wording and the link offer are English-only for now.
+    """
+    from bot.job_date_ladder import permission_ask
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+
+    checkback_iso = checkback.isoformat()
+    if is_shona:
+        when = _checkback_when_phrase(checkback_iso, None, appointment,
+                                      is_shona=True) or ''
+        if getattr(appointment, 'customer_email', None):
+            if '[DELAY_QUOTE_SENT]' not in (appointment.internal_notes or ''):
+                from bot.customer_emails import send_delay_quote_email_async
+                send_delay_quote_email_async(
+                    appointment, follow_up_date_str=_friendly_iso(checkback_iso))
+                _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
+            return (f"Zvakanaka, hapana dambudziko. Tichadzoka kwamuri {when}.\n\n"
+                    "Kana pane chinochinja, ingotumirai meseji.")
+        return _delay_email_ask(appointment, checkback_iso, when, is_shona=True)
+
+    ask = f"Got it, no problem. {permission_ask(checkback)}"
+
+    if getattr(appointment, 'customer_email', None):
+        # The address is on file, so the portfolio goes now and the link rides
+        # with it. A portfolio already sent earlier in the flow is not re-sent.
+        if '[DELAY_QUOTE_SENT]' in (appointment.internal_notes or ''):
+            portfolio = "Take your time with the portfolio."
+        else:
+            from bot.customer_emails import send_delay_quote_email_async
+            send_delay_quote_email_async(
+                appointment, follow_up_date_str=_friendly_iso(checkback_iso))
+            _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
+            portfolio = ("I've sent our portfolio of past jobs with the pricing "
+                         "to your email, so you've got it to look over.")
+        return f"{ask}{MESSAGE_SPLIT_MARKER}{portfolio}{_plumber_offer_once(appointment)}"
+
+    _write_pending(appointment, 'delay_email', checkback_iso)
+    return (
+        f"{ask}{MESSAGE_SPLIT_MARKER}"
+        "In the meantime I'll send you our portfolio of past jobs with the "
+        f"pricing, so you've got something to look over. {_EMAIL_VALUE_CLAUSE}\n\n"
+        f"{copy_catalog.BEST_EMAIL_ASK}"
     )
 
 
@@ -3435,6 +3588,21 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         logger.info("Delay email step — timeframe answer captured: '%s'", msg[:60])
         return _handle_delay_timeframe_answer(msg, {}, appointment)
 
+    # On the job-date ladder the step before this ASKED whether a date suits
+    # ("Will it be okay if we follow up on the 14th of October?"), so a reply
+    # that names another date is an answer to that question, not a failed
+    # email. Without this, "no, make it the 20th" classified as a DECLINE and
+    # sent the PDF instead of moving the date. The customer's words win.
+    # Deterministic on purpose (no model call on a reply that is usually just
+    # an address): the timeframe regex, or anything the keyword calendar can
+    # resolve to a day ("the 20th", "November").
+    from bot import job_date_ladder as _ladder
+    if (iso_date and _ladder.job_date(appointment) is not None and '@' not in msg
+            and (_message_has_timeframe(msg)
+                 or _compute_followup_date_keywords(msg)[0])):
+        logger.info("Delay email step — ladder date corrected: '%s'", msg[:60])
+        return _handle_delay_timeframe_answer(msg, {}, appointment)
+
     intent = _classify_email_step_reply(msg, appointment)
 
     # Asked for it on WhatsApp, OR declined the email → send the PDF here either
@@ -3444,9 +3612,10 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         # Send the PDF and schedule a proactive check-in (before the window closes
         # for ad/72h leads). Keep the reply light — don't narrate the send or the
         # check-in date; we'll follow up about the portfolio ourselves.
+        # The plumber's link rides with the portfolio (brief: "send the
+        # portfolio and the plumber link together, up front").
         if _deliver_pdf_and_schedule_checkin(appointment, iso_date):
-            return ("Have a look whenever suits, and if anything changes just "
-                    "send a message.")
+            return copy_catalog.PORTFOLIO_SENT_ACK + _plumber_offer_once(appointment)
         # The send failed. "Have a look" would point them at nothing — the same
         # rule the reschedule path follows: never tell a customer something
         # happened when it did not. The plumber is alerted either way.
@@ -3465,7 +3634,7 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
                         "on WhatsApp instead of re-asking (apt=%s)",
                         getattr(appointment, 'id', None))
             _deliver_pdf_and_schedule_checkin(appointment, iso_date)
-            return "Have a look whenever suits, and if anything changes just send a message."
+            return copy_catalog.PORTFOLIO_SENT_ACK + _plumber_offer_once(appointment)
         _write_pending(appointment, 'delay_email', iso_date or '')
         return _delivery_choice_question(iso_date)
 
@@ -3525,10 +3694,22 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
                 "Zvakanaka, portfolio yedu irikuuya ku email yenyu izvozvi.\n\n"
                 f"Tichadzoka kwamuri{when}. Kana pane chinochinja, ingotumirai meseji."
             )
+        # On the job-date ladder we just asked about a LITERAL date ("the 14th
+        # of October"), so the confirmation says it back in the same form
+        # rather than as "Wednesday 14 October", and the plumber's link goes
+        # with the portfolio (brief, Rule 1 step 3).
+        offer = ''
+        if _ladder.job_date(appointment) is not None:
+            try:
+                from datetime import date as _d
+                when = f" on {_ladder.spoken_date(_d.fromisoformat(iso_date[:10]))}"
+            except ValueError:
+                pass
+            offer = _plumber_offer_once(appointment)
         return (
             "Got it, thanks. Our portfolio is on its way to your inbox now.\n\n"
             f"We'll check back in with you{when}. If anything changes before "
-            "then, just send a message."
+            "then, just send a message." + offer
         )
     # No agreed date yet (e.g. soft brush-off led with the portfolio offer) — ask
     # for a rough follow-up date so we check back proactively instead of waiting.

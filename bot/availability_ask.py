@@ -49,7 +49,6 @@ never what makes it safe.
 import json
 import logging
 import os
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -63,32 +62,10 @@ ASK_COMPOSER_ENABLED = os.environ.get('PLUMBOT_ASK_COMPOSER', '1') != '0'
 # for an essay.
 MAX_CHARS = 220
 
-# Reused from the reply checker's rules - the same two things a model must
-# never introduce into customer copy.
-_PROMISE_WORDS = (
-    'free', 'no charge', 'no cost', 'discount', 'guarantee', 'guaranteed',
-    'refund', 'mahara', 'complimentary', 'waive', 'waived',
-)
-# The bare R is the rand prefix, and must not match the 'r' ending an
-# ordinary word: "or 2pm" and "for 20 minutes" both matched R\s?\d under
-# IGNORECASE, so a sound sentence read as naming a figure.
-_MONEY = re.compile(
-    r'(?:US\$|USD|\$|(?<![A-Za-z])R)\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?',
-    re.IGNORECASE)
-
-# "9am", "2:30pm". The same shape _clock_label writes, which is how a person
-# types a time into WhatsApp.
-_CLOCK = re.compile(r'\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b', re.IGNORECASE)
-
-# Every word that could name a day, in both languages plus the relative ones.
-# The fence asks "is this day word one we supplied?", so the list only has to
-# be wide enough to CATCH a day the model invented, never to interpret it.
-_DAY_WORDS = (
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
-    'sunday', 'today', 'tomorrow', 'tonight', 'weekend',
-    'muvhuro', 'chipiri', 'chitatu', 'china', 'chishanu', 'mugovera',
-    'svondo', 'mangwana', 'nhasi', 'manheru', 'mangwanani', 'masikati',
-)
+# The fence vocabulary (money, promise words, clock times, day words) lives
+# in bot/copy_fence.py, shared with the reply checker and the follow-up
+# rewrite. It used to be copied here and in response_check.py, and the two
+# copies had drifted (the rand-prefix bug was fixed in both by hand).
 
 _SYSTEM = """You write ONE WhatsApp message for a plumbing company: the message that asks a customer when we may come and look at their job.
 
@@ -110,55 +87,19 @@ Hard rules:
 Voice: a busy tradesperson texting. Short plain words, warm, no wind-up, no sales patter. Lead with the offer and close on the question."""
 
 
-def _slot_vocabulary(slots) -> tuple:
-    """The day words and clock times we supplied. The fence's allow-list."""
-    joined = ' '.join(slots).lower()
-    days = {w for w in _DAY_WORDS if re.search(r'\b%s\b' % w, joined)}
-    times = {m.group(0).lower().replace(' ', '') for m in _CLOCK.finditer(joined)}
-    return days, times
-
-
 def fences_hold(ask: str, slots) -> tuple:
     """May this composition go out? Returns (ok, why_not).
 
     Deterministic and public so TEST 0 can pin it: this is the part that makes
-    an LLM safe on copy the customer has to be able to trust.
+    an LLM safe on copy the customer has to be able to trust. The model was
+    given only the slot strings, so any figure, promise word, day word or clock
+    time not in them is invented, which covers "nothing free means nothing may
+    be named" too: with no slots, every day and time is one we did not supply.
+    Exactly one question, and a WhatsApp length.
     """
-    if not ask or not ask.strip():
-        return False, 'empty'
-    text = ask.strip()
-    if len(text) > MAX_CHARS:
-        return False, 'too long (%d chars)' % len(text)
-    if text.count('?') != 1:
-        return False, 'wants exactly one question, found %d' % text.count('?')
-
-    if _MONEY.search(text):
-        return False, 'named a figure'
-    low = text.lower()
-    for word in _PROMISE_WORDS:
-        if re.search(r'\b%s\b' % re.escape(word), low):
-            return False, 'added a promise: %s' % word
-
-    allowed_days, allowed_times = _slot_vocabulary(slots)
-
-    said_times = {m.group(0).lower().replace(' ', '')
-                  for m in _CLOCK.finditer(low)}
-    invented_times = said_times - allowed_times
-    if invented_times:
-        return False, 'invented a time: %s' % ', '.join(sorted(invented_times))
-
-    said_days = {w for w in _DAY_WORDS if re.search(r'\b%s\b' % w, low)}
-    invented_days = said_days - allowed_days
-    if invented_days:
-        return False, 'invented a day: %s' % ', '.join(sorted(invented_days))
-
-    # Nothing free means nothing may be named. Checked explicitly as well as
-    # by the allow-lists above, because an empty allow-list is exactly the
-    # case where a bug would read as "everything is allowed".
-    if not slots and (said_days or said_times):
-        return False, 'named a slot when the diary had none'
-
-    return True, ''
+    from bot.copy_fence import fence_holds
+    return fence_holds(ask, ' '.join(slots or ()), check_slots=True,
+                       questions=1, max_chars=MAX_CHARS)
 
 
 def compose_availability_ask(slots, *, purpose, is_shona=False,

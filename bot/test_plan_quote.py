@@ -224,7 +224,7 @@ class PlanQuoteSchedulerTests(TestCase):
 
         tz = pytz.timezone('Africa/Johannesburg')
         open_h, open_m = CONTACT_WINDOWS[0][:2]
-        # 12 hours before the midday window opens, plus a few minutes so the
+        # 12 hours before the first window opens, plus a few minutes so the
         # +12h moment sits inside it rather than exactly on the edge.
         anchor = tz.localize(datetime(2026, 6, 23, open_h, open_m + 5)) - timedelta(hours=12)
 
@@ -406,8 +406,10 @@ class PlanQuoteContactWindowTests(TestCase):
 
     def test_the_small_hours_are_not_a_contact_window(self):
         from bot.plan_quote import in_contact_window
+        # 07:00 is the hour before the single 08:03-20:33 window opens (09:00
+        # was asserted here while the day was two afternoon blocks).
         self.assertFalse(in_contact_window(self._at(3, 0)))
-        self.assertFalse(in_contact_window(self._at(9, 0)))
+        self.assertFalse(in_contact_window(self._at(7, 0)))
         self.assertFalse(in_contact_window(self._at(23, 0)))
 
     @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)

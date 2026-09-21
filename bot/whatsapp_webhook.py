@@ -45,6 +45,7 @@ from .repeated_question_detector import (
 )
 from .views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
 from .pricing_copy import is_tenant_item_intent
+from bot import copy_catalog
 
 PREVIOUS_WORK_IMAGE_URLS = [
     url.strip()
@@ -403,9 +404,9 @@ _PLAN_DESCRIPTION_ASK = (
 )
 
 _MEDIA_ACK_QUESTIONS = {
-    'service_type':      "Could you describe what you'd like done? Just a few words is fine.",
-    'project_description': "Could you describe what you'd like done? Just a few words is fine.",
-    'area':              "Whereabouts are you based?",
+    'service_type':      copy_catalog.DESCRIBE_THE_JOB,
+    'project_description': copy_catalog.DESCRIBE_THE_JOB,
+    'area':              copy_catalog.AREA_ASK_WHEREABOUTS,
     # Static dict, so the two-concrete-days close is not available here — use
     # the this-or-that timeframe pair instead of an open "when".
     'availability_date': "Are you looking to get this done this week, or a bit further out?",

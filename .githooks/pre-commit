@@ -82,17 +82,25 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 
-# Dashboard view/action regression suite — offline (in-memory SQLite, mocked
-# outbound), ~3s. Catches template-time 500s (e.g. the /conversations/ pager
-# EmptyPage) and broken staff actions before they ship.
-echo "🔒 Plumbot commit gate — running dashboard view/action suite…"
+# The Django suite: the dashboard view/action tests AND the offline scenario
+# replay (bot/test_scenarios.py). Offline throughout (in-memory SQLite, mocked
+# outbound, mocked DeepSeek). The dashboard half catches template-time 500s and
+# broken staff actions; the scenario half replays every conversation in
+# scenarios/ through the real pipeline and fails when a check that passed in
+# scenarios/offline_baseline.json stops passing - the CONVERSATION-level
+# regressions (wrong branch, wrong copy) that TEST 0's resolver cases can't see.
+echo "🔒 Plumbot commit gate — running dashboard + offline scenario suite…"
 PYTHONIOENCODING=utf-8 "${PY_CMD[@]}" manage.py test bot -v 0
 status=$?
 
 if [ "$status" -ne 0 ]; then
     echo ""
-    echo "❌ Commit blocked: the dashboard view/action suite failed."
+    echo "❌ Commit blocked: the dashboard / offline scenario suite failed."
     echo "   Run: python manage.py test bot -v 2   to see the failure."
+    echo "   A CONVERSATION REGRESSION means a scenario check that used to pass"
+    echo "   now fails: fix the code. Only if the behaviour change is deliberate,"
+    echo "   rewrite the baseline and read its diff before committing it:"
+    echo "     PLUMBOT_SCENARIO_BASELINE=write python manage.py test bot.test_scenarios"
     echo "   To bypass in a true emergency: git commit --no-verify"
     exit 1
 fi

@@ -1238,8 +1238,12 @@ class SectionedQuoteTests(TestCase):
         for value in ('Barmak Plumbing', 'ROYAL HARDWARE', '20398 Budiriro 5B Cabs Harare',
                       '+263 77 387 1503', 'info@barmakplumbing.co.zw',
                       'CABS', '1154714543', 'Director K. Marange',
-                      'Quality is our mission', 'deposit 75%'):
+                      'Quality is our mission',
+                      'Balance to be paid on completion of 1st stage'):
             self.assertIn(value, html, f'{value} missing from the sheet')
+        # The boilerplate deposit term is NOT seeded: the deposit is set on
+        # each quote (default_terms, QuoteDepositTests).
+        self.assertNotIn('deposit 75%', html)
 
     def test_a_tenant_without_letterhead_facts_omits_them(self):
         """Absent means omit, never borrow: layout on, nothing else set."""
@@ -1365,7 +1369,7 @@ class SectionedQuoteTests(TestCase):
             'lh_bank_bank_name': 'CABS',
             'lh_bank_branch': 'Park street',
             'lh_bank_account_number': '9999999999',
-            'lh_terms': 'deposit 50%',
+            'lh_terms': 'deposit 50%\nBalance within 7 days',
             'lh_default_vat_percent': '14.5',
             'lh_signatory': 'Director K. Marange',
             'lh_tagline': 'Quality is our mission',
@@ -1382,7 +1386,10 @@ class SectionedQuoteTests(TestCase):
         html = self._html(reverse('create_quotation', args=[self.barmak_lead.pk]))
         self.assertIn('9999999999', html)
         self.assertIn('1 New Road, Harare', html)
-        self.assertIn('deposit 50%', html)
+        self.assertIn('Balance within 7 days', html)
+        # Stored as typed, but a deposit line never seeds a new quote.
+        self.assertIn('deposit 50%', profile.letterhead['terms'])
+        self.assertNotIn('deposit 50%', html.split('id="bqSheet"', 1)[1])
 
     # ── the consultation fee: how a plumber says the visit is not free ──────
     def test_consultation_fee_input_is_on_the_profile_page(self):
@@ -3424,7 +3431,12 @@ class OfferPageTests(TestCase):
         page = self.client.get(reverse('offer'))
         self.assertContains(
             page, 'Our Bathroom makeover special is US$800 — a freestanding tub and side chamber.')
-        self.assertContains(page, 'sees the space')
+        # "the space" is the stable half; the verb follows the WE voice ("once we
+        # see the space", copy_catalog.STARTING_PRICES_DISCLAIMER), which is also
+        # what the customer receives, so the preview no longer shows the plumber
+        # a "the plumber sees the space" line that speak_as_we rewrote on send.
+        self.assertContains(page, 'see the space')
+        self.assertNotContains(page, 'the plumber sees')
         # The soft value tie-down (owner rule, 2026-09-19), never a budget ask.
         self.assertContains(page, 'willing to invest in')
         self.assertNotContains(page, 'your budget')
@@ -9196,6 +9208,15 @@ class QuoteDepositTests(StaffClientTestCase):
         self.assertEqual(response.context['quote_deposit_percent'], 0)
         self.assertNotIn('default_deposit_percent', response.context['lh'])
 
+    def test_a_deposit_line_in_the_default_terms_is_not_carried_onto_a_new_quote(self):
+        """The deposit is set per quote and printed from that field, so a
+        "deposit 75%" line in the tenant's boilerplate terms would state a
+        figure nobody set for this job. default_terms filters it at seeding."""
+        from bot.views.quote_layout import default_terms
+        terms = default_terms({'terms': ['deposit 75%', '75% Deposit up front',
+                                         'Balance on completion']})
+        self.assertEqual(terms, ['Balance on completion'])
+
     def test_the_profile_page_no_longer_offers_a_second_place_to_set_it(self):
         body = self.client.get(reverse('profile')).content.decode()
         self.assertNotIn('lh_default_deposit_percent', body)
@@ -10260,6 +10281,156 @@ class OneNavBarInsideTheFrameTests(StaffClientTestCase):
         self.assertEqual(response.context['quote_return_url'],
                          reverse('appointment_detail', args=[self.lead.pk]) + '?frame=1')
 
+    # -- viewing a quote ----------------------------------------------------
+
+    def test_the_client_copy_drops_the_chrome_inside_a_frame(self):
+        url = reverse('view_quotation', args=[self.quote.pk])
+        framed = self._html(url, frame=True)
+        self.assertNotIn(self.SIDEBAR, framed, 'a second sidebar on the framed client copy')
+        self.assertNotIn(self.BOTTOMBAR, framed)
+        plain = self._html(url)
+        self.assertIn(self.SIDEBAR, plain)
+
+    def test_the_whatsapp_handoff_opened_from_the_frame_carries_the_flag(self):
+        html = self._html(
+            reverse('appointment_detail', args=[self.lead.pk]) + '?frame=1')
+        self.assertIn(reverse('quotation_whatsapp_handoff', args=[self.quote.pk])
+                      + '?frame=1', html)
+
+    # -- the whole frame context travels, not just `frame` -----------------
+
+    def test_the_conversations_context_is_carried_whole(self):
+        """The conversations pane loads the lead with hidetabs + source too.
+        Carrying `frame` alone got the nav right and then drew the lead page's
+        own tab bar in the pane on the way back."""
+        response = self.client.get(
+            reverse('create_quotation', args=[self.lead.pk]),
+            {'frame': '1', 'hidetabs': '1', 'source': 'conversations'})
+        back = response.context['quote_return_url']
+        for part in ('frame=1', 'hidetabs=1', 'source=conversations'):
+            self.assertIn(part, back)
+
+    def test_a_redirect_answered_in_the_frame_stays_in_it(self):
+        """Actions answer with reverse()-built redirects that know nothing
+        about the frame; FrameContextMiddleware adds it back. Deleting a quote
+        from its framed page used to land the pane on a chromed lead page."""
+        response = self.client.post(
+            reverse('delete_quotation', args=[self.quote.pk]) + '?frame=1&hidetabs=1')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('frame=1', response['Location'])
+        self.assertIn('hidetabs=1', response['Location'])
+
+    def test_a_redirect_outside_a_frame_is_untouched(self):
+        response = self.client.post(reverse('delete_quotation', args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('frame=', response['Location'])
+
+    def test_the_in_frame_link_net_ships_only_inside_a_frame(self):
+        url = reverse('view_quotation', args=[self.quote.pk])
+        marker = 'new URLSearchParams('
+        self.assertIn(marker, self._html(url, frame=True))
+        self.assertNotIn(marker, self._html(url))
+
+
+class OneOpenButtonTests(StaffClientTestCase):
+    """View and Edit are ONE button: the editor already draws the document the
+    customer gets, so two buttons to the same quote was two routes to one
+    screen's worth of content. The client copy stays reachable from the editor.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9690, customer_name='Open Client')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+
+    def test_the_leads_quotes_tab_has_one_button_to_the_editor(self):
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])).content.decode()
+        tab = html.split('id="tab-quotes"', 1)[1]
+        self.assertIn('View / Edit', tab)
+        self.assertNotIn(reverse('view_quotation', args=[self.quote.pk]) + '"', tab)
+        self.assertNotIn('<i class="fas fa-edit"></i> Edit</a>', tab)
+
+    def test_the_quotes_list_has_one_button_to_the_editor(self):
+        html = self.client.get(reverse('quotations_list')).content.decode()
+        self.assertIn('View / Edit', html)
+        self.assertNotIn('<i class="fas fa-pen"></i> Edit', html)
+        self.assertNotIn(reverse('view_quotation', args=[self.quote.pk]) + '"', html)
+
+    def test_the_editor_still_reaches_the_client_copy(self):
+        html = self.client.get(
+            reverse('edit_quotation', args=[self.quote.pk])).content.decode()
+        self.assertIn(reverse('view_quotation', args=[self.quote.pk]), html)
+
+
+class PortalPlanUploadTests(StaffClientTestCase):
+    """A plan can be added from the portal, on the lead's Details tab and on
+    the quote editor's Plan tab.
+
+    It used to reach a lead only by WhatsApp: the Details tab showed its plan
+    block only once a plan existed or was expected, with Replace as the only
+    control, and the editor hid its Plan tab for a lead with nothing on file.
+    Both post to AppointmentDetailView._attach_plan.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9691, customer_name='Plan Client')
+
+    @staticmethod
+    def _pdf(name='plan.pdf'):
+        return SimpleUploadedFile(name, b'%PDF-1.4 fake', content_type='application/pdf')
+
+    def test_the_details_tab_offers_add_plan_when_none_is_on_file(self):
+        html = self.client.get(
+            reverse('appointment_detail', args=[self.lead.pk])).content.decode()
+        self.assertIn('No plan on file', html)
+        self.assertIn('Add plan', html)
+        self.assertIn('name="plan_file"', html)
+
+    def test_the_details_form_attaches_it(self):
+        response = self.client.post(
+            reverse('appointment_detail', args=[self.lead.pk]), {'plan_file': self._pdf()})
+        self.assertEqual(response.status_code, 302)
+        self.lead.refresh_from_db()
+        self.assertTrue(self.lead.plan_file)
+        self.assertTrue(self.lead.has_plan)
+        self.assertEqual(self.lead.plan_status, 'plan_uploaded')
+
+    def test_the_editor_upload_answers_json_with_the_whole_file_list(self):
+        response = self.client.post(
+            reverse('appointment_detail', args=[self.lead.pk]),
+            {'plan_file': self._pdf()}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        self.assertEqual(payload['files'][0]['index'], 0)
+        self.assertEqual(payload['files'][0]['url'],
+                         reverse('appointment_document_file', args=[self.lead.pk, 0]))
+
+    def test_anything_but_a_pdf_or_photo_is_refused(self):
+        bad = SimpleUploadedFile('notes.exe', b'MZ', content_type='application/octet-stream')
+        response = self.client.post(
+            reverse('appointment_detail', args=[self.lead.pk]),
+            {'plan_file': bad}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()['ok'])
+        self.lead.refresh_from_db()
+        self.assertFalse(self.lead.plan_file)
+
+    def test_the_editor_plan_tab_carries_the_upload_for_a_bare_lead(self):
+        html = self.client.get(
+            reverse('create_quotation', args=[self.lead.pk])).content.decode()
+        self.assertIn('id="pbqPlanAdd"', html)
+        self.assertIn(reverse('appointment_detail', args=[self.lead.pk]), html)
+
+    def test_another_tenants_lead_cannot_take_a_plan(self):
+        other = Tenant.objects.create(name='Other Co', slug='other-plan-co')
+        foreign = make_lead(9692, tenant=other, customer_name='Foreign')
+        response = self.client.post(
+            reverse('appointment_detail', args=[foreign.pk]), {'plan_file': self._pdf()})
+        self.assertEqual(response.status_code, 404)
+
 
 class QuotePlanTabTests(StaffClientTestCase):
     """Two tabs stuck to the quote screen: QUOTE, and the plan behind it.
@@ -10349,11 +10520,15 @@ class QuotePlanTabTests(StaffClientTestCase):
                 self.assertNotIn('hidden', self._open_tag(html, 'id="pbqQuotePanel"'),
                                  f'{screen} opens with the sheet hidden')
 
-    def test_a_lead_with_nothing_behind_the_tab_gets_no_tab(self):
-        """A tab that opens on an empty page is a dead control."""
+    def test_a_lead_with_nothing_on_file_still_gets_the_tab_to_add_a_plan(self):
+        """A tab that opens on an empty page is a dead control - but this one
+        is not empty: behind it is Add plan, the only way to put a plan handed
+        over on site onto the lead from this screen. Hiding the tab for a bare
+        lead hid that control too."""
         bare = make_lead(9672, customer_name='Bare Lead')
         html = self._html(reverse('create_quotation', args=[bare.pk]))
-        self.assertNotIn('id="pbqTabs"', html)
+        self.assertIn('id="pbqTabs"', html)
+        self.assertIn('id="pbqPlanAdd"', html)
         self.assertIn('id="pbqQuotePanel"', html, 'the sheet still renders')
 
     def test_a_quote_with_no_lead_gets_no_tabs(self):
@@ -10572,8 +10747,10 @@ class SectionedTemplateBuilderTests(TestCase):
         figure for a template to preview or to start one at."""
         html = self._html(reverse('create_quotation_template'))
         totals = html.split('<table class="bq-totals"', 1)[1].split('</table>', 1)[0]
-        self.assertIn('deposit 75%', totals,
-                      'the terms line is the tenant own wording and stays')
+        # The boilerplate "deposit 75%" term is not seeded either: the deposit
+        # is set on each quote (default_terms).
+        self.assertNotIn('deposit 75%', totals)
+        self.assertIn('Balance to be paid on completion of 1st stage', totals)
         self.assertNotIn('DEPOSIT (', totals)
         self.assertNotIn('<input', totals.split('VAT (', 1)[1])
 

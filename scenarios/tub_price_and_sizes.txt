@@ -6,7 +6,9 @@
 > how much tub
 expect: US$
 expect: install
-expect: sees the space
+# "we see the space", not "the plumber sees the space": speak_as_we rewrites
+# every outbound message to WE (owner rule), so the old wording can never pass.
+expect: see the space
 expect: willing to invest
 
 > how big are your tubs

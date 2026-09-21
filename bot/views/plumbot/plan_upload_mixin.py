@@ -248,17 +248,13 @@ class PlanUploadMixin:
                 service_name = self.appointment.project_type.replace('_', ' ').title()
                 customer_name = self.appointment.customer_name
 
-                # ✅ Customer-friendly wording
+                # ✅ Customer-friendly wording. The tail is shared so the two
+                # greetings cannot drift apart.
+                _got_plan = f"got your {service_name} plan and we're going through it."
                 if customer_name:
-                    intro_message = (
-                        f"Hi {customer_name}, we've got your {service_name} "
-                        "plan and we're going through it."
-                    )
+                    intro_message = f"Hi {customer_name}, we've {_got_plan}"
                 else:
-                    intro_message = (
-                        f"Thanks! We've got your {service_name} "
-                        "plan and we're going through it."
-                    )
+                    intro_message = f"Thanks! We've {_got_plan}"
 
                 completion_message = f""" PLAN SENT SUCCESSFULLY!
 

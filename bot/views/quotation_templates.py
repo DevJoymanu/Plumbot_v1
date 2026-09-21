@@ -38,7 +38,7 @@ from ..forms import (
     QuotationTemplateForm, QuotationTemplateItemFormSet,
 )
 from .. import branding
-from .quote_layout import is_sectioned, letterhead_for
+from .quote_layout import default_terms, is_sectioned, letterhead_for
 from ..decorators import (staff_required, anonymous_required, StaffRequiredMixin,
                           is_platform_owner)
 from ..whatsapp_cloud_api import whatsapp_api
@@ -488,7 +488,8 @@ def template_form_context(request, mode, template=None):
         # No deposit row: there is no business-wide deposit to show. It is
         # agreed per job and typed on the quote itself (owner rule,
         # 2026-09-21), so a template cannot start one either.
-        'default_terms': list(letterhead.get('terms') or []),
+        # Without a deposit line, as a new quote gets them (default_terms).
+        'default_terms': default_terms(letterhead),
     }
 
 

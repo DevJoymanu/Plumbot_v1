@@ -1,0 +1,31 @@
+# Handoff brief, Rule 1 (owner, 2026-09-21). A lead who puts the job off to a
+# date more than a week out is asked whether we may follow up a week BEFORE
+# it, as a literal date ("the 14th of October"), with the reason, and for the
+# email in the same turn (two messages, one question each). Once the address
+# arrives the portfolio goes to it and the plumber's own WhatsApp link, with
+# the free online quote offer, goes out on WhatsApp beside it. The job-date
+# ladder (-7 / -3 touches, the plumber's call at -2) is armed underneath:
+# out_of_scope_handler._ladder_delay_reply and bot/job_date_ladder.py. The
+# cron side is covered by bot/test_handoff.py.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> I want to redo my bathroom in Borrowdale
+reject: US$
+
+> Maybe later, just saving your number for now
+expect: when
+reject: email
+
+> In two months
+expect: will it be okay if we follow up
+expect: go over a quote
+expect: email
+reject: wa.me
+
+> me@example.com
+expect: portfolio
+expect: wa.me/
+expect: free online quote
+reject: what's the best email

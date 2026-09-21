@@ -1008,13 +1008,9 @@ class AppointmentDetailView(DetailView):
             'active_nav': active_nav,
             'is_frame': is_frame,
             'base_template': base_template,
-            # Carried onto every link that leaves this page for a WHOLE page of
-            # its own (the quote editors). Those extend the full layout, so
-            # followed from inside the workspace iframe they rendered their own
-            # sidebar and bottom bar inside the frame - a second nav bar over
-            # the one already on screen. `frame=1` makes them chromeless, the
-            # same flag this page is loaded with.
-            'frame_query': '?frame=1' if is_frame else '',
+            # `frame_query` (for links leaving this page inside the workspace
+            # iframe) comes from the plumbot_shell context processor, the one
+            # place it is built.
             'quotes_tab_url': quotes_tab_url,
             'slot_datetime': getattr(appointment, slot_field),
             'slot_label': ('Job scheduled' if slot_field == 'job_scheduled_datetime'
@@ -1039,28 +1035,76 @@ class AppointmentDetailView(DetailView):
             **sidebar_context,
         })
         return context
-    def post(self, request, *args, **kwargs):
-        """Handle form submission for updating appointment"""
-        appointment = self.get_object()
+    # What a plan may be: a drawing arrives as a PDF or as a photo of one.
+    _PLAN_EXTENSIONS = ('.pdf', '.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic')
 
-        # Plan attach/replace from the glance card — its own one-field form,
-        # handled before the edit-form fields so a plan upload never touches
-        # any other appointment data. A replaced plan goes back to
-        # 'plan_uploaded' (the new file hasn't been reviewed yet).
-        plan_upload = request.FILES.get('plan_file')
-        if plan_upload:
+    def _attach_plan(self, request, appointment, upload):
+        """Store `upload` as this lead's plan and answer the form that sent it.
+
+        WHY a portal upload at all: a plan used to reach a lead only through
+        WhatsApp, and the only portal control was "Replace" on a plan already
+        on file - a plan handed over on site or by email had no way in.
+
+        HOW: a PDF or image only (checked on the extension and the declared
+        type, because the file input's `accept` is a browser hint, not a
+        guard). The quote editor posts with X-Requested-With and gets JSON
+        back - the refreshed file list, since attaching a FIRST plan shifts
+        every other file's index by one (the plan is always index 0) - so the
+        plumber never leaves the sheet they are typing. The Details tab's
+        plain form gets the redirect it always had. Pinned by
+        PortalPlanUploadTests.
+        """
+        wants_json = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+        name = (getattr(upload, 'name', '') or '').lower()
+        kind = (getattr(upload, 'content_type', '') or '').lower()
+        ok_type = name.endswith(self._PLAN_EXTENSIONS) and (
+            kind.startswith('image/') or kind == 'application/pdf'
+            or kind in ('', 'application/octet-stream'))
+
+        error = None
+        if not ok_type:
+            error = 'A plan must be a PDF or a photo (JPG, PNG).'
+        else:
             try:
-                appointment.plan_file = plan_upload
+                appointment.plan_file = upload
                 appointment.has_plan = True
                 appointment.plan_status = 'plan_uploaded'
                 appointment.plan_uploaded_at = timezone.now()
                 appointment.save()
-                messages.success(request, 'Plan attached to this appointment.')
             except Exception as e:
-                messages.error(request, f'Error attaching plan: {str(e)}')
-            base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
-            qs = request.GET.urlencode()
-            return redirect(f"{base_url}?{qs}" if qs else base_url)
+                error = f'Error attaching plan: {str(e)}'
+
+        if wants_json:
+            if error:
+                return JsonResponse({'ok': False, 'error': error}, status=400)
+            from .quotations import quote_lead_panel
+            files = [
+                dict(entry, url=reverse('appointment_document_file',
+                                        args=[appointment.pk, entry['index']]))
+                for entry in quote_lead_panel(appointment)['quote_lead_files']
+            ]
+            return JsonResponse({'ok': True, 'files': files})
+
+        if error:
+            messages.error(request, error)
+        else:
+            messages.success(request, 'Plan attached to this appointment.')
+        base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
+        qs = request.GET.urlencode()
+        return redirect(f"{base_url}?{qs}" if qs else base_url)
+
+    def post(self, request, *args, **kwargs):
+        """Handle form submission for updating appointment"""
+        appointment = self.get_object()
+
+        # Plan attach/replace from the portal - the Details tab's plan block
+        # and the quote editor's Plan tab both post here. Its own one-field
+        # form, handled before the edit-form fields so a plan upload never
+        # touches any other appointment data. A replaced plan goes back to
+        # 'plan_uploaded' (the new file hasn't been reviewed yet).
+        plan_upload = request.FILES.get('plan_file')
+        if plan_upload:
+            return self._attach_plan(request, appointment, plan_upload)
 
         try:
             # Update fields from POST data

@@ -88,6 +88,16 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
                 <i class="fas fa-file-invoice"></i> Use Template
             </button>
             {% endif %}
+            {% comment %}
+            The editor is where a quote is opened from every list (one View /
+            Edit button), so the read-only client copy is reached from here,
+            as it already is on the sectioned sheet.
+            {% endcomment %}
+            {% if quote_mode == 'edit' %}
+            <a href="{% url 'view_quotation' quotation.pk %}" class="btn btn-outline-primary">
+                <i class="fas fa-eye"></i> Client copy
+            </a>
+            {% endif %}
             {% if appointment %}
             <a href="{% url 'appointment_detail' appointment.pk %}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Lead

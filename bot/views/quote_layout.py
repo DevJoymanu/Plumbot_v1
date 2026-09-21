@@ -6,6 +6,7 @@ discount and VAT); everyone else keeps the flat default. The switch is tenant
 data, never a slug check, so one tenant's document can never render for
 another — and every letterhead value comes from that tenant's own profile.
 """
+import re
 from decimal import Decimal
 
 from ..tenant_config import get_config
@@ -96,15 +97,37 @@ def sections_payload(quotation):
     ]
 
 
+# A default-terms line that states the deposit. English plus the Shona
+# loanword spellings; matched on the word, so "deposit 75%", "75% deposit" and
+# "Deposit required before work starts" all count.
+_DEPOSIT_TERM = re.compile(r'\b(?:deposit|dh?ipoziti)\b', re.IGNORECASE)
+
+
+def default_terms(letterhead) -> list:
+    """The payment terms a NEW quote (or a template preview) starts with.
+
+    The tenant's own default terms from the Profile page, minus any line about
+    the deposit. The deposit is set on each quote by the plumber (owner rule,
+    2026-09-21) and printed from that field as its own row; a "deposit 75%"
+    line in the boilerplate printed a figure nobody had set for THIS job, and
+    one that contradicted the row whenever the two differed. A deposit line
+    the plumber types on a quote is theirs and is kept - only the seeding is
+    filtered. Absent terms means no terms block. Pinned by QuoteDepositTests.
+    """
+    return [term for term in (letterhead.get('terms') or [])
+            if not _DEPOSIT_TERM.search(str(term))]
+
+
 def quote_terms(quotation, letterhead) -> list:
     """A quote's payment terms.
 
     Stored as the quotation's notes — one term per line — because that is what
-    `notes` holds on a sectioned quote. A new quote starts from the tenant's
-    own default terms; absent means no terms block at all.
+    `notes` holds on a sectioned quote. A quote with none saved starts from
+    `default_terms` (the tenant's own, without a deposit line); absent means no
+    terms block at all.
     """
     saved = [line.strip() for line in (quotation.notes or '').splitlines() if line.strip()]
-    return saved or list(letterhead.get('terms') or [])
+    return saved or default_terms(letterhead)
 
 
 def document_context(quotation, letterhead) -> dict:

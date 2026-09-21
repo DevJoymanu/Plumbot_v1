@@ -41,3 +41,15 @@ jobs:
 
       - name: Run TEST 0 gate
         run: python tests/test_bot_responses.py
+
+      # The same Django suite the pre-commit hook runs: the dashboard
+      # view/action tests plus the offline scenario replay
+      # (bot/test_scenarios.py). It used to run only in the local hook, so a
+      # `--no-verify` commit, or a clone that never set core.hooksPath, skipped
+      # all of it with nothing on the server to catch it. PLUMBOT_GATE is unset
+      # for this step because it switches test_bot_responses.py to gate mode
+      # and means nothing to manage.py; the suite installs its own DeepSeek stub.
+      - name: Run dashboard + offline scenario suite
+        env:
+          PLUMBOT_GATE: ""
+        run: python manage.py test bot -v 1

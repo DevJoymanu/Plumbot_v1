@@ -106,6 +106,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'bot.middleware.TenantMiddleware',  # pins request.tenant (after auth)
+    # A redirect answered inside the app's own iframe stays in the frame
+    # (no second nav bar on the page it lands on).
+    'bot.middleware.FrameContextMiddleware',
 ]
 
 ROOT_URLCONF = 'Plumbing_CRM.urls'

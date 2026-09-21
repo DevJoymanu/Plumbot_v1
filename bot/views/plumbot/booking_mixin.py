@@ -35,6 +35,7 @@ except ImportError:
     pass
 
 import logging
+from bot import copy_catalog
 logger = logging.getLogger(__name__)
 
 
@@ -323,8 +324,7 @@ class BookingMixin:
             Two paths book now — the normal flow and the flexible-lead close —
             and a second copy of this sentence would drift from the first.
             """
-            return ("One last thing, what name should we put on the booking? "
-                    "If you'd rather not share it, just say no.")
+            return (copy_catalog.NAME_ASK_AFTER_BOOKING)
 
         def _handle_all_day_response(self) -> str:
             """The lead gave us the choice of when to come.
@@ -463,9 +463,14 @@ class BookingMixin:
                     alternatives = self.get_alternative_time_suggestions(self.appointment.scheduled_datetime)
                     if alternatives:
                         alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
-                        return f"That time isn't available. Here are some alternatives:\n{alt_text}\n\nWhich works better for you?"
+                        return f"{copy_catalog.TIME_UNAVAILABLE_SHORT} Here are some alternatives:\n{alt_text}\n\n{copy_catalog.WHICH_WORKS_BETTER}"
                     else:
-                        return "That time isn't available. Could you suggest another time? Our hours are 8 AM - 6 PM, Monday to Friday."
+                        # The tenant's OWN hours. This line used to say "8 AM - 6 PM,
+                        # Monday to Friday" to every customer, which was wrong even for
+                        # Homebase (open Sunday to Friday) and was the last copy of the
+                        # hardcoded week the reschedule copy had already been cleared of.
+                        return (f"{copy_catalog.TIME_UNAVAILABLE_SHORT} Could you suggest "
+                                f"another time? Our hours are {self._hours_phrase()}.")
             
             except Exception as e:
                 print(f"❌ Error attempting immediate booking: {str(e)}")

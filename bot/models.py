@@ -9,6 +9,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 import importlib
 import logging
+from bot import copy_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -1110,59 +1111,12 @@ class Appointment(models.Model):
             print(f"Error checking availability: {str(e)}")
             return False, "error"
 
-    def _hours_phrase(self) -> str:
-        return self._schedule_cfg().hours_sentence() or 'our normal working hours'
-
-    def _emergency_offer(self) -> str:
-        """Round-the-clock emergency cover, offered only when this tenant has
-        it on file. Appended to 'that time doesn't work' replies."""
-        if not self._schedule_cfg().emergency_24h():
-            return ''
-        return " If it's an emergency though, we're on call 24/7 — just say the word."
-
-    def get_availability_error_message(self, error_type, conflict_appointment=None):
-        """Generate user-friendly error messages for availability issues"""
-        try:
-            if error_type == "past_time":
-                return "That time has already passed. Please choose a future time."
-            
-            elif error_type in ("closed_day", "saturday_closed", "weekend"):
-                phrase = self._schedule_cfg().closed_days_phrase()
-                if phrase:
-                    return (f"We're closed on {phrase}. Please choose another day."
-                            f"{self._emergency_offer()}")
-                return ("That day doesn't work on our side. Please choose another day."
-                        f"{self._emergency_offer()}")
-
-            elif error_type == "outside_business_hours":
-                return (f"We're only available {self._hours_phrase()}. "
-                        f"Please choose a time within business hours.{self._emergency_offer()}")
-
-            elif error_type == "ends_after_hours":
-                return (f"That appointment would run past our closing time. "
-                        f"Our hours are {self._hours_phrase()}. "
-                        f"Please choose an earlier time slot.{self._emergency_offer()}")
-
-            elif error_type == "insufficient_notice":
-                return "We need a couple of hours advance notice for appointments. Please choose a time further in the future."
-            
-            elif error_type == "too_far_ahead":
-                return "We can only book appointments up to 3 months in advance. Please choose a sooner date."
-            
-            elif error_type == "error":
-                return "There was a technical issue checking availability. Please try a different time or call us."
-            
-            elif isinstance(conflict_appointment, Appointment):
-                conflict_time = conflict_appointment.scheduled_datetime.strftime('%I:%M %p')
-                customer_name = conflict_appointment.customer_name or "another customer"
-                return f"That time conflicts with an appointment for {customer_name} at {conflict_time}."
-            
-            else:
-                return "That time slot isn't available. Please choose a different time."
-                
-        except Exception as e:
-            print(f"Error generating availability message: {str(e)}")
-            return "That time isn't available. Please choose a different time."
+    # get_availability_error_message lived here too, with its own _hours_phrase
+    # and _emergency_offer helpers. It had no caller and had drifted from the
+    # live copy on AvailabilityMixin (different notice wording, a 'weekend'
+    # alias the live one lacked, and a conflict line that named the OTHER
+    # customer). Merged into that copy and deleted with its helpers; do not
+    # re-add them here. Pinned by the "availability refusal" cases in TEST 0.
 
     def find_next_available_slots(self, preferred_datetime, num_suggestions=4):
         """Find the next available appointment slots after the preferred time"""
@@ -1326,7 +1280,7 @@ class Appointment(models.Model):
             if requested_time_str:
                 message_parts.append(f"That time ({requested_time_str}) isn't available.")
             else:
-                message_parts.append("That time isn't available.")
+                message_parts.append(copy_catalog.TIME_UNAVAILABLE_SHORT)
             
             message_parts.append("\nHere are some alternatives:")
             
@@ -1343,13 +1297,13 @@ class Appointment(models.Model):
                 for alt in next_days:
                     message_parts.append(f"• {alt['display']}")
             
-            message_parts.append("\nWhich time works best for you?")
+            message_parts.append(('\n' + copy_catalog.WHICH_TIME_WORKS))
             
             return "".join(message_parts)
             
         except Exception as e:
             print(f"Error formatting availability response: {str(e)}")
-            return "That time isn't available. Please suggest another time."
+            return copy_catalog.TIME_UNAVAILABLE_SUGGEST
 
     # ===== EXISTING MODEL METHODS =====
     

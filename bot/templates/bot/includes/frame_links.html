@@ -1,0 +1,56 @@
+{% comment %}
+Keeps navigation that starts inside one of the app's own iframes IN the frame.
+
+A framed page (the conversations workspace's record pane, the follow-ups
+dashboard's detail pane) shows no chrome of its own, because its host already
+has it. Any plain link or form on it, followed as written, loads the next page
+WITH its sidebar and bottom bar - a second nav bar inside the pane. The links
+we know about carry `frame_query` on the server; this is the net under the
+ones we do not, so a page added next month is covered without anybody
+remembering to.
+
+How: on click / submit, a same-origin link or form action that does not
+already say `frame` gets this page's frame context (frame, hidetabs, source)
+added. Left alone on purpose: target="_top" / "_blank" (a deliberate break
+out of the frame), in-page anchors, and mailto: / tel: / javascript: links.
+Redirects are covered server-side by FrameContextMiddleware.
+Rendered only when `frame_query` is set, so an ordinary page carries none of it.
+{% endcomment %}
+{% if frame_query %}
+<script>
+(function () {
+    'use strict';
+    var params = new URLSearchParams("{{ frame_query|slice:'1:'|escapejs }}");
+
+    function framed(raw) {
+        var url;
+        try { url = new URL(raw, window.location.href); } catch (error) { return null; }
+        if (url.origin !== window.location.origin || url.searchParams.has('frame')) { return null; }
+        params.forEach(function (value, key) {
+            if (!url.searchParams.has(key)) { url.searchParams.set(key, value); }
+        });
+        return url.pathname + url.search + url.hash;
+    }
+
+    function staysInFrame(target) {
+        return !target || target === '_self';
+    }
+
+    document.addEventListener('click', function (event) {
+        var link = event.target.closest ? event.target.closest('a[href]') : null;
+        if (!link || !staysInFrame(link.getAttribute('target'))) { return; }
+        var href = link.getAttribute('href') || '';
+        if (!href || href.charAt(0) === '#' || /^(mailto|tel|javascript|sms):/i.test(href)) { return; }
+        var next = framed(href);
+        if (next) { link.setAttribute('href', next); }
+    }, true);
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target;
+        if (!form || !staysInFrame(form.getAttribute('target'))) { return; }
+        var next = framed(form.getAttribute('action') || window.location.href);
+        if (next) { form.setAttribute('action', next); }
+    }, true);
+}());
+</script>
+{% endif %}

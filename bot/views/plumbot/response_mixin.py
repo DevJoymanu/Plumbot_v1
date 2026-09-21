@@ -40,6 +40,7 @@ except ImportError:
 import logging
 from bot.pricing_copy import (build_structured_pricing, build_prompt_pricing_guide,
                               facebook_package_facts)
+from bot import copy_catalog
 logger = logging.getLogger(__name__)
 
 
@@ -1397,8 +1398,7 @@ class ResponseMixin:
                     "If you'd rather not share it, just say no."
                 )
             return (
-                "One last thing, what name should we put on the booking? "
-                "If you'd rather not share it, just say no."
+                copy_catalog.NAME_ASK_AFTER_BOOKING
             )
 
 
@@ -1562,22 +1562,35 @@ class ResponseMixin:
             ask. Returns None when no part of the week was named.
             """
             from .availability_mixin import week_part_of
+            from bot.vague_dates import resolve as resolve_vague
             part = week_part_of(message)
-            if not part:
+            # Any other vague frame is an answer too ("month end", "next week",
+            # "in a few weeks", "early next month"): offer the first two open
+            # slots inside it. Before, these went to the retry paraphrase,
+            # which asked "do you mean towards the end or the beginning?"
+            # (owner rule, 2026-09-21: never ask again after a vague
+            # timeframe, assume a date inside it). Pinned by "vague date" in
+            # TEST 0.
+            frame = None if part else resolve_vague(message)
+            if not part and frame is None:
                 return None
             from bot.repeated_question_detector import detect_language_simple
             from bot.controller_templates import question_without_ack
             is_shona = detect_language_simple(message or '') == 'shona'
-            self._week_part = part
+            self._week_part, self._date_frame = part, frame
             try:
                 slots = self._visit_slot_labels(is_shona)
             finally:
-                self._week_part = None
+                self._week_part, self._date_frame = None, None
             ask = self._scripted_availability_ask(
                 slots, self._describe_project_context(), is_shona)
             if is_shona:
                 return ask
-            phrase = part[1]
+            phrase = part[1] if part else frame.phrase
+            # A span ("in a few weeks", "soon") is not a noun that can "work
+            # for us", so it is acknowledged plainly.
+            if phrase == 'soon' or phrase.startswith('in '):
+                return f"That works for us. {question_without_ack(ask)}"
             return f"{phrase[0].upper()}{phrase[1:]} works for us. {question_without_ack(ask)}"
 
         def _ask_needs_composing(self, slots) -> bool:
@@ -1742,7 +1755,7 @@ class ResponseMixin:
             'english': [
                 ("Anything else on the property that needs looking at?",
                  "else on the property"),
-                ("Any other work around the place you'd want sorted while we're there?",
+                (copy_catalog.OTHER_WORK_WHILE_THERE,
                  "around the place"),
                 ("Any other jobs on the property you'd like us to take a look at?",
                  "other jobs on the property"),
@@ -2411,7 +2424,7 @@ class ResponseMixin:
                         "Morning or afternoon, which suits you better?")
             if next_question == "area":
                 return ("Muri munzvimbo ipi?" if is_shona
-                        else "Whereabouts are you based?")
+                        else copy_catalog.AREA_ASK_WHEREABOUTS)
             if next_question == "name":
                 return "Tingaisa zita ripi pabhooking?" if is_shona else "What name should we put on the booking?"
             return (
@@ -2665,13 +2678,11 @@ class ResponseMixin:
 
             if self._customer_said_they_will_reach_out():
                 return (
-                    "No problem at all! Whenever you're ready, just drop us a message and "
-                    "we'll pick up right where we left off."
+                    copy_catalog.WHENEVER_YOURE_READY
                 )
 
             return (
-                "No problem at all! Whenever you're ready, just drop us a message and "
-                "we'll pick up right where we left off."
+                copy_catalog.WHENEVER_YOURE_READY
             )
 
 
@@ -3695,7 +3706,7 @@ class ResponseMixin:
                  "brand or finish"),
             ],
             'area': [
-                ("Whereabouts are you based?", "whereabouts"),
+                (copy_catalog.AREA_ASK_WHEREABOUTS, "whereabouts"),
                 ("What part of town are you in?", "part of town"),
             ],
             # Timeframe FIRST, with no site-visit pitch — getting the timeframe is
@@ -4015,9 +4026,9 @@ class ResponseMixin:
                     body = f"{intro}{priced}."
 
             disclaimer = (
-                "Aya ndiwo mapurice ekutanga. Mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
+                copy_catalog.STARTING_PRICES_DISCLAIMER_SN
                 if is_shona else
-                "These are starting prices. The exact price is confirmed once the plumber sees the space."
+                copy_catalog.STARTING_PRICES_DISCLAIMER
             )
             # Forward question off the CURRENT scope/state — skips stages already
             # asked or answered, rotates wording. Computed before we record the
@@ -4180,11 +4191,10 @@ class ResponseMixin:
                 return scripted
             if not self.appointment.customer_area:
                 self._set_question_retry_count('area', 1)
-                return "All good, what area are you in?"
+                return copy_catalog.AREA_ASK_AFTER_NO
             if next_question == 'name':
                 return (
-                    "One last thing, what name should we put on the booking? "
-                    "If you'd rather not share it, just say no."
+                    copy_catalog.NAME_ASK_AFTER_BOOKING
                 )
             return "When suits you for us to come through and take a look?"
 
@@ -4737,7 +4747,7 @@ class ResponseMixin:
                                 alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
                                 reply = (
                                     f"That time isn't available either. Here are some other options:\n"
-                                    f"{alt_text}\n\nWhich works better for you?"
+                                    f"{alt_text}\n\n{copy_catalog.WHICH_WORKS_BETTER}"
                                 )
                             else:
                                 reply = (
@@ -4912,7 +4922,7 @@ class ResponseMixin:
                             if alt_text:
                                 reply += (
                                     f"Here are some available slots:\n{alt_text}\n\n"
-                                    "Or feel free to suggest a different date and time!"
+                                    f"{copy_catalog.SUGGEST_ANOTHER_SLOT}"
                                 )
                             else:
                                 reply += "Could you suggest a different day and time?"
@@ -4921,7 +4931,7 @@ class ResponseMixin:
                             if alt_text:
                                 reply += (
                                     f"\n\nHere are some available slots:\n{alt_text}\n\n"
-                                    "Which works better for you?"
+                                    f"{copy_catalog.WHICH_WORKS_BETTER}"
                                 )
                         elif not alternatives:
                             reply = (
@@ -4933,7 +4943,7 @@ class ResponseMixin:
                             alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives])
                             reply = (
                                 f"That slot just got taken. Here are the next available times:\n"
-                                f"{alt_text}\n\nWhich works better for you?"
+                                f"{alt_text}\n\n{copy_catalog.WHICH_WORKS_BETTER}"
                             )
                 else:
                     # How-much/price naming MULTIPLE items ("how much tab and
@@ -5082,7 +5092,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ API Error: {str(e)}")
-                return "Sorry, dropped that on our end. Could you send that again?"
+                return copy_catalog.DROPPED_MESSAGE
 
 
         def generate_contextual_response(self, incoming_message, next_question,
@@ -5140,10 +5150,10 @@ class ResponseMixin:
                     if alt_text:
                         reply += (
                             f"Here are some available slots:\n{alt_text}\n\n"
-                            "Or feel free to suggest a different date and time!"
+                            f"{copy_catalog.SUGGEST_ANOTHER_SLOT}"
                         )
                     else:
-                        reply += "Could you please choose a different day that works for you?"
+                        reply += copy_catalog.CHOOSE_ANOTHER_DAY
                     return reply
 
                 # The lead gave us the choice of when to come. Extraction
@@ -5221,7 +5231,7 @@ class ResponseMixin:
 
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "Sorry, dropped that on our end. Could you send that again?"
+                return copy_catalog.DROPPED_MESSAGE
 
 
         def _classify_availability_response(self, message: str, offered_days: list) -> dict:
@@ -5878,10 +5888,10 @@ class ResponseMixin:
                         f"Perfect, for {day_label} — "
                         f"what works better: {time_a} or {time_b}?"
                     )
-                return "What time works best for you, 9am or 2pm?"
+                return copy_catalog.TIME_ASK_TWO_SLOTS
 
             if next_question == "area":
-                return "All good, what area are you in?"
+                return copy_catalog.AREA_ASK_AFTER_NO
 
             if next_question == "timeline":
                 # Only the plan path asks this, and it is the branch point:
@@ -6330,7 +6340,7 @@ class ResponseMixin:
                 return (
                     f"You'll be looked after by {name}, our lead plumber at {business} — "
                     f"he handles the visit personally.{_reach}\n\n"
-                    "Any other work around the place you'd want sorted while we're there?"
+                    f"{copy_catalog.OTHER_WORK_WHILE_THERE}"
                 )
             _reach = f" (reach him on {number})" if number else ""
             return (
@@ -7463,7 +7473,7 @@ class ResponseMixin:
 
         def _ensure_price_disclaimer(self, intent, reply):
             """Make sure every priced reply states the price is approximate and the
-            exact quote is confirmed once the plumber sees the space. Idempotent and
+            exact quote is confirmed once we see the space. Idempotent and
             inserted before the closing question so the reply still ends on the CTA."""
             # A tenant's own priced service (tiling, gutters, a pump) quotes
             # real money, so it needs the same approximate-price line as every
@@ -7480,10 +7490,18 @@ class ResponseMixin:
             if '$' not in reply:
                 return reply
             # Idempotent: skip if the reply already carries a price disclaimer in any
-            # of our wordings ("approximate…", the combined reply's "ballpark…", or
-            # the shared "…sees the space" tail) — otherwise we'd stack two.
+            # of our wordings ("approximate…", the combined reply's "ballpark…", the
+            # shared "…see(s) the space" tail, or the catalogued line itself in
+            # either language) — otherwise we'd stack two. The catalogued lines are
+            # matched EXACTLY because this check used to key on "sees the space"
+            # alone: the WE wording ("once we see the space") would have slipped
+            # past it and doubled the disclaimer on every re-run, and the Shona
+            # line never matched any marker at all. Pinned by the "price disclaimer:
+            # idempotent" cases in TEST 0.
             if ('approximate' in low or 'may vary' in low or 'ballpark' in low
-                    or 'sees the space' in low
+                    or 'sees the space' in low or 'see the space' in low
+                    or copy_catalog.STARTING_PRICES_DISCLAIMER.lower() in low
+                    or copy_catalog.STARTING_PRICES_DISCLAIMER_SN.lower() in low
                     # The per-item block now carries its own caveat in the
                     # tenant's price answer ("This is a rough guide, we confirm
                     # the exact price on a visit"). Without this the reply would
@@ -7494,9 +7512,9 @@ class ResponseMixin:
                 'kubva', 'inotangira', 'munoda', 'uri kuda', 'tiuye', 'zvichienda', 'ne install',
             ))
             disclaimer = (
-                "Aya ndiwo mapurice ekutanga. Mutengo chaiwo unosimbiswa kana muplumber aona nzvimbo."
+                copy_catalog.STARTING_PRICES_DISCLAIMER_SN
                 if is_shona else
-                "These are starting prices. The exact price is confirmed once the plumber sees the space."
+                copy_catalog.STARTING_PRICES_DISCLAIMER
             )
             parts = reply.split('\n\n')
             if len(parts) >= 2:
@@ -8223,9 +8241,9 @@ class ResponseMixin:
                     alt_text = "\n".join([f"• {alt['display']}" for alt in alternatives]) if alternatives else ""
                     reply = f"We unfortunately don't operate on {closed_day}s. \n\n{_working_hours_line(self)}"
                     if alt_text:
-                        reply += f"Here are some available slots:\n{alt_text}\n\nOr feel free to suggest a different date and time!"
+                        reply += f"Here are some available slots:\n{alt_text}\n\n{copy_catalog.SUGGEST_ANOTHER_SLOT}"
                     else:
-                        reply += "Could you please choose a different day that works for you?"
+                        reply += copy_catalog.CHOOSE_ANOTHER_DAY
                     return reply
     
                 # ── "Any time is fine" guard ──────────────────────────────────────────
@@ -8270,10 +8288,10 @@ class ResponseMixin:
                                 f"Perfect, for {day_label} — "
                                 f"what works better: {time_a} or {time_b}?"
                             )
-                        return "What time works best for you, 9am or 2pm?"
+                        return copy_catalog.TIME_ASK_TWO_SLOTS
 
                     if next_question == "area":
-                        return "All good, what area are you in?"
+                        return copy_catalog.AREA_ASK_AFTER_NO
 
                     #
                     if next_question == "name":
@@ -8363,7 +8381,7 @@ class ResponseMixin:
     
             except Exception as e:
                 print(f"❌ Error generating contextual response: {str(e)}")
-                return "Sorry, dropped that on our end. Could you send that again?"
+                return copy_catalog.DROPPED_MESSAGE
 
 
         def _is_standalone_question(self, message: str) -> bool:
@@ -8469,8 +8487,7 @@ class ResponseMixin:
                     return scripted
             if nq == 'name':
                 return (
-                    "One last thing, what name should we put on the booking? "
-                    "If you'd rather not share it, just say no."
+                    copy_catalog.NAME_ASK_AFTER_BOOKING
                 )
             return None
 
@@ -8773,10 +8790,13 @@ class ResponseMixin:
  
             if next_q == "availability_date":
                 slots = self._visit_slot_labels()
+                # One copy of the ask the slot branches share, so a rewording
+                # cannot reach one branch and miss the other.
+                _visit_ask = "work for a free site visit?"
                 if len(slots) >= 2:
-                    return f"Would {slots[0]} or {slots[1]} work for a free site visit?"
+                    return f"Would {slots[0]} or {slots[1]} {_visit_ask}"
                 if len(slots) == 1:
-                    return f"Would {slots[0]} work for a free site visit?"
+                    return f"Would {slots[0]} {_visit_ask}"
                 return "Would you like to book a free site visit?"
  
             if next_q == "availability_time":

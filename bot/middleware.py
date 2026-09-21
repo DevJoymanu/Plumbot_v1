@@ -85,3 +85,42 @@ class TenantMiddleware:
                 return membership.tenant
             return None  # staff without a keycard — middleware blocks above
         return Tenant.objects.filter(slug='homebase').first()
+
+
+class FrameContextMiddleware:
+    """Keeps a redirect answered inside one of the app's iframes IN the frame.
+
+    WHAT: when a request carries the frame context (`frame=1`, plus `hidetabs`
+    / `source` - see `context_processors.frame_params`) and the response is a
+    redirect to a local path, the same context is added to that path.
+
+    WHY: a framed page's links and forms are kept in frame mode (server-side by
+    `frame_query`, and by the script in `frame_links.html`), but most actions
+    answer with a redirect built by `reverse()`, which knows nothing about the
+    frame. Delete a quote from its framed view page and the default landing -
+    the lead page - came back WITH its own sidebar and bottom bar inside the
+    pane: the second nav bar, one step later. Fixing that at every redirect
+    site would be forty edits that the next view forgets; this is one.
+
+    HOW: only local paths (a single leading "/") are touched, so an off-site
+    or protocol-relative Location is never rewritten; a key the Location
+    already names keeps its own value. Pinned by OneNavBarInsideTheFrameTests.
+    """
+
+    _REDIRECTS = {301, 302, 303, 307, 308}
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if response.status_code not in self._REDIRECTS:
+            return response
+        location = response.get('Location') or ''
+        if not location.startswith('/') or location.startswith('//'):
+            return response
+        from .context_processors import with_frame
+        framed = with_frame(location, request)
+        if framed != location:
+            response['Location'] = framed
+        return response

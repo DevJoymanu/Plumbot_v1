@@ -28,6 +28,8 @@
 
     {% block content %}{% endblock %}
 </div>
+{# Pages on this layout are always framed: keep what they link to in the frame. #}
+{% include "bot/includes/frame_links.html" %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

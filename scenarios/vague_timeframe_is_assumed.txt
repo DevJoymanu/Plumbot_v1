@@ -1,0 +1,23 @@
+# A vague timeframe is an ANSWER (owner rule, 2026-09-21, reported as one of
+# the errors that "keeps surfacing"): a lead who says "month end" or "mid next
+# week" was asked "do you mean towards the end of the week or the beginning?"
+# or "roughly when are you thinking?", a second question about the range they
+# had just given. We assume a date inside the range and move on.
+# bot/vague_dates.resolve is read first by the delay flow's date reader
+# (out_of_scope_handler._compute_followup_date) and by the booking flow's
+# availability answer (ResponseMixin._week_part_reply).
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> I want to redo my bathroom in Borrowdale
+reject: US$
+
+> Not now, maybe later
+reject: email
+
+> Month end
+reject: roughly when
+reject: beginning
+reject: what day
+reject: do you mean

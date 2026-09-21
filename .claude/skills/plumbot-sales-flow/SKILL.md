@@ -14,7 +14,7 @@ anticipate.
 - `bot/sales_profiles/homebase.md` — the ONLY source of truth for prices,
   services, hours, USPs, and objection answers. Never invent or "remember" a
   figure; quote "from" prices and defer exact numbers to the free on-site visit.
-- The "Current State" section of `CLAUDE.md` for architecture context.
+- `docs/current-state/` for architecture context (moved out of the root `CLAUDE.md`): `sales-and-pricing.md` and `conversation-rules.md` above all, `pipeline.md` for routing and the outbound chain.
 - Before writing or changing any customer-facing copy, read
   `references/corrected-examples.md` — real production exchanges (bad reply →
   corrected reply, with outcomes) for each rule below. The conv 566 vs 658 pair
@@ -64,8 +64,10 @@ question, never the identical pitch again (`_already_sent_job_quote_pitch`).
 
 **When you do price:**
 - Break down supply + install (figures from `_FAMILY_LABOUR_BREAKDOWN`).
-- Disclaimer wording: "These are approximate starting prices — your exact quote
-  is confirmed once the plumber sees the space." No "site visit" phrasing.
+- Disclaimer wording: `copy_catalog.STARTING_PRICES_DISCLAIMER`, "These are
+  starting prices. The exact price is confirmed once we see the space." (WE
+  voice; never "the plumber sees"). No "site visit" phrasing. Import it, never
+  retype it: `bot/test_copy_catalog.py` fails on a second copy.
 - Close with the soft VALUE tie-down `_price_tiedown` ("Does that sound like
   something you'd be willing to invest in for a new tub?"), named for the thing
   priced via `_invest_subject`. Never "What is your budget?" (owner, 2026-09-19:
@@ -137,6 +139,10 @@ classifiers are AI-primary with keyword fallback.)
 - **Casual visit copy.** The assessment is "a quick look at the bathroom — 20
   minutes or so", never a formal "free on-site assessment" pitch. Repeated
   formal pitching repels leads.
+- **A vague timeframe is an answer.** "Month end", "mid next week", "in a few
+  weeks": assume a date inside it (`bot/vague_dates.resolve`, the one reader)
+  and move on. Never ask "beginning or end?" or "roughly when?" after one
+  (owner rule, 2026-09-21).
 - **Don't re-ask what you have.** A named day means ask only for the time; ask
   for the day only when the timeframe is vague. Never repeat a question already
   asked (semantic duplicate detector runs before qualification questions).

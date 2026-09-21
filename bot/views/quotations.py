@@ -73,10 +73,10 @@ except ImportError:
 
 
 from .quote_layout import (
-    document_context, is_sectioned, letterhead_for, quote_terms,
+    default_terms, document_context, is_sectioned, letterhead_for, quote_terms,
     sections_payload, tenant_of,
 )
-from ..context_processors import in_app_frame
+from ..context_processors import with_frame
 
 
 # An editor is not somewhere to hand the plumber back TO: a Referer pointing at
@@ -112,17 +112,15 @@ def quote_return_url(request, appointment=None, quotation=None):
             return path + (('?' + parsed.query) if parsed.query else '')
 
     # An editor reached inside the workspace iframe hands back INTO the frame,
-    # so the fallback keeps `frame=1`. Without it the pane would land on a page
-    # rendering its own sidebar and bottom bar - the second nav bar this whole
-    # flag exists to keep off the screen.
-    suffix = '?frame=1' if in_app_frame(request) else ''
-
+    # so the fallback keeps the frame context (frame, hidetabs, source).
+    # Without it the pane would land on a page rendering its own sidebar and
+    # bottom bar - the second nav bar that context exists to keep off screen.
     lead = appointment or getattr(quotation, 'appointment', None)
     if lead is not None and not str(
             getattr(lead, 'phone_number', '') or '').startswith(
                 ('quotation_only_', 'email_')):
-        return reverse('appointment_detail', kwargs={'pk': lead.pk}) + suffix
-    return reverse('quotations_list') + suffix
+        return with_frame(reverse('appointment_detail', kwargs={'pk': lead.pk}), request)
+    return with_frame(reverse('quotations_list'), request)
 
 
 def safe_return_path(request, fallback):
@@ -157,8 +155,12 @@ def quote_lead_panel(lead):
     presigned links expire, and a mis-set backend hands back a bare path that
     404s. Same reason the lead page links them that way.
 
-    A lead with neither words nor files gets NO tab bar (`has_context` False) —
-    a tab that opens on an empty page is a dead control.
+    Any real lead gets the tab bar (`has_context` True), even one with no words
+    and no files yet: behind the tab is the Add plan control, which uploads
+    straight onto the lead, so the tab is never a dead one. Only a quote with
+    no lead at all (a brand-new standalone sheet) has nowhere to put a plan
+    and gets no tab. It used to hide the tab for a lead with nothing on file,
+    which also hid the only way to attach a plan from this screen.
     """
     if lead is None or not getattr(lead, 'pk', None):
         return {'quote_lead': None, 'quote_lead_files': [],
@@ -172,8 +174,7 @@ def quote_lead_panel(lead):
     return {
         'quote_lead': lead,
         'quote_lead_files': files,
-        'quote_lead_has_context': bool(
-            files or (getattr(lead, 'project_description', '') or '').strip()),
+        'quote_lead_has_context': True,
     }
 
 
@@ -216,8 +217,10 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
             else letterhead.get('default_vat_percent') or 0
         ),
         'terms_initial': (
+            # A new quote's terms never carry a deposit line: the deposit is
+            # the field below GRAND TOTAL, set per job (see default_terms).
             quote_terms(quotation, letterhead) if quotation
-            else list(letterhead.get('terms') or [])
+            else default_terms(letterhead)
         ),
         # A new quote opens at NO deposit and the plumber types what was
         # agreed for this job (owner rule, 2026-09-21); reopening one shows

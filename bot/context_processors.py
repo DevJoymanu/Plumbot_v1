@@ -63,6 +63,52 @@ def in_app_frame(request) -> bool:
     return getattr(request, "GET", {}).get("frame") == "1"
 
 
+# The query keys that describe WHERE a framed page is being shown, and that a
+# page reached from inside the frame must keep: `frame` drops the chrome,
+# `hidetabs` drops the lead page's own tab bar (the conversations workspace
+# draws its own), `source` picks the lead page's side panel. Carrying `frame`
+# alone got the nav right and then put a second TAB bar in the conversations
+# pane the moment a quote handed back to the lead.
+FRAME_CONTEXT_KEYS = ("frame", "hidetabs", "source")
+
+
+def frame_params(request) -> dict:
+    """The frame context this request was made in, as {key: value}.
+
+    Empty outside a frame, so every caller can append it unconditionally.
+    Read by `frame_query` (links rendered on the server), the redirect step in
+    `FrameContextMiddleware`, `quote_return_url`, and - via `frame_query` - the
+    script that keeps in-frame navigation in the frame.
+    """
+    if not in_app_frame(request):
+        return {}
+    get = request.GET
+    return {key: get[key] for key in FRAME_CONTEXT_KEYS if get.get(key)}
+
+
+def with_frame(url: str, request) -> str:
+    """`url` with this request's frame context added, keys it already has kept.
+
+    A local URL only - callers pass paths they built or validated. A url that
+    already names a key keeps its own value: it knows better where it goes.
+    """
+    params = frame_params(request)
+    if not params or not url:
+        return url
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    for key, value in params.items():
+        query.setdefault(key, value)
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _frame_query(request) -> str:
+    from urllib.parse import urlencode
+    params = frame_params(request)
+    return ("?" + urlencode(params)) if params else ""
+
+
 def plumbot_shell(request):
     match = getattr(request, "resolver_match", None)
     url_name = getattr(match, "url_name", "") or ""
@@ -83,6 +129,11 @@ def plumbot_shell(request):
         # own scroller and layout - only the chrome the frame already has comes
         # off.
         "chromeless": in_app_frame(request),
+        # Appended to server-rendered links that leave a framed page for a
+        # whole page of its own, so that page stays chromeless too. Empty
+        # outside a frame. Global rather than per view: the lead page and the
+        # quote pages both need it and must not build it two ways.
+        "frame_query": _frame_query(request),
     }
 
     try:

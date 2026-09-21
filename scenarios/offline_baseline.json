@@ -1,0 +1,318 @@
+{
+  "ack_does_not_end_a_live_sale.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|expect|US$": true,
+    "1|expect|willing to invest": true,
+    "2|reject|US$": true,
+    "2|reject|hapana dambudziko": true,
+    "2|reject|no problem": true,
+    "3|reject|US$": true,
+    "3|reject|no problem": true
+  },
+  "any_time_in_their_own_words.txt": {
+    "0|expect|what area are you in": false,
+    "1|expect|what works better for you": false,
+    "2|expect|let's say": false,
+    "2|reject|when would work best": true,
+    "2|reject|which day suits": true
+  },
+  "any_time_is_an_answer.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|expect|what area are you in": true,
+    "2|expect|what works better for you": false,
+    "3|expect|let's say": true,
+    "3|reject|what time works": true,
+    "3|reject|what works better for you": true,
+    "3|reject|when would work best": true,
+    "3|reject|which day": true
+  },
+  "budget_ladder_soft_close.txt": {
+    "0|expect|US$": false,
+    "0|expect|willing to invest": false,
+    "0|reject|what is your budget": true,
+    "0|reject|your budget?": true,
+    "1|expect|hoping to invest": false,
+    "1|reject|discount": true,
+    "1|reject|everything in": true,
+    "1|reject|what is your budget": true,
+    "2|expect|US$500": false,
+    "2|reject|discount": true,
+    "2|reject|what is your budget": true
+  },
+  "checkback_mirrors_lead_words.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|reject|US$": true,
+    "3|expect|check back": false,
+    "3|expect|tomorrow morning": false,
+    "3|reject|September": true,
+    "3|reject|right here": true,
+    "3|reject|what day and time works for you": true
+  },
+  "contextual_oos_clarification.txt": {
+    "0|expect|plumbing or water systems": false,
+    "0|expect|the wiring you're asking about": false,
+    "0|reject|US$": true,
+    "0|reject|involved in this": true,
+    "1|reject|US$": true,
+    "1|reject|the wiring you're asking about": true
+  },
+  "delay_beats_scope_question.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "1|reject|what else": true,
+    "2|reject|US$": true,
+    "2|reject|what else would you like sorted": true,
+    "2|reject|what works better for you": true,
+    "3|reject|check back": true,
+    "3|reject|roughly when": true,
+    "4|reject|roughly when": true,
+    "4|reject|share your email": true,
+    "4|reject|the one I'd suggest": true
+  },
+  "delay_far_date_ladder_and_link.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|expect|when": false,
+    "2|reject|email": true,
+    "3|expect|email": false,
+    "3|expect|go over a quote": false,
+    "3|expect|will it be okay if we follow up": false,
+    "3|reject|wa.me": true,
+    "4|expect|free online quote": false,
+    "4|expect|portfolio": false,
+    "4|expect|wa.me/": false,
+    "4|reject|what's the best email": true
+  },
+  "delay_timeframe_then_email_portfolio.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|expect|when": false,
+    "2|reject|email": true,
+    "3|expect|email": false,
+    "3|expect|portfolio": false,
+    "3|reject|written quote": true,
+    "4|expect|portfolio": false,
+    "4|reject|what's the best email": true
+  },
+  "email_ask_gives_a_reason.txt": {
+    "0|expect|what area are you in": true,
+    "0|reject|US$": true,
+    "1|reject|book you a time": true,
+    "1|reject|email": true,
+    "1|reject|what area are you in": true,
+    "2|expect|email": false,
+    "2|expect|portfolio": false,
+    "3|expect|keep": false,
+    "3|reject|sorry": true,
+    "4|reject|what email": true,
+    "4|reject|would you like our catalog by email": true,
+    "5|reject|the one I'd suggest": true,
+    "5|reject|what email": true
+  },
+  "excluded_area_and_free_quote.txt": {
+    "0|expect|free": true,
+    "0|reject|dropped that on our end": true,
+    "1|expect|US$": true,
+    "2|expect|Bulawayo": false,
+    "2|expect|nearer our side": false,
+    "2|reject|Harare only": true,
+    "2|reject|dropped that on our end": true,
+    "2|reject|what works better for you": true
+  },
+  "free_visit_said_once.txt": {
+    "0|expect|bathroom": false,
+    "1|expect|US$": false,
+    "2|reject|costs nothing": true,
+    "2|reject|free": true,
+    "2|reject|no charge": true,
+    "3|reject|free": false,
+    "3|reject|free of charge": true,
+    "4|reject|free": true,
+    "5|expect|free": true
+  },
+  "new_build_beats_oos_decline.txt": {
+    "0|expect|hello": true,
+    "1|expect|wiring": false,
+    "1|reject|outside what we do": true,
+    "2|expect|new plumbing installation for a new building": true,
+    "2|reject|bathroom or a kitchen": true,
+    "2|reject|outside what we do": true,
+    "2|reject|what area are you in": true,
+    "2|reject|you'd need a specialist": true,
+    "3|expect|tell me a bit more about the project": false,
+    "3|reject|new plumbing installation for a new": true,
+    "3|reject|wiring": true
+  },
+  "new_build_confirmed.txt": {
+    "0|expect|hello": true,
+    "1|expect|new plumbing installation for a new building": true,
+    "1|reject|US$": true,
+    "1|reject|bathroom or a kitchen": true,
+    "2|reject|bathroom or a kitchen": true,
+    "2|reject|new plumbing installation for a new": true,
+    "3|reject|new plumbing installation for a new": true
+  },
+  "new_build_midconvo.txt": {
+    "0|expect|hello": true,
+    "1|expect|new plumbing installation for a new house": true,
+    "1|reject|US$": true,
+    "1|reject|bathroom or a kitchen": true
+  },
+  "new_build_opener.txt": {
+    "0|expect|hello": true,
+    "0|expect|new plumbing installation for a new house": true,
+    "0|reject|US$": true,
+    "0|reject|bathroom or a kitchen": true,
+    "1|expect|tell me a bit more about the project": false,
+    "1|reject|new plumbing installation for a new": true
+  },
+  "new_build_rejected.txt": {
+    "0|expect|hello": true,
+    "1|expect|wiring": false,
+    "1|reject|outside what we do": true,
+    "2|expect|new plumbing installation for a new building": true,
+    "3|expect|my mistake": true,
+    "3|expect|plumbing side": true,
+    "3|reject|new plumbing installation for a new": true,
+    "3|reject|what area are you in": true,
+    "4|expect|area": true,
+    "4|reject|my mistake": true,
+    "4|reject|new plumbing installation for a new": true
+  },
+  "new_install_flow.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|expect|can you tell me a bit more about the project": false,
+    "1|reject|US$": true,
+    "1|reject|on-site visit": true,
+    "1|reject|plumbed fresh": true,
+    "2|expect|all good, what area are you in?": false,
+    "2|reject|US$": true,
+    "3|expect|quick look at the space": false,
+    "3|expect|what works better for you": false,
+    "3|reject|kitchen plumbing": true
+  },
+  "no_answer_never_repeats_verbatim.txt": {
+    "0|expect|hello": true,
+    "1|expect|what area are you in": true,
+    "2|reject|all good, what area are you in?": true
+  },
+  "no_full_bathroom_scope_question.txt": {
+    "0|expect|shower cubicle": true,
+    "0|reject|full bathroom installation or": true,
+    "0|reject|full bathroom or just": true,
+    "1|reject|full bathroom installation or": true,
+    "1|reject|full bathroom or just": true,
+    "1|reject|full bathroom setup": true,
+    "1|reject|just those items": true
+  },
+  "no_to_detail_request.txt": {
+    "0|expect|hello": true,
+    "1|expect|new plumbing installation for a new house": true,
+    "2|expect|tell me a bit more about the project": false,
+    "3|expect|what area are you in": false,
+    "3|reject|simple fix": true,
+    "3|reject|tell me a bit more about the project": true
+  },
+  "no_to_slot_offer.txt": {
+    "0|expect|hello": true,
+    "1|reject|US$": true,
+    "2|expect|what works better for you": false,
+    "3|expect|what day would suit you better": false,
+    "3|reject|2pm": true,
+    "3|reject|9am": true
+  },
+  "photo_with_caption_price.txt": {
+    "0|reject|US$": true,
+    "0|reject|describe what you'd like done": true,
+    "1|expect|US$": false,
+    "1|reject|Takudzwa": true,
+    "1|reject|describe what you'd like done": true,
+    "2|reject|US$": true,
+    "2|reject|describe what you'd like done": true
+  },
+  "price_tiedown_yes_not_availability.txt": {
+    "0|expect|US$": true,
+    "0|expect|willing to invest": true,
+    "1|reject|US$": true,
+    "1|reject|all related plumbing work": true,
+    "1|reject|we handle": true,
+    "1|reject|what are you looking to get sorted": true
+  },
+  "quote_pitch_no_repeat.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|expect|all-in figure": true,
+    "1|expect|what area are you in": true,
+    "1|reject|US$": true,
+    "2|expect|what works better for you": true,
+    "2|reject|US$": true,
+    "2|reject|all-in figure": true,
+    "3|expect|new plumbing installation for a new building": false,
+    "3|reject|US$": true,
+    "3|reject|all-in figure": true,
+    "4|reject|US$": true,
+    "4|reject|all-in figure": true,
+    "4|reject|new plumbing installation for a new": true,
+    "5|expect|9am": false,
+    "5|reject|all-in figure": true
+  },
+  "replace_old_fixture_prices_the_new_one.txt": {
+    "0|expect|install": true,
+    "0|expect|new basin": true,
+    "0|reject|our plumber": true,
+    "0|reject|the plumber": true,
+    "0|reject|vanity": true
+  },
+  "self_defer.txt": {
+    "0|expect|what works better for you": false,
+    "0|reject|US$": true,
+    "1|reject|US$": true,
+    "2|expect|check back": true,
+    "2|reject|what day and time works for you": true
+  },
+  "slow_lead_keeps_the_visit.txt": {
+    "0|reject|US$": true,
+    "1|reject|US$": true,
+    "2|expect|evenings and weekends": false,
+    "2|reject|catalogue": true,
+    "2|reject|email": true,
+    "2|reject|portfolio": true
+  },
+  "tub_price_and_sizes.txt": {
+    "0|expect|US$": true,
+    "0|expect|install": true,
+    "0|expect|see the space": true,
+    "0|expect|willing to invest": true,
+    "1|expect|1440": true,
+    "1|expect|Built-in bathtubs": true,
+    "1|expect|Corner bathtubs": true,
+    "1|expect|Free-standing bathtubs": true
+  },
+  "vague_timeframe_is_assumed.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|reject|email": true,
+    "3|reject|beginning": true,
+    "3|reject|do you mean": true,
+    "3|reject|roughly when": true,
+    "3|reject|what day": true
+  },
+  "wall_hung_toilet_chamber_price.txt": {
+    "0|reject|US$": true,
+    "0|reject|what area are you in": true,
+    "1|expect|US$160": true,
+    "1|expect|wall-hung": true,
+    "1|reject|US$70": true,
+    "1|reject|toilet seat": true
+  },
+  "whole_house_quote_not_a_price_sheet.txt": {
+    "0|expect|all-in figure": true,
+    "0|expect|what area are you in": true,
+    "0|reject|US$": true,
+    "0|reject|package": true,
+    "0|reject|tub": true,
+    "1|reject|US$": true,
+    "1|reject|package": true,
+    "2|expect|US$": false
+  }
+}

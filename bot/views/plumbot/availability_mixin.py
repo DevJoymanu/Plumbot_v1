@@ -34,19 +34,11 @@ from ...whatsapp_cloud_api import whatsapp_api
 # one: it tells us which days to offer. Read deterministically, because left
 # to the retry paraphrase the model answered "Let's make a date midweek" with
 # "earlier midweek or later?", a second question about a range the lead had
-# just given us (barmak 1162, 2026-09-19). Each entry: pattern, the weekdays
-# it covers (0=Monday), and the phrase we say back.
-_WEEK_PARTS = (
-    (re.compile(r"\bmid[\s-]?week\b|\bmiddle\s+of\s+(?:the\s+|next\s+)?week\b"
-                r"|\bpakati\s+pe?(?:ne)?vhiki\b", re.IGNORECASE),
-     (1, 2, 3), 'midweek'),
-    (re.compile(r"\b(?:early|beginning|start)\s+(?:in\s+|of\s+)?(?:the\s+|next\s+)?week\b",
-                re.IGNORECASE),
-     (0, 1), 'early in the week'),
-    (re.compile(r"\b(?:end|later)\s+(?:in\s+|of\s+)?(?:the\s+|next\s+)?week\b",
-                re.IGNORECASE),
-     (3, 4), 'later in the week'),
-)
+# just given us (barmak 1162, 2026-09-19). The table itself lives in
+# bot/vague_dates.py (WEEK_PARTS), which the delay flow reads too, so the two
+# flows cannot disagree about what "midweek" means. Each entry: pattern, the
+# weekdays it covers (0=Monday), and the phrase we say back.
+from bot.vague_dates import WEEK_PARTS as _WEEK_PARTS
 _NAMED_DAY_RE = re.compile(
     r"\b(?:today|tomorrow|tmrw|(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b",
     re.IGNORECASE)
@@ -73,6 +65,7 @@ except ImportError:
     pass
 
 import logging
+from bot import copy_catalog
 logger = logging.getLogger(__name__)
 
 
@@ -279,6 +272,18 @@ class AvailabilityMixin:
             # per turn by generate_response, never stored): offer days inside
             # it. A range the tenant is shut for falls back to the plain scan
             # rather than offering nothing.
+            # A vague frame wider than a week part ("month end", "next week",
+            # "in a few weeks", from bot.vague_dates, set per turn by
+            # `_week_part_reply`, never stored): the first two open days
+            # INSIDE the range, so the offer is the assumption said out loud.
+            # A range the tenant is shut for falls back to the plain scan.
+            frame = getattr(self, '_date_frame', None)
+            if frame is not None:
+                in_range = [d for d in _scan(max(frame.start, today + timedelta(days=1)))
+                            if d <= frame.end]
+                if in_range:
+                    return in_range
+
             part = getattr(self, '_week_part', None)
             if part:
                 days, _phrase, next_week = part
@@ -702,7 +707,7 @@ class AvailabilityMixin:
             into an opening instead of dead-ending the lead."""
             if not self.tenant_cfg.emergency_24h():
                 return ''
-            return " If it's an emergency though, we're on call 24/7 — just say the word."
+            return (' ' + copy_catalog.EMERGENCY_OFFER)
 
 
         def _closed_day_message(self, day_name: str = None) -> str:
@@ -766,7 +771,7 @@ class AvailabilityMixin:
                 if requested_time_str:
                     message_parts.append(f"That time ({requested_time_str}) isn't available.")
                 else:
-                    message_parts.append("That time isn't available.")
+                    message_parts.append(copy_catalog.TIME_UNAVAILABLE_SHORT)
             
                 message_parts.append("\nHere are some alternatives:")
             
@@ -783,22 +788,34 @@ class AvailabilityMixin:
                     for alt in next_days:
                         message_parts.append(f"• {alt['display']}")
             
-                message_parts.append("\nWhich time works best for you?")
+                message_parts.append(('\n' + copy_catalog.WHICH_TIME_WORKS))
             
                 return "".join(message_parts)
             
             except Exception as e:
                 print(f"Error formatting availability response: {str(e)}")
-                return "That time isn't available. Please suggest another time."
+                return copy_catalog.TIME_UNAVAILABLE_SUGGEST
 
 
         def get_availability_error_message(self, error_type, conflict_appointment=None):
-            """Generate user-friendly error messages for availability issues"""
+            """What we tell a lead when the time they asked for cannot be booked.
+
+            THE ONE COPY. There used to be a second, on the Appointment model, with
+            no caller left, which had already drifted from this one ("a couple of
+            hours" of notice there, "a little" here; "weekend" understood only
+            there). Folded into this one and deleted, so a wording fix cannot land
+            in the copy nobody calls. Pinned by the "availability refusal" cases in
+            TEST 0, including that the model does not grow the method back.
+
+            `conflict_appointment` is the booking already in that slot. It decides
+            only WHICH message goes out; nothing from it is ever put in the reply.
+            See the conflict branch below.
+            """
             try:
                 if error_type == "past_time":
-                    return "That time has already passed. Please choose a future time."
-                #
-                elif error_type in ("closed_day", "saturday_closed"):
+                    return copy_catalog.TIME_IN_THE_PAST
+                # "weekend" came over from the deleted model copy.
+                elif error_type in ("closed_day", "saturday_closed", "weekend"):
                     return self._closed_day_message()
 
                 elif error_type == "outside_business_hours":
@@ -814,20 +831,23 @@ class AvailabilityMixin:
                     return "We need a little advance notice for appointments. Please choose a time further in the future."
             
                 elif error_type == "too_far_ahead":
-                    return "We can only book appointments up to 3 months in advance. Please choose a sooner date."
+                    return copy_catalog.TOO_FAR_AHEAD
             
                 elif error_type == "error":
-                    return "There was a technical issue checking availability. Please try a different time or call us."
+                    return copy_catalog.AVAILABILITY_CHECK_FAILED
             
                 elif isinstance(conflict_appointment, Appointment):
-                    conflict_time = conflict_appointment.scheduled_datetime.strftime('%I:%M %p')
-                    customer_name = conflict_appointment.customer_name or "another customer"
-                    return f"That time conflicts with an appointment for {customer_name} at {conflict_time}."
+                    # Never say WHOSE booking it is, or anything else about it.
+                    # This used to read "That time conflicts with an appointment
+                    # for {customer_name} at {conflict_time}", which hands one
+                    # customer another customer's name (every tenant's leads share
+                    # a diary). The lead needs to know only that the slot is gone.
+                    return copy_catalog.TIME_ALREADY_BOOKED
             
                 else:
-                    return "That time slot isn't available. Please choose a different time."
+                    return copy_catalog.SLOT_UNAVAILABLE
                 
             except Exception as e:
                 print(f"Error generating availability message: {str(e)}")
-                return "That time isn't available. Please choose a different time."
+                return copy_catalog.TIME_UNAVAILABLE
 

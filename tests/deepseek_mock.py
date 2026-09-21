@@ -72,6 +72,95 @@ _SOCIAL_ACK_HINTS = (
 )
 
 
+# ── Unified-turn fidelity ────────────────────────────────────────────────────
+# The unified call returns the classification EVERY downstream handler reads, so
+# a stub that answers `service_type: null, product_intent: "none"` to every
+# message routes every offline conversation down the "we learned nothing" path.
+# That is not a harmless simplification: the pricing reply, the budget ladder
+# and the whole qualification order hang off these two fields, so the offline
+# scenario suite could not reach the branches that carry the owner's rules.
+#
+# These maps are deliberately KEYWORD-SHALLOW. They are not an attempt to be a
+# classifier - the deterministic contract still lives in TEST 0. They exist so
+# a replayed conversation takes the same BRANCH it takes in production, which
+# is the thing `bot/test_scenarios.py` is measuring. First match wins, so the
+# more specific phrase is listed first.
+_SERVICE_TYPE_HINTS = (
+    ('bathroom_and_kitchen_renovation', ('bathroom and kitchen', 'kitchen and bathroom')),
+    ('new_plumbing_installation', ('new build', 'new house', 'building a house',
+                                   'new installation', 'new plumbing', 'from scratch')),
+    ('bathroom_renovation', ('bathroom', 'renovate a bathroom', 'bathroom renovation',
+                             'imba yekugezera')),
+    ('kitchen_renovation', ('kitchen', 'kitchen renovation')),
+    ('geyser_repair', ('geyser', 'gwedza')),
+)
+# Product families the bot prices directly. The webhook's own deterministic
+# `_keyword_product_intent` already overrides this for the customer's own product
+# word, so these only have to be good enough not to CONTRADICT it.
+_PRODUCT_INTENT_HINTS = (
+    ('wall_hung_toilet', ('wall hung toilet', 'wall-hung toilet', 'wall mounted toilet')),
+    ('shower_cubicle', ('shower cubicle', 'shower', 'cubicle')),
+    ('standalone_tub', ('freestanding tub', 'free standing tub', 'standalone tub')),
+    ('tub_sales', ('tub', 'bathtub', 'bath tub')),
+    ('vanity', ('vanity', 'basin')),
+    ('toilet_seat', ('toilet seat', 'toilet')),
+    ('geyser_repair', ('geyser',)),
+)
+
+
+# Booking fields. A stub that answers `extracted: {area: null, ...}` to every
+# message models a classifier that NEVER extracts anything — and since a null is
+# indistinguishable from "not present" to every caller (there is no per-field
+# confidence), an offline conversation could never get past the area question,
+# so no scenario could reach the availability, booking or confirmation copy.
+# Production measures ~100% on these four fields, so "extracts nothing" is the
+# unrealistic model, not this.
+#
+# Written with the stub's OWN small regexes rather than by calling the bot's
+# resolvers (`_area_from_reply`, `_keyword_availability_date`): those resolvers
+# are the deterministic FLOOR that exists for when this call fails, and a stub
+# that delegated to them would be scoring them against themselves.
+_SUBURB_HINTS = (
+    'hatfield', 'bluffhill', 'borrowdale', 'avondale', 'mount pleasant',
+    'greendale', 'highlands', 'marlborough', 'westgate', 'glen lorne',
+    'chisipite', 'belvedere', 'waterfalls', 'budiriro', 'kuwadzana',
+    'msasa', 'eastlea', 'milton park', 'ziko', 'ruwa', 'norton', 'chitungwiza',
+)
+_DAY_HINTS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+              'saturday', 'sunday', 'tomorrow', 'today', 'next week',
+              'this week', 'midweek', 'weekend')
+
+
+def _extracted(user, user_l):
+    """Shallow booking-field extraction — see the note above _SUBURB_HINTS."""
+    area = next((s.title() for s in _SUBURB_HINTS if s in user_l), None)
+
+    availability = next((d for d in _DAY_HINTS if d in user_l), None)
+
+    name = None
+    m = re.search(r"(?:my name is|i am|i'm|this is|im)\s+([A-Z][a-z]+)", user or '')
+    if m:
+        name = m.group(1)
+
+    # The description is the customer's own sentence when it carries a job word,
+    # which is what the real classifier returns (normalised, not verbatim).
+    description = None
+    if any(w in user_l for w in ('renovate', 'install', 'fix', 'repair', 'replace',
+                                 'build', 'leak', 'burst', 'blocked', 'quote for')):
+        description = user.strip()
+
+    return {"area": area, "availability": availability,
+            "customer_name": name, "project_description": description}
+
+
+def _first_hint(text, table):
+    """Return the label whose first matching keyword appears in `text`, else None."""
+    for label, needles in table:
+        if any(n in text for n in needles):
+            return label
+    return None
+
+
 def _last_user(messages):
     for m in reversed(messages or []):
         if m.get('role') == 'user':
@@ -115,11 +204,15 @@ def _respond(messages, json_response):
         tail = user_l.split('message:')[-1]
         return 'yes' if any(h in tail for h in _SOCIAL_ACK_HINTS) else 'no'
 
-    # ── Yes/No style gates (photo request, standalone-question, exit intent…)
-    if re.search(r'reply\s+(only\s+)?(with\s+)?(yes|no)', system) or \
-       re.search(r'\byes\s+or\s+no\b', system):
-        return "NO"
-
+    # ── The unified turn MUST be matched before the generic yes/no branch
+    # below. The unified prompt contains the sentence "One reading if you can
+    # only see one, as a yes or no", which matches that branch's
+    # `yes\s+or\s+no` regex — so every unified call offline returned the
+    # bare string "NO", failed to parse as JSON, and `unified_turn` handed back
+    # None. The ONE call every downstream handler reads was dead in every
+    # offline run, and nothing reported it: TEST 0 exercises resolvers directly,
+    # so it stayed green while the replayed conversations silently took the
+    # no-classification path. Specific markers go above generic ones here.
     # ── The unified turn (classification + plan). Returning "{}" here would
     # exercise only the planning-absent path, so the stub emits a minimally
     # valid payload instead: enough for bot.controller.validate_turn to pass,
@@ -139,15 +232,21 @@ def _respond(messages, json_response):
             "state_update": {"want_level": "interested"},
             "intent": "in_scope",
             "confidence": "HIGH",
-            "service_type": None,
-            "product_intent": "none",
+            # Derived from the message rather than hardcoded null — see the
+            # note on _SERVICE_TYPE_HINTS above.
+            "service_type": _first_hint(user_l, _SERVICE_TYPE_HINTS),
+            "product_intent": _first_hint(user_l, _PRODUCT_INTENT_HINTS) or "none",
             "is_photo_request": False,
             "is_plan_later": False,
             "is_repeat_question": False,
             "english": "",
-            "extracted": {"area": None, "availability": None,
-                          "customer_name": None, "project_description": None},
+            "extracted": _extracted(user, user_l),
         })
+
+    # ── Yes/No style gates (photo request, standalone-question, exit intent…)
+    if re.search(r'reply\s+(only\s+)?(with\s+)?(yes|no)', system) or \
+       re.search(r'\byes\s+or\s+no\b', system):
+        return "NO"
 
     # ── Anything expecting JSON we don't model → empty object (callers fall back)
     if json_response or 'json' in system:

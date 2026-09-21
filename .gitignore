@@ -2,6 +2,10 @@
 __pycache__/
 db.sqlite3
 *.json
+# The offline scenario gate's baseline IS source: bot/test_scenarios.py fails
+# without it, so the blanket *.json rule above would break CI and every fresh
+# clone's pre-commit hook.
+!scenarios/offline_baseline.json
 .env
 staticfiles/
 media/

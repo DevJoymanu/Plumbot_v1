@@ -2555,8 +2555,15 @@
               </div>
             </div>
 
-            {# ── Building plan: its own full-width block when a plan exists / is expected ── #}
-            {% if appointment.plan_file or appointment.has_plan %}
+            {% comment %}
+            Building plan: its own full-width block, ALWAYS rendered. It used to
+            appear only once a plan existed or was expected, and its only
+            control was Replace - so a plan handed over on site or by email had
+            no way into the portal at all. With nothing on file it now offers
+            Add plan; the same form posts to this view's plan handler
+            (_attach_plan), as the quote editor's Plan tab does. Pinned by
+            PortalPlanUploadTests.
+            {% endcomment %}
             <div class="glance-plan-block">
               <div class="glance-plan-icon"><i class="far fa-file-alt"></i></div>
               <div class="glance-plan-main">
@@ -2566,26 +2573,28 @@
                 {% if appointment.plan_uploaded_at %}
                 <div class="glance-sub">Received {{ appointment.plan_uploaded_at|date:"j M Y, H:i" }}</div>
                 {% endif %}
-                {% else %}
+                {% elif appointment.has_plan %}
                 <div class="glance-value">Customer has a plan — not received yet</div>
-                <div class="glance-sub">Ask for it in the chat, or it may arrive by WhatsApp</div>
+                <div class="glance-sub">Ask for it in the chat, or add it here if you have it</div>
+                {% else %}
+                <div class="glance-value">No plan on file</div>
+                <div class="glance-sub">Got one on site or by email? Add it here</div>
                 {% endif %}
               </div>
-              {% if appointment.plan_file %}
               <div class="glance-plan-actions">
+                {% if appointment.plan_file %}
                 {# plan_file is always index 0 in get_all_uploaded_files #}
                 <a class="glance-plan-btn" target="_blank" href="{% url 'appointment_document_file' appointment.pk 0 %}"><i class="far fa-eye"></i> View plan</a>
                 <a class="glance-mini" href="{% url 'appointment_document_file' appointment.pk 0 %}?dl=1"><i class="fas fa-download"></i> Download</a>
+                {% endif %}
                 <form method="post" enctype="multipart/form-data" style="display:inline;">
                   {% csrf_token %}
                   <input type="file" id="glance_plan_file" class="appt-pdf-input" name="plan_file"
                          accept="application/pdf,image/*" onchange="this.form.submit()">
-                  <label class="glance-mini" for="glance_plan_file"><i class="fas fa-paperclip"></i> Replace</label>
+                  <label class="{% if appointment.plan_file %}glance-mini{% else %}glance-plan-btn{% endif %}" for="glance_plan_file"><i class="fas fa-paperclip"></i> {% if appointment.plan_file %}Replace{% else %}Add plan{% endif %}</label>
                 </form>
               </div>
-              {% endif %}
             </div>
-            {% endif %}
 
             <div class="glance-desc">
               <div class="glance-label"><i class="far fa-comment-dots"></i> What the customer wants</div>
@@ -2888,8 +2897,15 @@
                     </div>
                   </div>
                   <div class="quote-actions">
-                    <a href="{% url 'view_quotation' quote.id %}" class="action-btn ghost"><i class="fas fa-eye"></i> View</a>
-                    <a href="{% url 'edit_quotation' quote.id %}{{ frame_query }}" class="action-btn ghost"><i class="fas fa-edit"></i> Edit</a>
+                    {% comment %}
+                    ONE button to open a quote. View and Edit were two buttons to
+                    the same quote, and the editor already draws the document the
+                    customer gets (the flat live preview, the sectioned sheet
+                    itself), so the read-only page was a second screen showing
+                    the same thing. The client copy stays reachable from the
+                    editor. Pinned by OneOpenButtonTests.
+                    {% endcomment %}
+                    <a href="{% url 'edit_quotation' quote.id %}{{ frame_query }}" class="action-btn ghost"><i class="fas fa-file-invoice"></i> View / Edit</a>
                     <form method="post" action="{% url 'duplicate_quotation' quote.id %}">
                       {% csrf_token %}
                       <button type="submit" class="action-btn warning" onclick="return confirm('Duplicate this quotation?');"><i class="fas fa-copy"></i> Duplicate</button>
@@ -2935,7 +2951,7 @@
                     the PDF downloaded, rather than the bot sending it from its
                     number. Always offered: re-sending a quote is normal.
                     {% endcomment %}
-                    <a href="{% url 'quotation_whatsapp_handoff' quote.id %}" class="action-btn success"><i class="fab fa-whatsapp"></i> {% if quote.sent_via_whatsapp %}Resend{% else %}Send{% endif %}</a>
+                    <a href="{% url 'quotation_whatsapp_handoff' quote.id %}{{ frame_query }}" class="action-btn success"><i class="fab fa-whatsapp"></i> {% if quote.sent_via_whatsapp %}Resend{% else %}Send{% endif %}</a>
                   </div>
                 </div>
                 {% endfor %}

@@ -832,10 +832,16 @@ try:
          and "day and time" not in _specific and "check back on" not in _specific),
         got=_specific,
     )
+    # A near vague range is an ANSWER (owner rule, 2026-09-21): assume a day
+    # inside it and ask only the time. This case used to assert the opposite
+    # ("still asks the day"), which is the re-ask the owner ruled out. The day
+    # is one the tenant works: Homebase is shut on Saturday, so "this weekend"
+    # lands on Sunday.
     _vague = _handle_delay_timeframe_answer("this weekend", {}, _FakeApptTf())
     results.log(
-        "delay timeframe: NEAR vague range -> still asks the day, casual visit",
-        ("day and time" in _vague and "20 minutes" in _vague
+        "delay timeframe: NEAR vague range -> assumes a working day, asks time only",
+        ("let's say Sunday" in _vague and "What time suits you" in _vague
+         and "day and time" not in _vague and "20 minutes" in _vague
          and "check back on" not in _vague),
         got=_vague,
     )
@@ -1914,7 +1920,7 @@ try:
     )
     results.log(
         "_build_combined_price_reply: plain-English disclaimer, not visit-gated",
-        "starting prices" in _cr.lower() and "sees the space" in _cr
+        "starting prices" in _cr.lower() and "see the space" in _cr
         and "ballpark" not in _cr.lower(),
         got=_cr[-90:],
     )
@@ -1993,7 +1999,7 @@ try:
     results.log(
         "labour scope: accessories noted, ballpark, not gated behind visit",
         ("accessories on top" in _lab and "starting price" in _lab.lower()
-         and "sees the space" in _lab),
+         and "see the space" in _lab),
         got=_lab,
     )
 except Exception as e:
@@ -3211,7 +3217,7 @@ except Exception as e:
     results.log("tie-down helpers", False, got=str(e))
 
 # Pricing copy: compose snippets break down supply + install, and the price
-# disclaimer is reworded to "once the plumber sees the space" (no "on-site visit").
+# disclaimer is reworded to "once we see the space" (speak as WE; no "on-site visit").
 try:
     # Phase 2.4: snippets render from tenant data — build them with a fake
     # carrying the pinned homebase figures via the price-map methods.
@@ -3238,9 +3244,28 @@ try:
         'geyser', "Geysers from US$160 all-in.\n\nWhat day suits you?"
     )
     results.log(
-        "price disclaimer: reworded to 'sees the space', no 'on-site visit'",
-        "once the plumber sees the space" in _disc and "on-site visit" not in _disc,
+        "price disclaimer: says 'once we see the space' (WE voice), no 'on-site visit'",
+        "once we see the space" in _disc and "on-site visit" not in _disc
+        and "the plumber" not in _disc,
         got=_disc,
+    )
+    # Idempotent on its OWN output, in both languages. The check used to key on
+    # "sees the space", which the WE wording does not contain, so a second pass
+    # would have stacked a second disclaimer; the Shona line matched no marker
+    # at all. Running it on what it just produced must change nothing.
+    _disc2 = _FakeSelfFollowup("service_type")._ensure_price_disclaimer('geyser', _disc)
+    results.log(
+        "price disclaimer: idempotent on its own output (English)",
+        _disc2 == _disc and _disc2.count("see the space") == 1,
+        got=_disc2,
+    )
+    _sn_in = "Geyser inotangira paUS$160 all-in.\n\nMungada kuti tiuye riini?"
+    _sn1 = _FakeSelfFollowup("service_type")._ensure_price_disclaimer('geyser', _sn_in)
+    _sn2 = _FakeSelfFollowup("service_type")._ensure_price_disclaimer('geyser', _sn1)
+    results.log(
+        "price disclaimer: idempotent on its own output (Shona)",
+        _sn1 != _sn_in and _sn2 == _sn1 and _sn2.count("mapurice ekutanga") == 1,
+        got=_sn2,
     )
     # Idempotent: a reply that already carries the combined 'ballpark … sees the
     # space' disclaimer must NOT get a second 'approximate starting prices' one.
@@ -3265,7 +3290,7 @@ try:
     results.log(
         "facebook overview: breakdown kept + disclaimer before the budget tie-down",
         ("tub US$400 + mixer US$150 + install US$120" in _fbd
-         and "once the plumber sees the space" in _fbd
+         and "once we see the space" in _fbd
          and _fbd.rstrip().endswith("That sit alright with your budget?")),
         got=_fbd[-140:],
     )
@@ -4695,7 +4720,7 @@ import bot.management.commands.send_followups as _fu_mod
 from datetime import datetime as _dt
 
 # The cadence helpers read the wall clock, and every due moment is rolled into
-# CONTACT_WINDOWS (12:33-13:57, 16:03-18:30). Run against the REAL clock these cases pass by
+# CONTACT_WINDOWS (08:03-20:33). Run against the REAL clock these cases pass by
 # day and fail every night, because a touch due at 02:00 is pushed to the next
 # window opening. Freeze the clock at a fixed in-window moment so the schedule
 # is what is under test, not the hour the suite happens to run.
@@ -4889,16 +4914,24 @@ _sast = _pytz.timezone('Africa/Johannesburg')
 def _win(h, m):
     dt = _sast.localize(__import__('datetime').datetime(2026, 6, 23, h, m))
     return _tz.localtime(_fu._next_window_open(dt)).strftime('%Y-%m-%d %H:%M')
-results.log("next_window_open: 01:52 -> same-day 12:33",
-            _win(1, 52) == '2026-06-23 12:33', got=_win(1, 52))
-results.log("next_window_open: 13:00 stays 13:00 (in the midday window)",
-            _win(13, 0) == '2026-06-23 13:00', got=_win(13, 0))
+# Derived from CONTACT_WINDOWS (first opening, last close) rather than typed
+# out, so the owner moving the hours does not break the cases that check how
+# a moment ROLLS. The between-the-windows case only exists while there are two.
 from bot.management.commands import send_followups as _fu_mod
-_EVE_OPEN = '{:02d}:{:02d}'.format(*_fu_mod.CONTACT_WINDOWS[1][:2])
-results.log("next_window_open: between the windows -> the evening opening",
-            _win(14, 45) == f'2026-06-23 {_EVE_OPEN}', got=_win(14, 45))
-results.log("next_window_open: 21:30 -> next-day 12:33",
-            _win(21, 30) == '2026-06-24 12:33', got=_win(21, 30))
+_FIRST_OPEN = '{:02d}:{:02d}'.format(*_fu_mod.CONTACT_WINDOWS[0][:2])
+results.log("next_window_open: 01:52 -> the same day's first opening",
+            _win(1, 52) == f'2026-06-23 {_FIRST_OPEN}', got=_win(1, 52))
+results.log("next_window_open: 13:00 stays 13:00 (inside a window)",
+            _win(13, 0) == '2026-06-23 13:00', got=_win(13, 0))
+if len(_fu_mod.CONTACT_WINDOWS) > 1:
+    _EVE_OPEN = '{:02d}:{:02d}'.format(*_fu_mod.CONTACT_WINDOWS[1][:2])
+    results.log("next_window_open: between the windows -> the evening opening",
+                _win(14, 45) == f'2026-06-23 {_EVE_OPEN}', got=_win(14, 45))
+results.log("next_window_open: 21:30 -> the next day's first opening",
+            _win(21, 30) == f'2026-06-24 {_FIRST_OPEN}', got=_win(21, 30))
+results.log("contact window: one block, 08:03 to 20:33 (owner rule, 2026-09-21)",
+            _fu_mod.CONTACT_WINDOWS == [(8, 3, 20, 33)],
+            got=str(_fu_mod.CONTACT_WINDOWS))
 # Non-CTWA COLD lead, no follow-ups → attempt 1, ad flag false.
 _info2 = _due(_StubLead(False, 0, 0.0))
 results.log(
@@ -5953,19 +5986,21 @@ try:
         mins = window[2] * 60 + window[3] - 1
         return '{:02d}:{:02d}'.format(mins // 60, mins % 60)
 
+    # [-1] is the day's LAST window, whether the day has one block or two.
     _MID_LAST = _last_minute(_fu_mod.CONTACT_WINDOWS[0])
-    _EVE_LAST = _last_minute(_fu_mod.CONTACT_WINDOWS[1])
+    _EVE_LAST = _last_minute(_fu_mod.CONTACT_WINDOWS[-1])
     results.log("sending hours: 06:00 rolls BACK to the previous evening's last minute",
                 _fu2._window_moment_before(_at(6, 0)).strftime('%d %H:%M')
                 == f'22 {_EVE_LAST}',
                 got=str(_fu2._window_moment_before(_at(6, 0))))
-    results.log("sending hours: a deadline inside the midday window stays where it is",
+    results.log("sending hours: a deadline inside a window stays where it is",
                 _fu2._window_moment_before(_at(13, 0)).strftime('%d %H:%M') == '23 13:00',
                 got=str(_fu2._window_moment_before(_at(13, 0))))
-    results.log("sending hours: between the windows rolls back to the midday close",
-                _fu2._window_moment_before(_at(15, 0)).strftime('%d %H:%M')
-                == f'23 {_MID_LAST}',
-                got=str(_fu2._window_moment_before(_at(15, 0))))
+    if len(_fu_mod.CONTACT_WINDOWS) > 1:
+        results.log("sending hours: between the windows rolls back to the midday close",
+                    _fu2._window_moment_before(_at(15, 0)).strftime('%d %H:%M')
+                    == f'23 {_MID_LAST}',
+                    got=str(_fu2._window_moment_before(_at(15, 0))))
     results.log("sending hours: after hours rolls back to the same evening's close",
                 _fu2._window_moment_before(_at(22, 30)).strftime('%d %H:%M')
                 == f'23 {_EVE_LAST}',
@@ -5983,7 +6018,7 @@ try:
         # Inside the frozen clock: the spacing check measures from now(), so
         # asking outside it compares against the real date and always passes.
         _ready_str, _why_str = _fu2._is_ready_for_followup(_stranded, None, force=True)
-    _eve_close_h, _eve_close_m = _fu_mod.CONTACT_WINDOWS[1][2:]
+    _eve_close_h, _eve_close_m = _fu_mod.CONTACT_WINDOWS[-1][2:]
     # The last touch of that lead cannot be saved, and MUST NOT be: their
     # previous touch was at 17:00 and the last sendable minute is ~19:32, so
     # anywhere the pull-back could put it is under the four-hour floor. The
@@ -11712,6 +11747,79 @@ results.log(
 results.log("week part: no range named means no reply from this path",
             _wr._week_part_reply("Monday 10 am") is None)
 
+# -- A vague timeframe is an answer: assume a date inside it ------------------
+# Owner rule, 2026-09-21, repeated because it kept surfacing: "month end" or
+# "mid next week" was met with "do you mean towards the end of the week or the
+# beginning?" (booking retry paraphrase) or "Roughly when are you thinking?"
+# (delay re-ask). Never ask again; assume a date inside the range.
+from bot.vague_dates import resolve as _vres
+from datetime import date as _vd
+_V_MON = _vd(2026, 9, 21)                      # a Monday, the day it was reported
+for _msg, _anchor, _lo, _hi in (
+        ("month end", _vd(2026, 9, 28), _vd(2026, 9, 24), _vd(2026, 9, 30)),
+        ("towards month end", _vd(2026, 9, 28), None, None),
+        ("after payday", _vd(2026, 9, 28), None, None),
+        ("mid next week", _vd(2026, 9, 30), _vd(2026, 9, 29), _vd(2026, 10, 1)),
+        ("midweek", _vd(2026, 9, 23), None, None),
+        ("early next week", _vd(2026, 9, 28), None, None),
+        ("end of next week", _vd(2026, 10, 2), None, None),
+        ("later this week", _vd(2026, 9, 25), None, None),
+        ("early next month", _vd(2026, 10, 3), _vd(2026, 10, 1), _vd(2026, 10, 7)),
+        ("mid month", _vd(2026, 10, 15), None, None),          # this month's has passed
+        ("end of October", _vd(2026, 10, 28), None, None),
+        ("in a few weeks", _vd(2026, 10, 12), None, None),
+        ("in two months", _vd(2026, 11, 20), None, None),
+        ("end of the year", _vd(2026, 12, 1), None, None),
+        ("kupera kwemwedzi", _vd(2026, 9, 28), None, None)):
+    _f = _vres(_msg, today=_V_MON)
+    results.log("vague date: %r assumes a date inside the range" % _msg,
+                _f is not None and _f.anchor == _anchor and _f.start <= _f.anchor <= _f.end
+                and (_lo is None or (_f.start, _f.end) == (_lo, _hi)),
+                expected=str(_anchor), got=repr(_f))
+for _msg in ("by Friday", "in 2 weeks", "the 28th", "tomorrow", "month end, say the 28th",
+             "as soon as possible", "I may call you", "I will let you know", "ok thanks"):
+    results.log("vague date: %r is left to the exact parsers (or is no timeframe)" % _msg,
+                _vres(_msg, today=_V_MON) is None, got=repr(_vres(_msg, today=_V_MON)))
+results.log("vague date: 'this week' on a Friday is still this week",
+            _vres("this week", today=_vd(2026, 9, 25)).anchor == _vd(2026, 9, 26))
+
+# The delay flow's date reader takes the assumption before any model call, so
+# "month end" never reaches the "roughly when?" re-ask.
+from bot.out_of_scope_handler import _compute_followup_date as _v_cfd
+with _mock_wp.patch('bot.out_of_scope_handler._extract_followup_date_ai',
+                    side_effect=AssertionError('model asked about a vague range')):
+    _v_iso = _v_cfd("month end")[0]
+results.log("vague date: the delay flow assumes month end without asking the model",
+            bool(_v_iso) and _v_iso == _vres("month end").anchor.isoformat(), got=_v_iso)
+
+# The booking flow offers two real slots inside the range, and says it back.
+class _FakeFrameReply(_FakeWeekReply):
+    def _get_next_two_available_days(self):
+        self.saw_frame = getattr(self, '_date_frame', None)
+        return self._days
+
+
+_fr = _FakeFrameReply(
+    [_slot_d1, _slot_d2],
+    {_slot_d1: [_slot_at(_slot_d1, 9), _slot_at(_slot_d1, 14)],
+     _slot_d2: [_slot_at(_slot_d2, 9), _slot_at(_slot_d2, 14)]})
+_fr_out = _fr._week_part_reply("month end")
+results.log("vague date: booking answers month end with two slots, no question about it",
+            _fr_out.startswith("Month end works for us. ") and _fr_out.count('?') == 1
+            and ' or ' in _fr_out and 'end or' not in _fr_out.lower()
+            and _fr.saw_frame is not None and getattr(_fr, '_date_frame', None) is None,
+            got=repr(_fr_out))
+results.log("vague date: a span is acknowledged plainly",
+            _fr._week_part_reply("in a few weeks").startswith("That works for us. "),
+            got=_fr._week_part_reply("in a few weeks")[:60])
+
+_fp = _FakeWeekPicker(None)
+_fp._date_frame = _vres("end of next week", today=_vd(2026, 9, 19))
+with _mock_wp.patch('django.utils.timezone.now', return_value=_sat):
+    _fp_days = _fp._get_next_two_available_days()
+results.log("vague date: the offered days sit inside the range",
+            _fp_days == [_vd(2026, 9, 24), _vd(2026, 9, 25)], got=repr(_fp_days))
+
 # -- The budget ladder (owner rule, 2026-09-19) -------------------------------
 # "Bathroom renovation starts from US$900 ... What is your budget?" read as a
 # demand. The ladder: a soft value tie-down named for the thing priced; a "no"
@@ -11898,6 +12006,89 @@ results.log(
     got=repr(_fh('Does tomorrow at 9am or 2pm suit you?',
                  ['tomorrow at 9am', 'tomorrow at 2pm'])),
 )
+
+# -- bot/copy_fence.py: ONE fence for every model-written customer sentence --
+# The vocabulary was copied into availability_ask and response_check and had
+# drifted: whole-word promise matching in one (so "discounted" slipped past),
+# bare substrings in the other (so "freestanding" read as "free").
+from bot.copy_fence import fence_holds as _cf
+results.log("copy fence: a freestanding tub is not a promise (either spelling)",
+            _cf('The freestanding tub or the free-standing one?', 'Which tub?')[0],
+            got=repr(_cf('The freestanding tub or the free-standing one?', 'Which tub?')))
+for _word in ('discounted', 'guaranteed', 'refunds', 'free', 'mahara', 'waived'):
+    results.log("copy fence: an inflected promise is caught (%s)" % _word,
+                _cf('We can come and take a look, %s.' % _word, 'We can come and take a look.')[0] is False)
+results.log("copy fence: 'carefree' is not the promise 'free'",
+            _cf('A carefree job, start to finish.', 'A good job, start to finish.')[0])
+results.log("copy fence: a figure or promise the source already carried may stay",
+            _cf('That first visit is free, and it is US$10 after.',
+                'The first visit is free. After that it is US$10.')[0])
+results.log("copy fence: the reply reader may move a day (check_slots off)",
+            _rc_fences('Tomorrow or Tuesday?', 'Would December suit you instead, once you are back?')[0])
+# Nobody may copy the vocabulary back out again.
+import bot.availability_ask as _aa_mod, bot.response_check as _rc_mod
+results.log("copy fence: availability_ask and response_check define no fence vocabulary of their own",
+            not any(hasattr(m, n) for m in (_aa_mod, _rc_mod)
+                    for n in ('_MONEY', '_PROMISE_WORDS', '_CLOCK', '_DAY_WORDS')))
+
+# The follow-up rewrite of the OWNER'S script: the model may reword, never add.
+# Until this it was held to the script's question count and a 20-char floor,
+# and nothing else, on a path with sampled drift of ~1 in 5.
+_script = ("Hi there, are you thinking of a bathroom renovation, kitchen reno, or a "
+           "new installation? We're getting booked up this week.")
+_fu_fence = lambda text: _cf(text, _script, check_slots=True, max_growth=1.6)
+results.log("followup fence: a faithful rewording passes",
+            _fu_fence("Hi there, is it a bathroom renovation, a kitchen reno or a new "
+                      "installation you're after? We're getting booked up this week.")[0])
+for _label, _bad in (
+    ('an invented day', "Hi there, we could come tomorrow. Bathroom, kitchen or a new installation?"),
+    ('an invented time', "Hi there, is 2pm good for a look? Bathroom, kitchen or new installation?"),
+    ('an invented price', "Hi there, bathrooms start from US$900. Bathroom, kitchen or new installation?"),
+    ('an invented promise', "Hi there, the visit is free. Bathroom, kitchen or a new installation?"),
+    ('an essay', "Hi there, " + "we would love to help with your project. " * 8 + "Bathroom or kitchen?"),
+):
+    results.log("followup fence: rejects %s" % _label, _fu_fence(_bad)[0] is False,
+                got=repr(_fu_fence(_bad)))
+import inspect as _insp_cf
+from bot.management.commands import send_followups as _sfm_cf
+_ai_src_cf = _insp_cf.getsource(_sfm_cf.Command._ai_message)
+results.log("followup fence: _ai_message fences the rewrite and falls back to the script",
+            'fence_holds(' in _ai_src_cf
+            and _ai_src_cf.index('fence_holds(') < _ai_src_cf.rindex('_template_message('))
+
+# -- Availability refusals: ONE copy, and it never names another customer ------
+# get_availability_error_message existed twice (Appointment and
+# AvailabilityMixin); the model copy had no caller and had drifted. Both could
+# answer a clash with "That time conflicts with an appointment for {name} at
+# {time}", handing one customer another customer's name.
+from datetime import datetime as _dt_ar
+from bot.models import Appointment as _ApptAR
+from bot import copy_catalog as _cc_ar
+class _FakeAvail:
+    get_availability_error_message = _AvailabilityMixin.get_availability_error_message
+    def _closed_day_message(self, day_name=None):
+        return "CLOSED-DAY-LINE"
+    def _hours_phrase(self):
+        return "Sunday to Friday, 8am to 6pm"
+    def _emergency_offer(self):
+        return ""
+_clash = _ApptAR(customer_name="Tendai Moyo",
+                 scheduled_datetime=_dt_ar(2026, 9, 22, 14, 30))
+_msg_ar = _FakeAvail().get_availability_error_message("slot_taken", _clash)
+results.log("availability refusal: a clash never names the other customer, or their time",
+            "Tendai" not in _msg_ar and "Moyo" not in _msg_ar
+            and "02:30" not in _msg_ar and "2:30" not in _msg_ar
+            and _msg_ar == _cc_ar.TIME_ALREADY_BOOKED,
+            got=_msg_ar)
+results.log("availability refusal: 'weekend' is a closed day (folded in from the deleted copy)",
+            _FakeAvail().get_availability_error_message("weekend") == "CLOSED-DAY-LINE")
+results.log("availability refusal: the Appointment model does not grow its own copy back",
+            not any(hasattr(_ApptAR, n) for n in
+                    ('get_availability_error_message', '_hours_phrase', '_emergency_offer')))
+results.log("shona disclaimer: speaks as WE ('kana taona'), never names the plumber",
+            'plumber' not in _cc_ar.STARTING_PRICES_DISCLAIMER_SN.lower()
+            and 'kana taona nzvimbo' in _cc_ar.STARTING_PRICES_DISCLAIMER_SN)
+
 # The retry INSTRUCTION carried the same invented literal, so a busy diary
 # handed the model a day nobody had checked and it wrote it in its own words.
 for _label, _fake in (('one slot', _ask_one_slot),
@@ -12838,6 +13029,153 @@ results.log(
     "quote request routing: a confirmed lead is left to the normal flow",
     _routes(_HOUSE_QUOTE, status='confirmed') is False,
 )
+
+
+# ============================================================
+# TEST 0 — the handoff brief (owner, 2026-09-21): the plumber's quote link and
+# the job-date ladder. The DB-backed flow and cron are in bot/test_handoff.py.
+# ============================================================
+try:
+    import types as _hb_types
+    from datetime import date as _hb_date
+    from urllib.parse import unquote as _hb_unquote
+    from bot import plumber_link as _pl, job_date_ladder as _jl, copy_catalog as _hb_cc
+
+    def _hb_lead(**kw):
+        base = dict(id=91, customer_name='Rudo', project_type='bathroom_renovation',
+                    project_description='Full re-tile and new fittings',
+                    customer_area='Borrowdale', internal_notes='',
+                    conversation_history=[], tenant=None, phone_number='whatsapp:+263770000001')
+        number = kw.pop('plumber', '+263774819901')
+        base.update(kw)
+        lead = _hb_types.SimpleNamespace(**base)
+        lead.plumber_contact = lambda: number
+        lead.get_project_type_display = lambda: str(lead.project_type or '').replace('_', ' ').title()
+        return lead
+
+    # -- The pre-filled message, the brief's own rendered example ---------------
+    _want = ("Hi, I'm interested in a bathroom renovation in Borrowdale. Full re-tile "
+             "and new fittings. I'd like a free online quote. I can send measurements, "
+             "photos, and a plan of the space so you can quote without coming out. "
+             "Can you help?")
+    results.log("plumber link: the brief's rendered example, word for word",
+                _pl.lead_voice_message(_hb_lead()) == _want,
+                expected=_want, got=_pl.lead_voice_message(_hb_lead()))
+    _link = _pl.quote_link(_hb_lead())
+    results.log("plumber link: targets the plumber's own number, digits only",
+                _link.startswith('https://wa.me/263774819901?text='), got=_link[:60])
+    results.log("plumber link: the whole message is URL-encoded (no raw space or ?)",
+                ' ' not in _link and _link.count('?') == 1
+                and _hb_unquote(_link.split('text=', 1)[1]) == _want, got=_link[-80:])
+    results.log("plumber link: a thin description drops its sentence, never a blank",
+                _pl.lead_voice_message(_hb_lead(project_description='tub'))
+                == "Hi, I'm interested in a bathroom renovation in Borrowdale. "
+                   + _pl._ONLINE_QUOTE_LINE,
+                got=_pl.lead_voice_message(_hb_lead(project_description='tub')))
+    results.log("plumber link: no area and 'other' service still read as a sentence",
+                _pl.lead_voice_message(_hb_lead(project_type='other', customer_area='',
+                                                project_description=''))
+                == "Hi, I'm interested in some plumbing work. " + _pl._ONLINE_QUOTE_LINE)
+    results.log("plumber link: the measurements line is fixed",
+                _pl._ONLINE_QUOTE_LINE in _pl.lead_voice_message(
+                    _hb_lead(project_description='Kitchen sink keeps blocking every week')))
+    results.log("plumber link: no plumber number means no link and no offer (never borrowed)",
+                _pl.quote_link(_hb_lead(plumber='')) == ''
+                and _pl.quote_offer(_hb_lead(plumber='')) == '')
+    _offer = _pl.quote_offer(_hb_lead())
+    results.log("plumber link: the offer says free online quote and the formal PDF",
+                'free online quote' in _offer and 'formal, itemised PDF' in _offer
+                and _offer.endswith(_link), got=_offer[:160])
+    results.log("plumber link: the offer speaks as WE, no 'the plumber', no dash",
+                'plumber' not in _hb_cc.PLUMBER_QUOTE_OFFER.lower()
+                and ' - ' not in _offer and '—' not in _offer)
+
+    # The free-visit stripper must not eat "free online quote" off a lead who
+    # has already been told the VISIT is free: that is a different offer, and
+    # the link line must come through the chain byte for byte.
+    from bot.views.plumbot.response_mixin import dequalify_free_visit as _hb_dq
+    _told = _hb_lead(conversation_history=[
+        {'role': 'assistant', 'content': 'The site visit is free, we come and have a look.'}])
+    _through = _hb_dq(_told, _offer)
+    results.log("plumber link: 'free online quote' survives the free-visit stripper",
+                'free online quote' in _through, got=_through[:160])
+    results.log("plumber link: the link survives the outbound rewrites intact",
+                _link in _through, got=_through[-120:])
+
+    # -- Rule 2: the ghosted lead's SECOND follow-up is the handoff -------------
+    from bot.management.commands.send_followups import (
+        Command as _HbCmd, PROACTIVE_MARKERS as _HB_MARKERS)
+    _hb_cmd = _HbCmd()
+    results.log("plumber link: ghosted, qualified lead gets the link on follow-up #2",
+                _link in _hb_cmd._handoff_touch(_hb_lead(), 2))
+    results.log("plumber link: ghosted, follow-up #1 is still the owner's script",
+                _hb_cmd._handoff_touch(_hb_lead(), 1) == '')
+    results.log("plumber link: ghosted, no handoff until all three fields are in",
+                _hb_cmd._handoff_touch(_hb_lead(customer_area=''), 2) == ''
+                and _hb_cmd._handoff_touch(_hb_lead(project_description=''), 2) == ''
+                and _hb_cmd._handoff_touch(_hb_lead(project_type='other'), 2) == '')
+    results.log("plumber link: ghosted, never sent twice (the delay flow sends it too)",
+                _hb_cmd._handoff_touch(_hb_lead(internal_notes=_pl.LINK_SENT_TAG), 2) == '')
+
+    # -- Rule 1: the job-date ladder --------------------------------------------
+    results.log("job ladder: the date is said the owner's way",
+                [_jl.spoken_date(_hb_date(2026, 10, d)) for d in (1, 2, 3, 11, 14, 22, 31)]
+                == ['the 1st of October', 'the 2nd of October', 'the 3rd of October',
+                    'the 11th of October', 'the 14th of October', 'the 22nd of October',
+                    'the 31st of October'])
+    _hb_today = _hb_date(2026, 9, 21)
+    results.log("job ladder: a week or less out keeps the near-date rules",
+                _jl.applies(_hb_date(2026, 9, 28), today=_hb_today) is False)
+    results.log("job ladder: eight days out arms the ladder",
+                _jl.applies(_hb_date(2026, 9, 29), today=_hb_today) is True)
+    results.log("job ladder: 'in a month' from the 21st asks about the 14th (job - 7)",
+                _jl.first_followup_date(_hb_date(2026, 10, 21)) == _hb_date(2026, 10, 14))
+    _ask = _jl.permission_ask(_hb_date(2026, 10, 14))
+    results.log("job ladder: the permission ask states the literal date and the reason",
+                'on the 14th of October?' in _ask and 'go over a quote' in _ask
+                and 'in good time for us to get the job done' in _ask, got=_ask)
+    results.log("job ladder: the permission ask is WE and makes no 'fixed' promise",
+                'we follow up' in _ask and 'fixed' not in _ask.lower()
+                and _ask.count('?') == 1, got=_ask)
+    results.log("job ladder: the steps sit at -7, -3 and -2 days",
+                [_jl.step_day(_hb_date(2026, 10, 21), s) for s in
+                 (_jl.STEP_FIRST, _jl.STEP_SECOND, _jl.STEP_CALL, _jl.STEP_DONE)]
+                == [_hb_date(2026, 10, 14), _hb_date(2026, 10, 18),
+                    _hb_date(2026, 10, 19), None])
+    _armed = _hb_lead(internal_notes='[JOB_DATE] 2026-10-21\n[JOB_LADDER] 0')
+    _t1, _t2 = _jl.touch_message(_armed, 0), _jl.touch_message(_armed, 1)
+    results.log("job ladder: touch 1 names their date and job, and offers a choice",
+                'ahead of the 21st of October for the full re-tile' in _t1
+                and _t1.count('?') == 1 and _t1.rstrip().endswith('?'), got=_t1)
+    results.log("job ladder: touch 2 asks still on, or has the timing moved",
+                'the 21st of October is coming up' in _t2 and _t2.count('?') == 1, got=_t2)
+    results.log("job ladder: the touches speak as WE, with no dash",
+                all('plumber' not in t.lower() and ' - ' not in t for t in (_t1, _t2)))
+    results.log("job ladder: its touches count toward the four-touch cap",
+                _jl.TRANSCRIPT_MARKER in _HB_MARKERS)
+
+    # The plumber's call brief routes itself: B1 once a quote went out, B2 when
+    # none has, and never both (the plumber does not choose).
+    from unittest import mock as _hb_mock
+    with _hb_mock.patch.object(_jl, 'quote_given', return_value=True):
+        _subj, _b1 = _jl.call_brief(_armed)
+    with _hb_mock.patch.object(_jl, 'quote_given', return_value=False):
+        _subj2, _b2 = _jl.call_brief(_armed)
+    results.log("job ladder: the call brief carries the lead's full details",
+                all(x in _b1 for x in ('Rudo', 'bathroom renovation', 'Borrowdale',
+                                       'Full re-tile', 'Wednesday 21 October 2026',
+                                       '+263770000001')), got=_b1[:300])
+    results.log("job ladder: quote given routes the call to B1 only",
+                'B1.' in _b1 and 'B2.' not in _b1 and 'quote we sent you is still good' in _b1)
+    results.log("job ladder: no quote routes the call to B2 only",
+                'B2.' in _b2 and 'B1.' not in _b2 and 'free quote there and then' in _b2)
+    results.log("job ladder: the call opens by checking where they stand, not pitching",
+                'did you end up going with someone else' in _b1.lower()
+                and _subj.startswith('[Call]'), got=_subj)
+except Exception as e:
+    import traceback as _tb
+    results.log("handoff brief (plumber link + job ladder)", False,
+                got=_tb.format_exc()[-600:])
 
 
 if GATE_ONLY:

@@ -202,8 +202,15 @@ contract pinned by QuoteMobileLayoutTests).
                         </td>
                         <td class="pbq-cell-full ql-cell-actions" data-label="">
                             <div class="ql-actions">
-                                <a href="{% url 'view_quotation' q.pk %}" class="btn btn-outline-primary">
-                                    <i class="fas fa-eye"></i> View
+                                {% comment %}
+                                ONE button to open a quote. View and Edit were
+                                two buttons to the same quote, and the editor
+                                already draws the document the customer gets, so
+                                the row offered two routes to one screen's worth
+                                of content. Pinned by OneOpenButtonTests.
+                                {% endcomment %}
+                                <a href="{% url 'edit_quotation' q.pk %}" class="btn btn-outline-primary">
+                                    <i class="fas fa-file-invoice"></i> View / Edit
                                 </a>
                                 <a href="{% url 'download_quotation_pdf' q.pk %}" class="btn btn-secondary">
                                     <i class="fas fa-file-pdf"></i> PDF
@@ -235,18 +242,12 @@ contract pinned by QuoteMobileLayoutTests).
                                     <i class="fab fa-whatsapp"></i> {% if q.sent_via_whatsapp %}Resend{% else %}Send{% endif %}
                                 </a>
                                 {% comment %}
-                                Edit and Delete belong on the ROW. Both existed
-                                on the quote's own pages and on the appointment's
-                                Quotes tab, but not here - so the one screen that
-                                lists every quote was the one place you could not
-                                change or remove one, and a wrong figure meant
-                                opening the quote first. Delete carries `next` so
-                                it comes back to this page of this search rather
-                                than to the lead, which is its default.
+                                Delete belongs on the ROW, beside View / Edit: the
+                                one screen that lists every quote must be able to
+                                remove one without opening it first. It carries
+                                `next` so it comes back to this page of this
+                                search rather than to the lead, its default.
                                 {% endcomment %}
-                                <a href="{% url 'edit_quotation' q.pk %}" class="btn btn-secondary">
-                                    <i class="fas fa-pen"></i> Edit
-                                </a>
                                 <form method="post" action="{% url 'duplicate_quotation' q.pk %}">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-secondary"

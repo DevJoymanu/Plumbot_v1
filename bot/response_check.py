@@ -66,22 +66,11 @@ HISTORY_TURNS = 8
 # rewrite, and a rewrite is not what was asked for.
 MAX_GROWTH = 1.6
 
-# Words that promise something. None may APPEAR in a refinement unless the
-# draft already carried it.
-_PROMISE_WORDS = (
-    'free', 'no charge', 'no cost', 'discount', 'guarantee', 'guaranteed',
-    'refund', 'mahara', 'complimentary', 'waive', 'waived',
-)
-
-# The amount only. A trailing comma or full stop is punctuation, not part
-# of the figure: absorbing it made "US$10," and "US$10." read as two
-# different amounts, so re-punctuating a sentence looked like inventing one.
-# The bare R is the rand prefix, and must not match the 'r' ending an
-# ordinary word: "or 2pm" and "for 20 minutes" both matched R\s?\d under
-# IGNORECASE, so a sound sentence read as naming a figure.
-_MONEY = re.compile(
-    r'(?:US\$|USD|\$|(?<![A-Za-z])R)\s?\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?',
-    re.IGNORECASE)
+# What a refinement may not add (a figure, a promise word, an outright
+# budget ask) is decided by bot/copy_fence.py, shared with the availability
+# ask and the follow-up rewrite. The vocabulary used to be copied here and in
+# availability_ask.py and had drifted: this copy matched promise words as bare
+# substrings, so "freestanding" read as the promise "free".
 
 _SYSTEM = """You check a plumbing company's outgoing WhatsApp reply before it is sent.
 
@@ -166,33 +155,17 @@ def _transcript(appointment, limit=HISTORY_TURNS) -> str:
 
 
 def _fences_hold(draft: str, refined: str) -> tuple:
-    """Is this refinement allowed to go out? Returns (ok, why_not)."""
-    if not refined or not refined.strip():
-        return False, 'empty'
-    if len(refined) > max(120, int(len(draft) * MAX_GROWTH)):
-        return False, 'too long'
+    """Is this refinement allowed to go out? Returns (ok, why_not).
 
-    # No figure may appear that the draft did not already carry. Compared as a
-    # set of normalised amounts, so reordering or re-wording is fine and a NEW
-    # number is not.
-    def money(text):
-        return {m.group(0).upper().replace(' ', '') for m in _MONEY.finditer(text)}
-    added = money(refined) - money(draft)
-    if added:
-        return False, 'invented a figure: %s' % ', '.join(sorted(added))
-
-    low_d, low_r = draft.lower(), refined.lower()
-    # Never turn our close into a demand for their budget. "What is your
-    # budget?" went out in place of the soft price tie-down (prod, 2026-09-19);
-    # the budget is only ever asked after a no, by deterministic copy.
-    _outright = re.compile(r"\bwhat(?:'s|\s+is)\s+(?:your|the)\s+budget\b"
-                           r"|\byour\s+budget\s*\?")
-    if _outright.search(low_r) and not _outright.search(low_d):
-        return False, 'asked their budget outright'
-    for word in _PROMISE_WORDS:
-        if word in low_r and word not in low_d:
-            return False, 'added a promise: %s' % word
-    return True, ''
+    Held to the DRAFT: nothing may appear that the draft did not carry (a new
+    figure, a new promise word, a new outright budget ask), and it may not grow
+    past MAX_GROWTH. Days and times are NOT fenced here, unlike the other two
+    users of bot/copy_fence: the reader works from the whole conversation and is
+    there precisely to fix a day the draft got wrong ("tomorrow or this Tuesday?"
+    to a lead away until December).
+    """
+    from bot.copy_fence import fence_holds
+    return fence_holds(refined, draft, check_slots=False, max_growth=MAX_GROWTH)
 
 
 def verify_and_refine(reply: str, appointment, message_body=None):

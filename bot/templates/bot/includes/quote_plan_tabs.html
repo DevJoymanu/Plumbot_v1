@@ -11,9 +11,10 @@ every field, the item list, its scroll position and the caret are exactly where
 they were when it comes back. The draft autosave is the safety net underneath
 this, not the mechanism.
 
-Rendered by both layouts from one include, and only when the lead actually has
-something behind the second tab (`quote_lead_has_context`): a tab that opens on
-an empty page is a dead control.
+Rendered by both layouts from one include, for any quote that has a lead
+(`quote_lead_has_context`). A lead with nothing on file still gets the tab,
+because behind it is Add plan: the plumber can put a plan handed over on site
+or by email onto the lead from here, without leaving the sheet.
 
 Media is loaded on FIRST OPEN, never at page load. A building plan is often a
 PDF of several MB and this screen is used on site, on mobile data; nobody should
@@ -26,7 +27,7 @@ pay for it on a quote where they never look at the plan.
             role="tab" aria-selected="true" aria-controls="pbqQuotePanel">
         <i class="fas fa-file-invoice-dollar"></i> Quote
     </button>
-    <button type="button" class="pbq-tab" data-pbq-tab="plan"
+    <button type="button" class="pbq-tab" data-pbq-tab="plan" id="pbqPlanTab"
             role="tab" aria-selected="false" aria-controls="pbqPlanPanel">
         {% if quote_lead_files %}
         <i class="far fa-file-alt"></i> Plan
@@ -56,6 +57,31 @@ pay for it on a quote where they never look at the plan.
         </div>
     </div>
 
+    {% comment %}
+    Add a plan from the portal. A plan used to reach a lead only by WhatsApp;
+    one handed over on site or by email had no way onto the lead from this
+    screen. Uploads by fetch to the lead page's plan handler (_attach_plan),
+    which answers with the refreshed file list, so the plumber stays on the
+    sheet with every field as it was. Pinned by PortalPlanUploadTests.
+    {% endcomment %}
+    <form class="pbq-card pbq-plan__add" id="pbqPlanAdd" method="post"
+          enctype="multipart/form-data"
+          action="{% url 'appointment_detail' quote_lead.pk %}">
+        {% csrf_token %}
+        <div class="pbq-plan__filehead">
+            <span class="pbq-plan__name">
+                {% if quote_lead.plan_file %}Replace the plan{% else %}Add a plan{% endif %}
+            </span>
+            <label class="pbq-plan__open" for="pbqPlanInput" style="cursor:pointer;">
+                <i class="fas fa-paperclip"></i> Choose file
+            </label>
+        </div>
+        <input type="file" id="pbqPlanInput" name="plan_file" hidden
+               accept="application/pdf,image/*">
+        <p class="pbq-plan__empty" id="pbqPlanStatus">PDF or a photo of the drawing.</p>
+    </form>
+
+    <div id="pbqPlanFiles">
     {% for file in quote_lead_files %}
     <div class="pbq-card pbq-plan__file">
         <div class="pbq-plan__filehead">
@@ -88,6 +114,7 @@ pay for it on a quote where they never look at the plan.
         customer sends on WhatsApp turns up here.</p>
     </div>
     {% endfor %}
+    </div>
 </div>
 
 <script>
@@ -188,6 +215,92 @@ pay for it on a quote where they never look at the plan.
             if (back) { back.scrollTop = listAt; }
             restoreFocus();
         }
+    }
+
+    // ── Add a plan without leaving the sheet ──
+    // Posts the one file to the lead page's plan handler and rebuilds the file
+    // list from what it sends back. The WHOLE list, not one card: a first plan
+    // becomes index 0 and shifts every other file along, so cards kept from
+    // the page load would open the wrong file.
+    const addForm = document.getElementById('pbqPlanAdd');
+    const addInput = document.getElementById('pbqPlanInput');
+    const addStatus = document.getElementById('pbqPlanStatus');
+    const fileList = document.getElementById('pbqPlanFiles');
+
+    function fileCard(file) {
+        const card = document.createElement('div');
+        card.className = 'pbq-card pbq-plan__file';
+        const head = document.createElement('div');
+        head.className = 'pbq-plan__filehead';
+        const name = document.createElement('span');
+        name.className = 'pbq-plan__name';
+        name.textContent = file.label || 'File';
+        const open = document.createElement('a');
+        open.className = 'pbq-plan__open';
+        open.target = '_blank';
+        open.rel = 'noopener';
+        open.href = file.url;
+        open.innerHTML = '<i class="fas fa-up-right-and-down-left-from-center"></i> Full screen';
+        head.appendChild(name);
+        head.appendChild(open);
+        card.appendChild(head);
+
+        let media;
+        if (file.type === 'image') {
+            media = document.createElement('img');
+            media.className = 'pbq-plan__img';
+            media.alt = file.label || 'Plan';
+        } else if (file.type === 'video') {
+            media = document.createElement('video');
+            media.className = 'pbq-plan__video';
+            media.controls = true;
+            media.preload = 'none';
+        } else {
+            media = document.createElement('iframe');
+            media.className = 'pbq-plan__doc';
+            media.title = file.label || 'Plan';
+        }
+        // A cache-buster: a REPLACED plan keeps index 0, and the browser would
+        // otherwise show the file it already has for that address.
+        media.setAttribute('src', file.url + '?v=' + Date.now());
+        card.appendChild(media);
+        return card;
+    }
+
+    if (addForm && addInput && fileList) {
+        addInput.addEventListener('change', function () {
+            if (!addInput.files || !addInput.files.length) { return; }
+            const data = new FormData(addForm);
+            addStatus.textContent = 'Uploading...';
+            fetch(addForm.getAttribute('action'), {
+                method: 'POST',
+                body: data,
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            }).then(function (response) {
+                return response.json().catch(function () { return { ok: false }; });
+            }).then(function (result) {
+                if (!result || !result.ok) {
+                    addStatus.textContent = (result && result.error) || 'That upload failed. Try again.';
+                    return;
+                }
+                fileList.innerHTML = '';
+                (result.files || []).forEach(function (file) {
+                    fileList.appendChild(fileCard(file));
+                });
+                mediaLoaded = true;
+                addStatus.textContent = 'Plan added to this lead.';
+                const planTab = document.getElementById('pbqPlanTab');
+                if (planTab) {
+                    planTab.innerHTML = '<i class="far fa-file-alt"></i> Plan '
+                        + '<span class="pbq-tab__count">' + (result.files || []).length + '</span>';
+                }
+            }).catch(function () {
+                addStatus.textContent = 'That upload failed. Check the connection and try again.';
+            }).finally(function () {
+                addInput.value = '';
+            });
+        });
     }
 
     tabs.addEventListener('click', function (event) {
