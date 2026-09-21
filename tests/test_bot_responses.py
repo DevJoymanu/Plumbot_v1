@@ -9016,8 +9016,24 @@ try:
         return {'next_question': pick, 'move_confidence': conf}
 
     _fresh = _FakeLead(history=_two_turns)
+    # (This case used 'timeline' until 2026-09-21; timeline is now refused off
+    # the plan path, pinned below, so the reorder is shown with the description.)
     results.log("question choice: a confident pick is taken",
-                _ctl.choose_question(_q('timeline'), _fresh, 'area') == 'timeline')
+                _ctl.choose_question(_q('project_description'), _fresh, 'area')
+                == 'project_description')
+    # "The whole bathroom" + an area, then "When were you hoping to get
+    # started?" instead of the booking question (barmak 1231, 2026-09-21). The
+    # model may reorder the flow's questions, never add one it does not ask.
+    results.log("question choice: never timeline off the plan path",
+                _ctl.choose_question(_q('timeline'), _fresh, 'availability_date')
+                == 'availability_date')
+    _plan_lead = _FakeLead(history=_two_turns)
+    _plan_lead.plan_status = 'plan_uploaded'
+    results.log("question choice: timeline is still allowed on the plan path",
+                _ctl.choose_question(_q('timeline'), _plan_lead, 'area') == 'timeline')
+    results.log("question choice: never the name before a booking",
+                _ctl.choose_question(_q('name'), _fresh, 'availability_date')
+                == 'availability_date')
     results.log("question choice: below the floor the order wins",
                 _ctl.choose_question(_q('timeline', 0.4), _fresh, 'area') == 'area')
     results.log("question choice: an invented question is discarded",
@@ -13107,6 +13123,86 @@ try:
         _override.plumber_contact_number = '+263770000999'
         results.log("plumber link: a per-lead plumber outranks the tenant's short link",
                     _pl.quote_link(_override).startswith('https://wa.me/263774819901?'))
+    # -- The business-domain short link (bot/short_links.py) ------------------
+    from bot import short_links as _sl
+    from bot.tenant_config import TenantConfig as _HbTC
+    results.log("short link: the code round-trips and stays short",
+                all(_sl.decode(_sl.encode(i)) == i for i in (1, 1161, 99999))
+                and len(_sl.encode(1161)) <= 7, got=_sl.encode(1161))
+    _code = _sl.encode(1161)
+    results.log("short link: a forged or walked code does not resolve",
+                _sl.decode(_code[:-1] + ('a' if _code[-1] != 'a' else 'b')) is None
+                and _sl.decode(_sl.encode(1162)[:-4] + _code[-4:]) is None
+                and _sl.decode('') is None and _sl.decode('../x') is None)
+    def _hb_cfg(domain):
+        cfg = _HbTC(None)
+        cfg._profile_loaded = True
+        cfg._profile = _hb_types.SimpleNamespace(scripts={'short_link_domain': domain})
+        return cfg
+    results.log("short link: the business domain is cleaned to a bare host",
+                _hb_cfg('https://WA.HomebasePlumbing.co.zw/').short_link_domain
+                == 'wa.homebaseplumbing.co.zw'
+                and _hb_cfg('not a domain').short_link_domain == ''
+                and _hb_cfg('evil.com/x?y').short_link_domain == 'evil.com'
+                and _hb_cfg('').short_link_domain == '')
+    results.log("short link: the handoff is recognised whatever its link form",
+                _pl.is_handoff_text("I've messaged a couple of times, so I'll leave this here.")
+                and _pl.is_handoff_text('x https://wa.homebase.co.zw/q/Jd7Kx2')
+                and not _pl.is_handoff_text('Hi there, which suburb are you in?'))
+
+    # -- Context over the script: the repeat guard (owner, 2026-09-21) -------
+    # "Do not just keep looping the delay signal messages." A scripted draft
+    # that repeats one of our recent SENT messages is read in context.
+    from bot.utils import repeats_recent_reply as _rep
+    _said = "Have a look whenever suits, and if anything changes just send a message."
+    _lead_said = _hb_lead(conversation_history=[
+        {'role': 'assistant', 'content': _said, 'sent_at': '2026-09-21T08:00:00+00:00'}])
+    results.log("repeat guard: the same line again is a repeat",
+                _rep(_lead_said, _said) and _rep(_lead_said, _said.upper()))
+    results.log("repeat guard: a lightly reworded copy is still a repeat",
+                _rep(_lead_said, "Have a look whenever it suits, and if anything changes just send us a message."))
+    results.log("repeat guard: a different reply is not a repeat",
+                not _rep(_lead_said, "What area are you in?"))
+    results.log("repeat guard: an unsent draft never matches itself",
+                not _rep(_hb_lead(conversation_history=[{'role': 'assistant', 'content': _said}]), _said))
+    results.log("vague date: 'kupera kwemwedzi unouya' is the end of NEXT month",
+                _vres('Kupera kwemwedzi unouya', today=_hb_date(2026, 9, 21)).anchor
+                == _hb_date(2026, 10, 28))
+
+    # -- A lead asking about, or wary of, the link (owner, 2026-09-21) ---------
+    _sent = _hb_lead(conversation_history=[
+        {'role': 'assistant', 'content': '[AUTO FOLLOW-UP] ' + _pl.handoff_message(_hb_lead())}])
+    for _q in ('What is this link for?', 'why is the link so long', 'is this a scam',
+               "I'm not clicking that", 'Is this safe?', 'Link iyi chii?', 'is this legit'):
+        results.log("link question: %r is answered" % _q, _pl.asks_about_the_link(_q, _sent))
+    for _q in ('ok thanks', 'Arlington East', 'send me the link again', 'how much for a tub'):
+        results.log("link question: %r is not a link question" % _q,
+                    not _pl.asks_about_the_link(_q, _sent))
+    results.log("link question: nothing is a link question before we sent a link",
+                not _pl.asks_about_the_link('What is this link for?', _hb_lead()))
+    _ans = _pl.link_explanation(_hb_lead())
+    _ans_want = ("Fair question. That link just opens a WhatsApp chat with Takudzwa, who "
+                 "handles our quotes, with your job details already typed in so you don't "
+                 "have to explain it all again. That's the only reason it's so long: the "
+                 "message is written into the link. Nothing downloads and nothing else "
+                 "opens.\n\nIf you'd rather not tap it, you can message Takudzwa directly "
+                 "on +263774819901.")
+    results.log("link question: says what it is, why it is long, and gives the number",
+                _ans == _ans_want, expected=_ans_want, got=_ans)
+    with _hb_mock.patch.object(_pl, '_tenant_short_link',
+                               return_value='https://wa.me/message/ABCD1234EFGH1'):
+        results.log("link question: a short link is never called long",
+                    'so long' not in _pl.link_explanation(_hb_lead()))
+    _noname = _hb_lead()
+    _noname.plumber_display_name = lambda: 'the plumber'
+    with _hb_mock.patch('bot.utils.business_name_for', return_value=''):
+        _noname_ans = _pl.link_explanation(_noname)
+    results.log("link question: no name on file never says 'the plumber'",
+                'the plumber' not in _noname_ans.lower()
+                and 'the person who handles our quotes' in _noname_ans
+                and 'message them directly on +263774819901' in _noname_ans,
+                got=_noname_ans)
+
     # The owner's layout: copy, why the link is long, the link, the number last.
     _ho = _pl.handoff_message(_hb_lead())
     _ho_want = ("I've messaged a couple of times, so I'll leave this here. If you'd still "

@@ -384,6 +384,52 @@ def _sentences(text: str):
     return out
 
 
+# How many of OUR sent messages a draft is compared against, and how alike two
+# messages must be to count as the same thing said again.
+_REPEAT_LOOKBACK = 4
+_REPEAT_SIMILARITY = 0.85
+
+
+def _norm_for_repeat(text) -> str:
+    return ' '.join(re.sub(r'[^a-z0-9 ]+', ' ', str(text or '').lower()).split())
+
+
+def repeats_recent_reply(appointment, draft) -> bool:
+    """Would sending `draft` say again something we said in the last few turns?
+
+    WHAT: True when the draft is the same as, contained in, or at least 85%
+    alike one of our last few SENT messages (entries carrying `sent_at`, so an
+    unsent draft logged ahead of this call never matches itself).
+    WHY (owner rule, 2026-09-21): "Contextual response should always be put
+    above everything ... do not just keep looping the delay signal messages."
+    A scripted step picked by the flow's position, sent again to a lead who has
+    moved on, is the loop. `finalise_outbound` reads this to switch the model
+    reader back on for a scripted draft that would repeat, so it is rewritten
+    to fit what the lead just said, while a FIRST ask keeps the reader off
+    (that is where it used to tidy the ask away).
+    HOW: normalised word comparison; proactive nudges and media summaries are
+    skipped ([...] entries), since they are not replies. Pinned by the "repeat
+    guard" cases in TEST 0.
+    """
+    new = _norm_for_repeat(draft)
+    if len(new) < 12:
+        return False
+    history = getattr(appointment, 'conversation_history', None) or []
+    ours = [m for m in history
+            if isinstance(m, dict) and m.get('role') == 'assistant' and m.get('sent_at')
+            and not str(m.get('content') or '').lstrip().startswith('[')]
+    from difflib import SequenceMatcher
+    for m in ours[-_REPEAT_LOOKBACK:]:
+        old = _norm_for_repeat(m.get('content'))
+        if not old:
+            continue
+        if new == old or (len(old) >= 12 and (old in new or new in old)):
+            return True
+        if SequenceMatcher(None, new, old).ratio() >= _REPEAT_SIMILARITY:
+            return True
+    return False
+
+
 def enforce_single_question(text: str) -> str:
     """Drop a trailing tie-down question when the message already asks one."""
     if not text or text.count('?') < 2:

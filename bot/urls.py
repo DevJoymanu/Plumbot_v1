@@ -10,6 +10,7 @@ from .views import post_visit as post_visit_views
 from .views import plan_quote as plan_quote_views
 from .views import phone_quote as phone_quote_views
 from .views import visit_proposal as visit_proposal_views
+from .views import short_links as short_link_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -135,6 +136,10 @@ urlpatterns = [
     # Message the lead from the plumber's own WhatsApp, drafted.
     path('appointments/<int:pk>/message/', phone_quote_views.lead_whatsapp_handoff, name='lead_whatsapp_handoff'),
     path('site-visit/<token>/', post_visit_views.site_visit_form, name='site_visit_form'),
+    # Public: a lead taps this from WhatsApp on the business's own short-link
+    # domain and is forwarded to the plumber's per-lead wa.me link
+    # (bot/views/short_links.py).
+    path('q/<str:code>', short_link_views.plumber_link_redirect, name='plumber_link_redirect'),
     # Public and token-gated, like the site-visit form: the plumber taps it
     # from an email on their phone with no session. Added to
     # TenantMiddleware._EXEMPT_PREFIXES for the same reason.

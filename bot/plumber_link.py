@@ -115,31 +115,57 @@ def lead_voice_message(appointment) -> str:
     return ' '.join(parts)
 
 
-def is_short_link(link) -> bool:
-    """True for the plumber's own WhatsApp Business short link."""
-    return '/message/' in (link or '')
+def is_long_link(link) -> bool:
+    """True for the long wa.me link that carries the pre-fill in the URL, the
+    one the handoff has to explain."""
+    return '?text=' in (link or '')
 
 
-def quote_link(appointment) -> str:
-    """The link the lead taps, or '' with no plumber number.
+def long_quote_link(appointment) -> str:
+    """wa.me/<plumber>?text=<per-lead pre-fill>, or '' with no plumber number.
 
-    1. The plumber's own short link (wa.me/message/..., his pre-filled text),
-       once he has made one and it is stored on the tenant.
-    2. Until then (owner, 2026-09-21): wa.me/<number> carrying the PER-LEAD
-       pre-fill, so the message the plumber receives already says the job.
-       Long (~330 characters), which is why the handoff explains it.
-    A per-lead override number (``plumber_contact_number``) outranks the
-    tenant's short link, because that link belongs to the tenant's default
-    plumber, not the one assigned to this lead.
+    What the lead lands on in every case: directly when no shorter link
+    exists, and through the business-domain forwarder (bot/short_links.py)
+    when one does, which rebuilds it from the lead's current details.
     """
     number = plumber_number(appointment)
     if not number:
+        return ''
+    return f'https://wa.me/{number}?text={quote(lead_voice_message(appointment), safe="")}'
+
+
+def quote_link(appointment) -> str:
+    """The link the lead SEES, shortest safe form first, or '' with no plumber.
+
+    1. The plumber's own WhatsApp Business short link (wa.me/message/...), one
+       fixed pre-fill, once he has made one. A per-lead override number
+       outranks it: that link is the tenant's default plumber's.
+    2. The business-domain short link (wa.<their domain>/q/<code>), which
+       forwards to the per-lead wa.me link, once the tenant's domain is set.
+    3. The long per-lead wa.me link itself (owner, 2026-09-21: use it until a
+       shorter one exists), ~330 characters, which is why the handoff says why.
+    """
+    if not plumber_number(appointment):
         return ''
     if not getattr(appointment, 'plumber_contact_number', ''):
         short = _tenant_short_link(appointment)
         if short:
             return short
-    return f'https://wa.me/{number}?text={quote(lead_voice_message(appointment), safe="")}'
+    from .short_links import short_url
+    return short_url(appointment) or long_quote_link(appointment)
+
+
+# The first sentence of the handoff follow-up. Recognises a handoff in the
+# transcript whatever form its link took (wa.me, the plumber's short link, the
+# business-domain short link), for the stop-after-handoff check and the
+# plumber's heads-up email in send_followups.
+def is_handoff_text(text) -> bool:
+    """True when `text` is (or carries) the plumber handoff: the owner's copy,
+    or any of the link forms it has ever used."""
+    text = text or ''
+    return (copy_catalog.HANDOFF_LEAVE_IT_HERE.split('.')[0] in text
+            or 'https://wa.me/' in text or 'https://api.whatsapp.com/' in text
+            or '/q/' in text and 'https://' in text)
 
 
 def _who_handles_quotes(appointment) -> str:
@@ -183,11 +209,89 @@ def handoff_message(appointment) -> str:
     cc = copy_catalog
     who = _who_handles_quotes(appointment)
     handles = cc.HANDOFF_WHO_HANDLES_QUOTES.format(who=who) if who else cc.HANDOFF_QUOTES_HERE
-    why = cc.HANDOFF_TAP_THE_LINK if is_short_link(link) else cc.HANDOFF_WHY_LINK_IS_LONG
+    why = cc.HANDOFF_WHY_LINK_IS_LONG if is_long_link(link) else cc.HANDOFF_TAP_THE_LINK
     number = f'+{plumber_number(appointment)}'
     contact = (cc.HANDOFF_NUMBER_OF.format(who=who, number=number) if who
                else cc.HANDOFF_NUMBER.format(number=number))
     return f'{cc.HANDOFF_LEAVE_IT_HERE}\n\n{handles}\n\n{why}\n{link}\n\n{contact}'
+
+
+# ── A lead asking about, or wary of, the link ───────────────────────────────
+# Owner, 2026-09-21: these are Facebook-ad leads with their guard up, and a
+# ~330-character link invites "what is this?" or "is this a scam?". Answer it
+# plainly (what it opens, why it is long) and give the plumber's number so they
+# can skip the link; the webhook sends his contact card after the text.
+#
+# Deterministic on purpose: a short worried question right after we sent a link
+# is exactly the fuzzy string the classifier gets wrong, and the answer is
+# fixed copy. Two gates, both required: we sent the link in one of our last few
+# messages, and this message asks about it or about trusting it.
+
+# Mentions the link itself.
+_LINK_WORD_RE = re.compile(r"\b(?:link|url|linki|rinki)\b", re.IGNORECASE)
+# Asks what it is, why it looks as it does, or whether to trust it.
+_LINK_QUESTION_RE = re.compile(
+    r"\b(?:what|why|how|which|whose|long|safe|scam|legit|legitimate|real|genuine"
+    r"|trust|fake|hack|hacked|virus|suspicious|sketchy|dodgy|click|clicking|tap"
+    r"|tapping|open|opening|chii|sei|ndeyei|nderei)\b|\?", re.IGNORECASE)
+# Worry that stands on its own, with or without the word "link".
+_LINK_WORRY_RE = re.compile(
+    r"\b(?:scam|scammer|fraud|legit|hacked|hack\s+me|virus|phishing)\b"
+    r"|\bis\s+this\s+(?:safe|real|legit|genuine|you)\b"
+    r"|\b(?:not|won'?t|don'?t\s+want\s+to|never)\s+(?:click|clicking|tap|tapping|open)\b",
+    re.IGNORECASE)
+# How far back our link may be: the last few of OUR messages.
+_LINK_LOOKBACK = 4
+
+
+def _link_recently_sent(appointment) -> bool:
+    """Did one of our last few messages carry the plumber link?"""
+    history = getattr(appointment, 'conversation_history', None) or []
+    ours = [m for m in history if isinstance(m, dict) and m.get('role') == 'assistant']
+    return any(is_handoff_text(m.get('content') or '') for m in ours[-_LINK_LOOKBACK:])
+
+
+def asks_about_the_link(message, appointment) -> bool:
+    """True when the lead is asking what the plumber link is, or is wary of it.
+
+    Only once we have sent it (one of our last few messages): "what is this?"
+    means nothing about a link that was never sent. Then either the message
+    names the link and asks about it ("what's this link for", "why is the
+    link so long"), or it voices the worry on its own ("is this a scam", "I'm
+    not clicking that"). Pinned by the "link question" cases in TEST 0.
+    """
+    text = message or ''
+    if not text.strip() or not _link_recently_sent(appointment):
+        return False
+    if _LINK_WORRY_RE.search(text):
+        return True
+    return bool(_LINK_WORD_RE.search(text) and _LINK_QUESTION_RE.search(text))
+
+
+def contact_card_name(appointment) -> str:
+    """The name on the plumber's contact card: his, else the business's, else
+    "Quotes". Never another tenant's."""
+    return _who_handles_quotes(appointment) or 'Quotes'
+
+
+def link_explanation(appointment) -> str:
+    """What the link is, why it is long, and the plumber's number, or '' when
+    there is no plumber number (nothing to explain or offer).
+
+    The "why it is long" sentence only goes with the long per-lead wa.me link.
+    Statements only: the lead asked a question and this answers it, so no
+    tie-down is added, and the number is the way forward.
+    """
+    number = plumber_number(appointment)
+    if not number:
+        return ''
+    cc = copy_catalog
+    who = _who_handles_quotes(appointment)
+    what = cc.LINK_WHAT_IT_IS.format(who=who) if who else cc.LINK_WHAT_IT_IS_NAMELESS
+    why = cc.LINK_WHY_LONG if is_long_link(quote_link(appointment)) else cc.LINK_NOTHING_ELSE
+    direct = (cc.LINK_OR_MESSAGE_DIRECTLY.format(who=who, number=f'+{number}') if who
+              else cc.LINK_OR_MESSAGE_DIRECTLY_NAMELESS.format(number=f'+{number}'))
+    return f'{what} {why}\n\n{direct}'
 
 
 def quote_offer(appointment) -> str:

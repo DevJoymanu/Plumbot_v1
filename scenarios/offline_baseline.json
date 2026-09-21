@@ -26,6 +26,12 @@
     "3|reject|when would work best": true,
     "3|reject|which day": true
   },
+  "area_then_booking_not_timeline.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|reject|what area are you in": true,
+    "2|reject|when were you hoping to get started": true
+  },
   "budget_ladder_soft_close.txt": {
     "0|expect|US$": false,
     "0|expect|willing to invest": false,
@@ -101,9 +107,9 @@
     "1|reject|book you a time": true,
     "1|reject|email": true,
     "1|reject|what area are you in": true,
-    "2|expect|email": false,
-    "2|expect|portfolio": false,
-    "3|expect|keep": false,
+    "2|expect|email": true,
+    "2|expect|portfolio": true,
+    "3|expect|keep": true,
     "3|reject|sorry": true,
     "4|reject|what email": true,
     "4|reject|would you like our catalog by email": true,

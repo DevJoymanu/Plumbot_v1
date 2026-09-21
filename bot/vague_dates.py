@@ -104,7 +104,7 @@ _MONTH_END = re.compile(
 _BARE_MONTH_NAME = re.compile(
     r"\b(" + '|'.join(m.lower() for m in calendar.month_name if m and m != 'May')
     + r")\b|\bin\s+(may)\b", re.IGNORECASE)
-_BARE_MONTH = re.compile(r"\b(?:this|next)\s+month\b|\bmwedzi\s+unotevera\b", re.IGNORECASE)
+_BARE_MONTH = re.compile(r"\b(?:this|next)\s+month\b|mwedzi\s+(?:unotevera|unouya)\b", re.IGNORECASE)
 
 _YEAR_END = re.compile(r"\b(?:end\s+of\s+(?:the\s+|this\s+)?year|year[\s-]*end"
                        r"|later\s+this\s+year)\b", re.IGNORECASE)
@@ -203,7 +203,12 @@ def _month_frame(msg, today):
         month = _MONTHS[(named.group(1) or named.group(2)).lower()]
         year = today.year if month >= today.month else today.year + 1
         candidates = [(year, month)]
-    elif re.search(r"\bnext\s+month\b|\bmwedzi\s+unotevera\b", msg, re.I):
+    # Shona "next month": "mwedzi unotevera" (the following month) or "mwedzi
+    # unouya" (the coming month), often after "kupera kwe" (the end of).
+    # "Kupera kwemwedzi unouya" read as THIS month's end until 2026-09-21,
+    # because only "unotevera" was listed.
+    # No \b before "mwedzi": Shona glues the possessive on ("kwemwedzi").
+    elif re.search(r"\bnext\s+month\b|mwedzi\s+(?:unotevera|unouya)\b", msg, re.I):
         nxt = today.replace(day=1) + timedelta(days=32)
         candidates = [(nxt.year, nxt.month)]
     else:

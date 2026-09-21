@@ -902,6 +902,54 @@ def get_random_delay(tenant=None, sender=None) -> int:
     return minutes * 60
 
 
+def _send_reply_then_contact_card(sender, reply, delay_seconds, message_id=None,
+                                  tenant=None, appointment_pk=None):
+    """Send a text reply, then the plumber's WhatsApp contact card under it.
+
+    WHAT: the answer to a lead who asked about, or is wary of, the plumber link
+    (plumber_link.link_explanation), followed by a card with his name and
+    number and WhatsApp's own Message button.
+    WHY this order and this check: the card has to arrive UNDER the text that
+    explains it, so it is sent in the same thread after `delayed_response`
+    returns. That function can drop the text (a newer message supersedes it,
+    an operator intercepts it, a booking lands mid-wait), so the card only goes
+    when the text's transcript entry carries `sent_at`, which is stamped only on
+    a real send. A card on its own, with no explanation above it, is exactly
+    the unexplained thing a wary lead should not get.
+    HOW: the card is a new outbound path, so its WAMID is recorded with
+    `record_sent_media`, and a failure is logged, never raised.
+    """
+    delayed_response(sender, reply, delay_seconds, message_id, None, tenant)
+    try:
+        appt = Appointment.objects.filter(pk=appointment_pk).first()
+        if appt is None:
+            return
+        history = appt.conversation_history or []
+        text_went = any(
+            isinstance(m, dict) and m.get('role') == 'assistant'
+            and m.get('content') == reply and m.get('sent_at')
+            for m in history[-6:])
+        if not text_went:
+            print(f"📇 Contact card held for {sender}: the text before it was not sent")
+            return
+        from .plumber_link import contact_card_name, plumber_number
+        from .utils import business_name_for
+        from .whatsapp_cloud_api import get_client_for_tenant
+        number = plumber_number(appt)
+        if not number:
+            return
+        name = contact_card_name(appt)
+        time.sleep(random.randint(2, 4))
+        result = get_client_for_tenant(tenant).send_contact_card(
+            sender, name, number, organization=business_name_for(appt, default=''))
+        wamid = (result or {}).get('messages', [{}])[0].get('id')
+        if wamid:
+            appt.record_sent_media({wamid: f'Contact card: {name} +{number}'},
+                                   f'[CONTACT CARD] {name} +{number}')
+    except Exception as exc:
+        print(f"⚠️ Contact card to {sender} failed: {exc}")
+
+
 def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None, tenant=None):
     try:
         # Phase 1.3: send with the owning tenant's client (falls back to the
@@ -3293,6 +3341,21 @@ def finalise_outbound(reply: str, appointment, message_body: str = None,
     #
     # Fails open in every failure mode, and the correction is flagged on the
     # lead so a human can see what was changed and why.
+    # Context above the script (owner rule, 2026-09-21). A scripted step sent
+    # with check=False skips the reader because a FIRST ask must go out word for
+    # word. Saying it AGAIN is the loop the owner saw ("do not just keep looping
+    # the delay signal messages"), so a draft that repeats one of our recent
+    # sent messages is read after all and rewritten to fit what the lead said.
+    # Pinned by the "repeat guard" cases in TEST 0.
+    if not check:
+        try:
+            from bot.utils import repeats_recent_reply
+            if repeats_recent_reply(appointment, reply):
+                print("🔁 Scripted reply would repeat a recent message: reading it in context")
+                check = True
+        except Exception as _rep_exc:
+            print(f"Repeat check skipped: {_rep_exc}")
+
     try:
         from bot.response_check import verify_and_refine
         if check:
@@ -3579,6 +3642,75 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # them well.
         _move = _controller.decide_move(_uclass, appointment)
 
+        # ── Inbound language normalisation ───────────────────────────────────
+        # Runs before the area backfill below, which reads the English
+        # rendering of a Shona reply; moved up with it (2026-09-21).
+        # Every deterministic resolver downstream matches ENGLISH phrases, and
+        # the customer writes Shona — so each one silently failed until its
+        # Shona phrases were hand-written in after a lead had already been
+        # mishandled. Hand them the English rendering the classifier just
+        # produced (same call, no extra round trip) and they all gain Shona at
+        # once. RULE ENGINE ONLY: nothing customer-facing may read this, the
+        # bot answers in the lead's own language.
+        try:
+            from .message_normalizer import remember as _remember_english
+            _remember_english(message_body, uc_english(_uclass))
+        except Exception as _norm_exc:
+            print(f"⚠️ Message normalisation failed: {_norm_exc}")
+
+        # ── Area backfill: capture a volunteered suburb BEFORE routing ────────
+        # This block used to sit BELOW the proof step, which answers with photos
+        # and returns: an area given in reply to our area question ("In
+        # shurugwi", barmak 1231, 2026-09-21) was never stored, and the question
+        # that rode out with the photos was picked as if the area were still
+        # missing. It runs first now, so no branch below can lose it.
+        # Booking fields are only extracted in STEP 4, but several steps below
+        # answer and RETURN (out-of-scope, delay, photos, pricing). An area
+        # given in the same breath as a delay signal was therefore thrown away
+        # and then asked for again: "Ndiri kuChitungwiza ndichakubatayi ndapedza
+        # kuronga mari" answered the area question we had just asked, went to
+        # the delay handler, and left the lead with area=None after three asks
+        # (prod, barmak, 2026-08-28). The classifier has already read it — store
+        # it here, where no branch can lose it. Excluded cities are still
+        # refused, exactly as extraction_mixin does it.
+        _uc_area = (uc_extracted(_uclass).get('area') or '').strip()
+        if _uc_area.lower() == 'null':
+            _uc_area = ''
+        # The classifier is the only thing that has ever written an area — here,
+        # in extraction_mixin and in process_extracted_data, none of which has a
+        # fallback. So when it returns null the answer is dropped by all three at
+        # once, and a BATCHED turn is exactly where it returns null: the debounce
+        # joins "Bluffhill." and "Need to renovate my bathroom" into one message,
+        # the model latches onto the renovation, and the only few-shots for an
+        # area reply are bare one-word ones. The lead was asked for a suburb they
+        # had just given, the flow stayed stuck on the area question and the
+        # visit was never pitched (prod, barmak, 2026-09-18). Deterministic per
+        # the house rule for short/fuzzy strings, and gated on having JUST asked
+        # the question, which is what makes a place-shaped phrase safe to read as
+        # the answer.
+        if not _uc_area and not appointment.customer_area:
+            try:
+                if plumbot._we_just_asked_the_area():
+                    _uc_area = plumbot._area_from_reply(message_body) or ''
+                    if _uc_area:
+                        print(f"🧭 Area recovered from the raw reply: {_uc_area}")
+            except Exception as _area_fb_exc:
+                print(f"⚠️ Deterministic area fallback failed: {_area_fb_exc}")
+        _excluded_city = None
+        if _uc_area and not appointment.customer_area:
+            try:
+                _excluded_city = plumbot._is_excluded_city(
+                    _uc_area, tenant=getattr(appointment, 'tenant', None))
+            except Exception as _area_exc:
+                print(f"⚠️ Early area check failed: {_area_exc}")
+                _excluded_city = None
+            if _excluded_city:
+                print(f"🚫 Excluded area (early capture): {_uc_area} → {_excluded_city}")
+            else:
+                appointment.customer_area = _uc_area
+                appointment.save(update_fields=['customer_area'])
+                print(f"✅ Area captured before routing: {_uc_area}")
+
         # ── THE PROOF STEP ───────────────────────────────────────────────────
         # They have described the job; show two or three finished ones like it
         # BEFORE the area question and long before the fee. This is the step
@@ -3589,6 +3721,35 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # described a geyser should not be shown a kitchen. No match means we
         # have nothing relevant, so we say nothing and carry on rather than
         # padding with something that does not look like their job.
+        # No photos for a lead we are about to turn away: an out-of-area reply
+        # is declined further down, and a gallery first would be a pitch for a
+        # job we will not do.
+        if _move == 'show_work' and _excluded_city:
+            _move = None
+        # ...nor for a lead who has just said "not yet". The proof step answers
+        # and returns before the delay handler (STEP 1b), so it sent photos and
+        # then "Want me to book you a time?" to "Ndiri kuChitungwiza
+        # ndichakubatayi ndapedza kuronga mari" (I'm in Chitungwiza, I'll get
+        # back to you once I've sorted the money). Exit and delay signals come
+        # before flow logic (CLAUDE.md); the customer's words outrank the move.
+        # Pinned by scenarios/email_ask_gives_a_reason.txt, turn 1.
+        # The same holds while the delay flow is waiting on an answer: "Kupera
+        # kwemwedzi unouya" (end of next month) is the timeframe we asked for,
+        # and the proof step took it as a cue for photos and a booking ask.
+        # ...and after it: a lead who deferred and already has a check-back
+        # has no pending step and, by now, no delay tag either (cleared on every
+        # inbound), so the agreed date is what is read, and "Muno sender zvenyu
+        # ipapa apa" (just send it here) got photos and a slot offer after the
+        # portfolio had gone (scenarios/email_ask_gives_a_reason.txt, last turn).
+        if _move == 'show_work':
+            from .out_of_scope_handler import (
+                _is_explicit_deferral, has_agreed_checkback, in_delay_flow)
+            if (uc_intent(_uclass) == 'delay_signal'
+                    or _is_explicit_deferral(message_body)
+                    or in_delay_flow(appointment)
+                    or has_agreed_checkback(appointment)):
+                print("⏸️ Delay signal or delay flow outranks the proof step")
+                _move = None
         if _move == 'show_work':
             from bot import portfolio_catalog as _pc
             from bot.controller_templates import (
@@ -3669,66 +3830,7 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             ).start()
             return
 
-        # ── Inbound language normalisation ───────────────────────────────────
-        # Every deterministic resolver downstream matches ENGLISH phrases, and
-        # the customer writes Shona — so each one silently failed until its
-        # Shona phrases were hand-written in after a lead had already been
-        # mishandled. Hand them the English rendering the classifier just
-        # produced (same call, no extra round trip) and they all gain Shona at
-        # once. RULE ENGINE ONLY: nothing customer-facing may read this, the
-        # bot answers in the lead's own language.
-        try:
-            from .message_normalizer import remember as _remember_english
-            _remember_english(message_body, uc_english(_uclass))
-        except Exception as _norm_exc:
-            print(f"⚠️ Message normalisation failed: {_norm_exc}")
 
-        # ── Area backfill: capture a volunteered suburb BEFORE routing ────────
-        # Booking fields are only extracted in STEP 4, but several steps below
-        # answer and RETURN (out-of-scope, delay, photos, pricing). An area
-        # given in the same breath as a delay signal was therefore thrown away
-        # and then asked for again: "Ndiri kuChitungwiza ndichakubatayi ndapedza
-        # kuronga mari" answered the area question we had just asked, went to
-        # the delay handler, and left the lead with area=None after three asks
-        # (prod, barmak, 2026-08-28). The classifier has already read it — store
-        # it here, where no branch can lose it. Excluded cities are still
-        # refused, exactly as extraction_mixin does it.
-        _uc_area = (uc_extracted(_uclass).get('area') or '').strip()
-        if _uc_area.lower() == 'null':
-            _uc_area = ''
-        # The classifier is the only thing that has ever written an area — here,
-        # in extraction_mixin and in process_extracted_data, none of which has a
-        # fallback. So when it returns null the answer is dropped by all three at
-        # once, and a BATCHED turn is exactly where it returns null: the debounce
-        # joins "Bluffhill." and "Need to renovate my bathroom" into one message,
-        # the model latches onto the renovation, and the only few-shots for an
-        # area reply are bare one-word ones. The lead was asked for a suburb they
-        # had just given, the flow stayed stuck on the area question and the
-        # visit was never pitched (prod, barmak, 2026-09-18). Deterministic per
-        # the house rule for short/fuzzy strings, and gated on having JUST asked
-        # the question, which is what makes a place-shaped phrase safe to read as
-        # the answer.
-        if not _uc_area and not appointment.customer_area:
-            try:
-                if plumbot._we_just_asked_the_area():
-                    _uc_area = plumbot._area_from_reply(message_body) or ''
-                    if _uc_area:
-                        print(f"🧭 Area recovered from the raw reply: {_uc_area}")
-            except Exception as _area_fb_exc:
-                print(f"⚠️ Deterministic area fallback failed: {_area_fb_exc}")
-        if _uc_area and not appointment.customer_area:
-            try:
-                _excluded_city = plumbot._is_excluded_city(
-                    _uc_area, tenant=getattr(appointment, 'tenant', None))
-            except Exception as _area_exc:
-                print(f"⚠️ Early area check failed: {_area_exc}")
-                _excluded_city = None
-            if _excluded_city:
-                print(f"🚫 Excluded area (early capture): {_uc_area} → {_excluded_city}")
-            else:
-                appointment.customer_area = _uc_area
-                appointment.save(update_fields=['customer_area'])
-                print(f"✅ Area captured before routing: {_uc_area}")
 
         # ── SERVICE-CONFIRM FOLLOW-UP ─────────────────────────────────────────
         # We asked "Is a <X> the only thing you're looking to get sorted?" last turn
@@ -4197,15 +4299,76 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # them when the reply is actually a delivery-channel ask, so a genuine
         # fresh photo request still works.
         _delay_email_wants_wa = False
+        _pending = None   # read below; STEP 0-a reads it even if that read fails
         try:
             from .out_of_scope_handler import _read_pending, wants_whatsapp_delivery
             _pending = _read_pending(appointment)
+            # Also AFTER the email step: a delayed lead who says "send it here"
+            # again is still talking about the portfolio, not asking for work
+            # photos. "Muno sender zvenyu ipapa apa" got a gallery and a slot
+            # offer once the email step had cleared (email_ask_gives_a_reason,
+            # last turn). Context over the photo trigger (owner, 2026-09-21).
+            from .out_of_scope_handler import has_agreed_checkback
             _delay_email_wants_wa = bool(
-                _pending and _pending.get('category') == 'delay_email'
-                and wants_whatsapp_delivery(message_body)
+                wants_whatsapp_delivery(message_body)
+                and ((_pending and _pending.get('category') == 'delay_email')
+                     or has_agreed_checkback(appointment))
             )
         except Exception as _pend_exc:
             print(f"⚠️ delay_email pending check failed: {_pend_exc}")
+
+        # -- STEP 0-a: "Send it here" again, after the portfolio went -----------
+        # A deferred lead repeating the delivery ask once the PDF is already in
+        # the chat. Answer THAT (owner rule, 2026-09-21: context over the
+        # script) rather than falling through to the next scripted step, which
+        # offered visit slots to "Muno sender zvenyu ipapa apa"
+        # (email_ask_gives_a_reason, last turn). A fixed, correct sentence goes
+        # through the model reader (check=True) so it can fit their words.
+        if (_delay_email_wants_wa
+                and '[LEAD_MAGNET_WA_SENT]' in (appointment.internal_notes or '')
+                and not (_pending and _pending.get('category') == 'delay_email')):
+            _here = finalise_outbound(copy_catalog.PORTFOLIO_ALREADY_HERE, appointment,
+                                      message_body, check=True)
+            print(f"📄 Portfolio already sent, answered in context: '{message_body[:60]}'")
+            appointment.add_conversation_message("assistant", _here)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _here, get_random_delay(sender=sender), message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
+        # -- STEP 0-: A question about the plumber link ---------------------------
+        # "What is this link?", "why is it so long?", "is this a scam?" right
+        # after we sent the plumber's link (owner, 2026-09-21: Facebook-ad
+        # leads have their guard up). Answered here, before STEP 0, so the
+        # multi-intent composer or a pending delay step never reads it as
+        # something else: say what the link opens and why it is long, give the
+        # plumber's number, then send his contact card under it. Deterministic
+        # detector and fixed copy (plumber_link); pinned by "link question" in
+        # TEST 0 and LinkQuestionTests.
+        from .plumber_link import asks_about_the_link, link_explanation
+        if asks_about_the_link(message_body, appointment):
+            _link_reply = link_explanation(appointment)
+            if _link_reply:
+                print(f"🔗 Link question answered: '{message_body[:60]}'")
+                _link_reply = finalise_outbound(_link_reply, appointment,
+                                                message_body, check=False)
+                appointment.add_conversation_message("assistant", _link_reply)
+                appointment.last_outbound_at = timezone.now()
+                appointment.last_contacted_at = appointment.last_outbound_at
+                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+                delay = get_random_delay(sender=sender)
+                threading.Thread(
+                    target=_send_reply_then_contact_card,
+                    args=(sender, _link_reply, delay, message_id),
+                    kwargs={'tenant': tenant, 'appointment_pk': appointment.pk},
+                    daemon=True,
+                ).start()
+                return
 
         # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
         # e.g. "where are you based and how much" → answer both in one reply.

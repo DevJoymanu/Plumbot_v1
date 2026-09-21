@@ -171,10 +171,50 @@ HANDOFF_WHY_LINK_IS_LONG = (
 )
 HANDOFF_TAP_THE_LINK = "Tap the link below to send your details."
 
+# A lead who asks what the plumber link is, or is wary of it ("is this a scam?",
+# "why is the link so long?", "I'm not clicking that"). Owner, 2026-09-21: say
+# what it is and why it is long, then give the plumber's number so they can
+# skip the link; plumber_link.link_explanation builds it and the webhook sends
+# a contact card after it. {who} is the plumber's or business's name, else
+# "the person who handles our quotes". The "long" sentence is left out when
+# the link is short.
+LINK_WHAT_IT_IS = (
+    "Fair question. That link just opens a WhatsApp chat with {who}, who "
+    "handles our quotes, with your job details already typed in so you don't "
+    "have to explain it all again."
+)
+LINK_WHY_LONG = (
+    "That's the only reason it's so long: the message is written into the link. "
+    "Nothing downloads and nothing else opens."
+)
+LINK_NOTHING_ELSE = "Nothing downloads and nothing else opens."
+LINK_OR_MESSAGE_DIRECTLY = (
+    "If you'd rather not tap it, you can message {who} directly on {number}."
+)
+# The same two lines for a tenant with no plumber or business name on file.
+LINK_WHAT_IT_IS_NAMELESS = (
+    "Fair question. That link just opens a WhatsApp chat with the person who "
+    "handles our quotes, with your job details already typed in so you don't "
+    "have to explain it all again."
+)
+LINK_OR_MESSAGE_DIRECTLY_NAMELESS = (
+    "If you'd rather not tap it, you can message them directly on {number}."
+)
+
 # The last line: the plumber's number, so they can save it or message it
 # themselves. WhatsApp makes a +number tappable.
 HANDOFF_NUMBER_OF = "{who}'s number: {number}"
 HANDOFF_NUMBER = "Number: {number}"
+
+# A deferred lead asks for the portfolio on WhatsApp AGAIN after it went out.
+# Answered where they are, not with the next scripted step: it is the PDF in the
+# chat already, and it will be there when they can open it (a lead without data
+# cannot download it yet). Sent through the model reader so it can fit their
+# words and language (owner rule, 2026-09-21: context over the script).
+PORTFOLIO_ALREADY_HERE = (
+    "It's the PDF we sent just above in this chat, so it's there whenever "
+    "you're ready to open it. If it didn't come through, let us know."
+)
 
 # A lead who is not ready: park them warmly, door open.
 WHENEVER_YOURE_READY = (

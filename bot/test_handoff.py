@@ -12,7 +12,7 @@ mocked; the delay flow's date reader is patched so no model is called.
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from bot import job_date_ladder as ladder
@@ -337,6 +337,193 @@ class DescriptionNetTests(OfflineTestCase):
         from bot.views.plumbot.response_mixin import ResponseMixin
         gate = ResponseMixin._looks_like_project_description_reply
         self.assertFalse(gate(ResponseMixin(), 'Ok\nNow you are talking'))
+
+
+@override_settings(ALLOWED_HOSTS=['testserver', 'wa.homebase.test', 'wa.other.test'])
+class ShortLinkTests(OfflineTestCase):
+    """The business-domain short link (bot/short_links.py): short in the
+    message, the per-lead wa.me link when tapped, and only on the lead's own
+    tenant's domain."""
+
+    def setUp(self):
+        super().setUp()
+        from unittest.mock import PropertyMock
+        patcher = patch('bot.tenant_config.TenantConfig.short_link_domain',
+                        new_callable=PropertyMock, return_value='wa.homebase.test')
+        self.domain = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.lead = make_lead(90, customer_area='Arlington East')
+
+    def test_the_handoff_shows_the_short_link_and_no_apology(self):
+        from bot.plumber_link import handoff_message
+        from bot.short_links import encode
+        msg = handoff_message(self.lead)
+        self.assertIn(f'https://wa.homebase.test/q/{encode(self.lead.pk)}', msg)
+        self.assertNotIn('?text=', msg)
+        self.assertNotIn('is long because', msg)
+        self.assertTrue(msg.rstrip().endswith("number: +263774819901"), msg)
+
+    def test_tapping_it_forwards_to_the_per_lead_wa_me_link(self):
+        from bot.short_links import encode
+        resp = self.client.get(f'/q/{encode(self.lead.pk)}', HTTP_HOST='wa.homebase.test')
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp['Location'].startswith('https://wa.me/263774819901?text='))
+        self.assertIn('Arlington%20East', resp['Location'])
+        self.assertEqual(resp['Cache-Control'], 'no-store')
+
+    def test_another_domain_or_a_forged_code_is_a_404(self):
+        from bot.short_links import encode
+        code = encode(self.lead.pk)
+        self.assertEqual(self.client.get(f'/q/{code}', HTTP_HOST='wa.other.test').status_code, 404)
+        forged = code[:-1] + ('a' if code[-1] != 'a' else 'b')
+        self.assertEqual(self.client.get(f'/q/{forged}', HTTP_HOST='wa.homebase.test').status_code, 404)
+        self.assertEqual(self.client.get('/q/zz', HTTP_HOST='wa.homebase.test').status_code, 404)
+
+    def test_a_handoff_with_the_short_link_still_stops_the_run(self):
+        """The stop-after-handoff check used to look for wa.me only, and the
+        business-domain link has none."""
+        from bot.management.commands.send_followups import handoff_sent_since_last_reply
+        from bot.plumber_link import handoff_message
+        self.lead.last_customer_response = timezone.now() - timedelta(hours=5)
+        self.lead.conversation_history = [{
+            'role': 'assistant', 'content': f'[AUTO FOLLOW-UP] {handoff_message(self.lead)}',
+            'timestamp': timezone.now().isoformat()}]
+        self.assertTrue(handoff_sent_since_last_reply(self.lead))
+
+
+class LinkQuestionTests(OfflineTestCase):
+    """A lead wary of the plumber link gets the explanation, then the
+    plumber's contact card, and the card never goes without the text."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(95)
+        self.reply = 'Fair question. That link just opens a WhatsApp chat.'
+        self.lead.add_conversation_message('assistant', self.reply)
+
+    def _run(self, text_sent):
+        from bot import whatsapp_webhook as wh
+
+        def fake_delayed(sender, reply, *a, **k):
+            if text_sent:
+                Appointment.objects.get(pk=self.lead.pk).mark_message_sent(
+                    'assistant', reply, 'wamid.TEXT')
+        client = patch('bot.whatsapp_cloud_api.get_client_for_tenant').start()
+        self.addCleanup(patch.stopall)
+        client.return_value.send_contact_card.return_value = {'messages': [{'id': 'wamid.CARD'}]}
+        with patch.object(wh, 'delayed_response', fake_delayed), \
+                patch.object(wh.time, 'sleep'):
+            wh._send_reply_then_contact_card('15550010095', self.reply, 0,
+                                             appointment_pk=self.lead.pk)
+        return client.return_value.send_contact_card
+
+    def test_the_card_follows_the_text_and_is_recorded(self):
+        card = self._run(text_sent=True)
+        card.assert_called_once()
+        sender, name, number = card.call_args[0][:3]
+        self.assertEqual(number, '263774819901')
+        self.lead.refresh_from_db()
+        last = self.lead.conversation_history[-1]
+        self.assertTrue(last['content'].startswith('[CONTACT CARD]'))
+        self.assertIn('wamid.CARD', last.get('media_index', {}))
+
+    def test_no_card_when_the_text_was_not_sent(self):
+        self._run(text_sent=False).assert_not_called()
+
+    def test_the_card_payload_carries_wa_id_so_whatsapp_shows_message(self):
+        from bot.whatsapp_cloud_api import WhatsAppCloudAPI
+        api = WhatsAppCloudAPI.__new__(WhatsAppCloudAPI)
+        api.base_url, api.phone_number_id = 'https://graph.example', '123'
+        with patch.object(WhatsAppCloudAPI, '_post_with_retry') as post:
+            post.return_value.json.return_value = {'messages': [{'id': 'w'}]}
+            api.send_contact_card('263786318169', 'Takudzwa', '+263 77 481 9901',
+                                  organization='Homebase Plumbers')
+        payload = post.call_args[0][1]
+        self.assertEqual(payload['type'], 'contacts')
+        phone = payload['contacts'][0]['phones'][0]
+        self.assertEqual((phone['phone'], phone['wa_id']), ('+263774819901', '263774819901'))
+        self.assertEqual(payload['contacts'][0]['org']['company'], 'Homebase Plumbers')
+
+    def test_a_test_console_number_never_reaches_whatsapp(self):
+        from bot.whatsapp_cloud_api import WhatsAppCloudAPI
+        api = WhatsAppCloudAPI.__new__(WhatsAppCloudAPI)
+        with patch.object(WhatsAppCloudAPI, '_post_with_retry') as post:
+            result = api.send_contact_card('999000000001', 'Takudzwa', '263774819901')
+        post.assert_not_called()
+        self.assertTrue(result['messages'][0]['id'])
+
+
+class TwoFollowupsAndSilenceTests(OfflineTestCase):
+    """Owner rule, 2026-09-21: a lead who gets the plumber handoff gets TWO
+    follow-ups (contextual, then the handoff) and nothing after it, from any
+    loop, until they reply."""
+
+    def _handoff_history(self, lead, hours_after_reply=5):
+        from bot.plumber_link import handoff_message
+        at = lead.last_inbound_at + timedelta(hours=hours_after_reply)
+        lead.conversation_history = [{
+            'role': 'assistant', 'content': f'[AUTO FOLLOW-UP] {handoff_message(lead)}',
+            'timestamp': at.isoformat()}]
+        lead.save(update_fields=['conversation_history'])
+
+    def test_a_handoff_lead_has_two_follow_ups_not_four(self):
+        from bot.management.commands.send_followups import max_followups_for
+        now = timezone.now()
+        qualified = make_lead(100, last_inbound_at=now, last_customer_response=now)
+        missing_area = make_lead(101, customer_area='', last_inbound_at=now,
+                                 last_customer_response=now)
+        self.assertEqual(max_followups_for(qualified), 2)
+        self.assertGreater(max_followups_for(missing_area), 2)
+
+    @patch('bot.customer_emails._send', return_value=True)
+    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    def test_no_job_date_touch_after_a_handoff_but_the_plumber_is_still_told(self, plumber, send):
+        from bot.management.commands.send_followups import Command, SA_TIMEZONE
+        job = date(2030, 3, 20)
+        lead = make_lead(102, customer_email='rudo@example.com',
+                         last_inbound_at=SA_TIMEZONE.localize(datetime(2030, 3, 1, 9)))
+        ladder.arm(lead, job)
+        self._handoff_history(lead)
+        cmd = Command()
+        for day in (13, 17, 18):
+            now = SA_TIMEZONE.localize(datetime(2030, 3, day, 10))
+            with patch('bot.management.commands.send_followups.timezone.now', return_value=now):
+                cmd._tick_job_ladder(lead, now, False, ladder)
+            lead.refresh_from_db()
+        send.assert_not_called()                       # no text to the lead
+        plumber.assert_called_once()                   # the call brief still goes
+
+    @patch('bot.customer_emails.send_delay_followup_email', return_value=True)
+    def test_no_check_back_after_a_handoff(self, followup):
+        from bot.management.commands.send_followups import Command
+        lead = make_lead(103, is_delayed=True, customer_email='rudo@example.com',
+                         last_inbound_at=timezone.now() - timedelta(days=3),
+                         delay_followup_due_at=timezone.now() - timedelta(hours=1))
+        self._handoff_history(lead)
+        Command()._process_delayed_reactivations(timezone.now(), False)
+        followup.assert_not_called()
+
+    def test_a_scripted_reply_that_repeats_is_read_in_context(self):
+        """finalise_outbound turns the model reader on for a check=False draft
+        that repeats a recent sent message; a first ask keeps it off."""
+        from bot.whatsapp_webhook import finalise_outbound
+        said = "Have a look whenever suits, and if anything changes just send a message."
+        lead = make_lead(104)
+        with patch('bot.response_check.verify_and_refine',
+                   side_effect=lambda r, a, m=None: (r, None)) as reader:
+            finalise_outbound(said, lead, 'ok', check=False)
+            reader.assert_not_called()                 # first time: scripted as is
+            lead.conversation_history = [{'role': 'assistant', 'content': said,
+                                          'sent_at': timezone.now().isoformat()}]
+            finalise_outbound(said, lead, 'send it here', check=False)
+            reader.assert_called_once()                # again: read in context
+
+    def test_a_deferred_lead_keeps_counting_as_deferred_after_replying(self):
+        """The delay tag is cleared on every inbound; the agreed date is not."""
+        from bot.out_of_scope_handler import has_agreed_checkback
+        lead = make_lead(105, delay_followup_due_at=timezone.now() + timedelta(days=20))
+        self.assertTrue(has_agreed_checkback(lead))
+        self.assertFalse(has_agreed_checkback(make_lead(106)))
 
 
 class JobLadderCronTests(OfflineTestCase):

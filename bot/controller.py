@@ -235,7 +235,7 @@ def choose_question(payload, appointment, default):
     """The field to ask about this turn: the model's pick, or the default.
 
     This is where the model is allowed to think, and where it is stopped from
-    thinking something harmful. Three conditions, all of which must hold:
+    thinking something harmful. Four conditions, all of which must hold:
 
     1. It must be confident. Below the floor the deterministic order wins,
        because a coin-flip on what to ask next is worse than a dull-but-right
@@ -261,6 +261,21 @@ def choose_question(payload, appointment, default):
     if plan_confidence(payload) < CONFIDENCE_FLOOR:
         logger.info("Question choice %s below the floor, keeping %s",
                     picked, default)
+        return default
+
+    # 4. It must be a question the flow asks THIS lead at all. The model may
+    #    reorder the flow's questions, never add one. "timeline" belongs to the
+    #    plan path only (get_next_question_to_ask asks it nowhere else), and
+    #    "name" only once a visit is booked. Barmak 1231 (2026-09-21) had said
+    #    "the whole bathroom" and given their area; the owner's next step is the
+    #    booking question (this day or that, this time or that), and the model
+    #    sent "When were you hoping to get started?" instead. Pinned by the
+    #    "controller question" cases in TEST 0.
+    if picked == 'timeline' and not on_plan_path(appointment):
+        logger.info("Controller wanted timeline off the plan path, keeping %s", default)
+        return default
+    if picked == 'name' and getattr(appointment, 'status', '') != 'confirmed':
+        logger.info("Controller wanted the name before a booking, keeping %s", default)
         return default
 
     source = _QUESTION_FIELD_SOURCE.get(picked)

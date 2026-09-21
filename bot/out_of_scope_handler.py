@@ -163,6 +163,25 @@ def has_delay_signal(appointment) -> bool:
     return _DELAY_SIGNAL_TAG in (appointment.internal_notes or "")
 
 
+def has_agreed_checkback(appointment) -> bool:
+    """Did this lead defer and agree a check-back that is still ahead?
+
+    WHY not `has_delay_signal`: the webhook clears the delay tag on EVERY
+    inbound (`_clear_delay_signal_if_present`, a reply counts as re-engaging),
+    so by the time routing asks, a lead who deferred yesterday no longer looks
+    deferred. The agreed date survives that clear (`clear_delayed` leaves
+    `delay_followup_due_at`, which is why send_followups excludes on it too),
+    and so does an armed job-date ladder. Used to keep scripted pushes (the
+    photo proof step, the photo trigger) off a lead who has told us "not yet"
+    (owner rule, 2026-09-21: context over the script).
+    """
+    from django.utils import timezone as _tz
+    due = getattr(appointment, 'delay_followup_due_at', None)
+    if due and due > _tz.now():
+        return True
+    return '[JOB_DATE]' in (getattr(appointment, 'internal_notes', '') or '')
+
+
 # ── Bare acknowledgements while a hold is on ──────────────────────────────────
 # The union of the two ack lists that used to live at the arrival gate
 # (whatsapp_webhook.handle_text_message) and the reply gate

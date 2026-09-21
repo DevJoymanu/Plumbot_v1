@@ -428,12 +428,28 @@ else:
 import sys
 TESTING = 'test' in sys.argv
 if TESTING:
+    # A FILE in the temp dir, with a busy timeout, rather than ":memory:".
+    # Several reply paths write from their own threads (`delayed_response`,
+    # the photo and contact-card sends), and in-memory SQLite runs on a shared
+    # cache whose table locks fail at once with "database table is locked"
+    # instead of waiting. The scenario replay lost replies to that race
+    # (any_time_is_an_answer turn 3 failed about 1 run in 3 once the booking
+    # there completed in one turn). A file database honours `timeout`, so a
+    # colliding write waits its turn. Still local, still thrown away: one file
+    # per run (pid in the name), deleted at teardown, and any a still-running
+    # reply thread kept open is swept by the next run
+    # (Plumbing_CRM/test_runner.py, which is also why TEST_RUNNER is set).
+    import tempfile as _tempfile
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": ":memory:",
+            "OPTIONS": {"timeout": 30},
+            "TEST": {"NAME": os.path.join(
+                _tempfile.gettempdir(), f"plumbot_test_db_{os.getpid()}.sqlite3")},
         }
     }
+    TEST_RUNNER = 'Plumbing_CRM.test_runner.PlumbotTestRunner'
     STORAGES = {
         "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},

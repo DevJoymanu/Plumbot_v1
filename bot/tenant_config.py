@@ -18,6 +18,8 @@ production behaviour (TEST 0 pins them).
 
 from __future__ import annotations
 
+import re
+
 # ── Homebase seed data ────────────────────────────────────────────────────────
 # Verbatim the strings the code shipped with (bot/faq.py::_FACTS et al.).
 # Written to homebase's TenantProfile by migration 0045 and by the test-DB
@@ -219,6 +221,29 @@ class TenantConfig:
         scripts = self._field('scripts', None) or {}
         link = str(scripts.get('plumber_quote_link') or '').strip() if isinstance(scripts, dict) else ''
         return link if link.startswith(('https://wa.me/', 'https://api.whatsapp.com/')) else ''
+
+    # A bare host name: labels of letters, digits and hyphens, dot-separated.
+    _HOST_RE = re.compile(r'^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$')
+
+    @property
+    def short_link_domain(self) -> str:
+        """The host this tenant's short plumber links run on, e.g.
+        "wa.homebaseplumbing.co.zw", or ''.
+
+        The BUSINESS's own domain (owner, 2026-09-21: a Facebook-ad lead wary
+        of scams trusts the business they are talking to, not our platform or
+        a public shortener). Stored as ``scripts['short_link_domain']``, a JSON
+        key, no column. A business fact: absent means the long wa.me link, never
+        another tenant's domain. Only a bare host name is accepted (a pasted
+        "https://.../" is cleaned), because it is put straight into a URL.
+        """
+        scripts = self._field('scripts', None) or {}
+        raw = str(scripts.get('short_link_domain') or '') if isinstance(scripts, dict) else ''
+        host = raw.strip().lower()
+        if '//' in host:
+            host = host.split('//', 1)[1]
+        host = host.split('/', 1)[0]
+        return host if self._HOST_RE.match(host) else ''
 
     @property
     def location_line(self) -> str:

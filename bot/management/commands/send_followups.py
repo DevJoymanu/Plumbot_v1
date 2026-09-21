@@ -161,8 +161,8 @@ def _tell_plumber_if_handoff(lead, message):
     pre-fill is generic, so without this he gets "Hi I would like a free
     quote" from a number he cannot place. Called by all three loops after the
     send and the transcript write; never raises."""
-    if 'https://wa.me/' in (message or '') or 'https://api.whatsapp.com/' in (message or ''):
-        from bot.plumber_link import notify_plumber_of_handoff
+    from bot.plumber_link import is_handoff_text, notify_plumber_of_handoff
+    if is_handoff_text(message):
         notify_plumber_of_handoff(lead)
 
 
@@ -177,8 +177,9 @@ def handoff_sent_since_last_reply(lead) -> bool:
     HOW: the same transcript read as touches_since_last_reply: only entries
     that start with a PROACTIVE_MARKERS prefix and are stamped after the reply.
     A link the bot put in a conversational reply (the delay flow's portfolio
-    answer) is not proactive, so it does not stop anything. The link is what is
-    looked for, so no extra tag has to be kept in step with the copy.
+    answer) is not proactive, so it does not stop anything. What is looked for
+    is `plumber_link.is_handoff_text`: the handoff copy or any of its link
+    forms, so no extra tag has to be kept in step.
     """
     history = getattr(lead, 'conversation_history', None) or []
     since = getattr(lead, 'last_customer_response', None) or getattr(
@@ -189,7 +190,11 @@ def handoff_sent_since_last_reply(lead) -> bool:
         content = (message.get('content') or '').lstrip()
         if not content.startswith(PROACTIVE_MARKERS):
             continue
-        if 'https://wa.me/' not in content and 'https://api.whatsapp.com/' not in content:
+        # Any link form the handoff has used, or its copy (plumber_link): the
+        # business-domain short link carries no wa.me, and checking only for
+        # wa.me would let a handed-off lead be chased again.
+        from bot.plumber_link import is_handoff_text
+        if not is_handoff_text(content):
             continue
         stamp = _parse_history_stamp(message.get('timestamp'))
         if since is not None and (stamp is None or stamp <= since):
@@ -329,9 +334,42 @@ def followup_offsets_for(lead):
     bands = FOLLOWUP_BAND_OFFSETS.get(tier, FOLLOWUP_BAND_OFFSETS[LeadStatus.COLD])
     usable = usable_window_hours(lead)
     if bands[-1] <= usable:
-        return space_offsets(bands, usable)
-    fractions = SHORT_WINDOW_FRACTIONS.get(tier, SHORT_WINDOW_FRACTIONS[LeadStatus.COLD])
-    return space_offsets([f * usable for f in fractions], usable)
+        offsets = space_offsets(bands, usable)
+    else:
+        fractions = SHORT_WINDOW_FRACTIONS.get(tier, SHORT_WINDOW_FRACTIONS[LeadStatus.COLD])
+        offsets = space_offsets([f * usable for f in fractions], usable)
+    # TWO for a lead who gets the plumber handoff (owner rule, 2026-09-21):
+    # follow-up 1 is the contextual touch, follow-up 2 the handoff, and nothing
+    # after it. Cut HERE, where the schedule is decided, so the cron, the UI
+    # chip, the dashboard due-list and retirement all read the same two.
+    if handoff_eligible(lead):
+        offsets = offsets[:HANDOFF_TOUCHES]
+    return offsets
+
+
+# The run length for a lead who gets the handoff: the contextual touch, then
+# the handoff (owner rule, 2026-09-21, down from four).
+HANDOFF_TOUCHES = 2
+
+
+def handoff_eligible(lead) -> bool:
+    """Will this lead's second follow-up be the plumber handoff?
+
+    The three fields (a real service type, a description, an area) AND a
+    plumber number for the lead's own tenant: without the number there is no
+    handoff to make, and the lead keeps the ordinary four-touch run. The same
+    test `Command._handoff_touch` makes before it builds the message, so the
+    schedule and the message can never disagree about who is handed off.
+    """
+    try:
+        from bot.lead_handoff import service_label
+        from bot.plumber_link import plumber_number
+        return bool(service_label(lead)
+                    and str(getattr(lead, 'project_description', '') or '').strip()
+                    and str(getattr(lead, 'customer_area', '') or '').strip()
+                    and plumber_number(lead))
+    except Exception:
+        return False
 
 
 def max_followups_for(lead) -> int:
@@ -774,6 +812,13 @@ class Command(BaseCommand):
                     len(self._delay_nudge_offsets(lead)),
                     len(self._DELAY_NUDGE_MESSAGES[step]),
                 )
+                # Two for a delay-signal lead who gets the handoff (owner rule,
+                # 2026-09-21): the contextual nudge, then the handoff, then
+                # nothing. No field requirement for this group, only a plumber
+                # number to hand them to.
+                from bot.plumber_link import plumber_number
+                if plumber_number(lead):
+                    max_nudges = min(max_nudges, HANDOFF_TOUCHES)
                 if nudge_count >= max_nudges:
                     continue
 
@@ -1019,6 +1064,10 @@ class Command(BaseCommand):
                     len(self._parked_nudge_offsets(lead)),
                     len(self._PARKED_NUDGE_MESSAGES),
                 )
+                # Two when the handoff can be made, as in the delay loop.
+                from bot.plumber_link import plumber_number
+                if plumber_number(lead):
+                    max_nudges = min(max_nudges, HANDOFF_TOUCHES)
                 if nudge_count >= max_nudges:
                     continue
 
@@ -1197,6 +1246,10 @@ class Command(BaseCommand):
 
         for lead in due:
             try:
+                # Handed off to the plumber: that was the last text until they
+                # reply (owner rule, 2026-09-21). No check-back after it.
+                if handoff_sent_since_last_reply(lead):
+                    continue
                 name    = lead.customer_name or ''
                 hi      = f'Hi {name}' if name else 'Hi there'
                 service = self._service_label(lead)
@@ -1546,6 +1599,13 @@ class Command(BaseCommand):
 
         sent_via = ''
         capped = touches_since_last_reply(lead) >= FOLLOWUP_CAP_PER_REPLY
+        # The plumber handoff is the LAST text a lead gets until they reply
+        # (owner rule, 2026-09-21), so a ladder touch after it is held. The
+        # step still advances, so the plumber's call brief (internal, to him)
+        # still comes at job - 2.
+        handed_off = handoff_sent_since_last_reply(lead)
+        if handed_off:
+            capped = True
         if not capped and not lead_is_suppressed(lead):
             if getattr(lead, 'customer_email', None):
                 from bot.customer_emails import _send
@@ -1575,7 +1635,7 @@ class Command(BaseCommand):
         ladder.advance(lead, at + 1, timezone.now())
         self.stdout.write(self.style.SUCCESS(
             f'✅ Job ladder touch {at + 1} for lead {lead.id} '
-            f'({sent_via or ("capped" if capped else "no channel")})'))
+            f'({sent_via or ("handed off" if handed_off else "capped" if capped else "no channel")})'))
 
     def _ladder_call(self, lead, job_day, today, dry_run, ladder):
         """job - 2 with no reply: the plumber phones. Skipped once the job date
@@ -1804,7 +1864,8 @@ class Command(BaseCommand):
     # The follow-up number that hands a quiet, qualified lead to the plumber's
     # own line (brief Rule 2: "on the second follow-up"). Counted since their
     # last reply, like every attempt number here.
-    HANDOFF_ATTEMPT = 2
+    # The last touch of a handoff lead's run (module HANDOFF_TOUCHES).
+    HANDOFF_ATTEMPT = HANDOFF_TOUCHES
 
     def _handoff_touch(self, lead, attempt):
         """The plumber-handoff follow-up for a qualified lead gone quiet, or ''.
@@ -1825,10 +1886,10 @@ class Command(BaseCommand):
         """
         if attempt != self.HANDOFF_ATTEMPT:
             return ''
-        from bot.lead_handoff import service_label
         from bot.plumber_link import handoff_message
-        if not (service_label(lead) and (lead.project_description or '').strip()
-                and (lead.customer_area or '').strip()):
+        # The same test that cuts this lead's schedule to two (handoff_eligible),
+        # so the run length and the message cannot disagree.
+        if not handoff_eligible(lead):
             return ''
         return handoff_message(lead)
 

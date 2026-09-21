@@ -227,6 +227,50 @@ class WhatsAppCloudAPI:
             print(f"❌ Failed to send text to {to}: {e}")
             raise
 
+    # ─── Contact card ────────────────────────────────────────────────────────
+
+    def send_contact_card(self, to: str, name: str, phone: str,
+                          organization: str = '') -> Dict:
+        """Send a WhatsApp contact card: a name and number with WhatsApp's own
+        Message / Add contact buttons.
+
+        WHY: a lead wary of a long link (Facebook-ad leads, owner 2026-09-21)
+        can reach the plumber without tapping anything that looks like a URL.
+        HOW: Cloud API message type "contacts". ``wa_id`` (digits only) is what
+        makes WhatsApp show "Message" rather than only "Add contact". Test
+        numbers are short-circuited like every other send here. Returns the
+        API result (its WAMID stamps the transcript), raises on failure.
+        """
+        from .test_console import is_test_sender, record_outbound
+        digits = ''.join(c for c in str(phone or '') if c.isdigit())
+        if is_test_sender(to):
+            return record_outbound(to, 'contacts', text=f'{name} +{digits}')
+        contact = {
+            'name': {'formatted_name': name, 'first_name': name},
+            'phones': [{'phone': f'+{digits}', 'type': 'WORK', 'wa_id': digits}],
+        }
+        if organization:
+            contact['org'] = {'company': organization}
+        payload = {
+            'messaging_product': 'whatsapp',
+            'recipient_type': 'individual',
+            'to': self._clean_phone(to),
+            'type': 'contacts',
+            'contacts': [contact],
+        }
+        try:
+            response = self._post_with_retry(
+                self._messages_url(), payload, timeout=30, label=f'contact→{to}',
+            )
+            response.raise_for_status()
+            result = response.json()
+            print(f"✅ Contact card sent to {to}. ID: "
+                  f"{result.get('messages', [{}])[0].get('id', '')}")
+            return result
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Failed to send contact card to {to}: {e}")
+            raise
+
     # ─── Generic media by URL ────────────────────────────────────────────────
 
     def send_media_message(

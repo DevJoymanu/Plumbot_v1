@@ -1,0 +1,21 @@
+# Barmak 1231 (2026-09-21), from a bathroom ad. The lead said "The whole
+# bathroom", then "In shurugwi" to our area question, and got photos followed
+# by "When were you hoping to get started with the bathroom renovation?".
+# Owner: with the job and the area known, the next thing is the booking
+# question (this day or that, this time or that), never the timeline.
+#
+# Two faults. The controller's proof step (photos) ran BEFORE the webhook's
+# area backfill and returned, so "In shurugwi" was never stored. And the
+# controller was free to pick "timeline", which the flow only asks on the plan
+# path. The backfill now runs first, and controller.choose_question refuses
+# timeline off the plan path.
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> The whole bathroom
+reject: US$
+
+> In shurugwi
+reject: when were you hoping to get started
+reject: what area are you in
