@@ -1181,6 +1181,11 @@ body.pb-sheet-lock { overflow: hidden; }
 
     .pb-content { padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px)); }
 
+    /* Inside one of the app's own iframes there IS no bottom bar on this page
+       - the frame's host carries it - so the clearance would be a strip of
+       dead screen at the foot of every scroll. */
+    .pb-shell--chromeless .pb-content { padding-bottom: 0; }
+
     .pb-page,
     .pb-content .container,
     .pb-content .container-fluid { padding: 16px; }

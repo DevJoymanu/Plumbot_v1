@@ -576,10 +576,21 @@ def manual_followup_check(request):
 
 
 def _followup_redirect(request, pk):
-    """Redirect back to the appointment detail, preserving source/frame query."""
+    """Redirect back to where the action was pressed.
+
+    A validated `next` wins, so a control on the follow-ups dashboard returns
+    to that dashboard -- with its tab, window and filters intact -- instead of
+    throwing the user onto a lead page they were not reading. Only the local
+    PATH survives (`safe_return_path`), so a value that reached the form can
+    never redirect off-site. With no `next`, the default is unchanged: the
+    appointment detail, carrying the source/frame query.
+    """
+    from .quotations import safe_return_path
+
     base_url = reverse('appointment_detail', kwargs={'pk': pk})
     qs = request.GET.urlencode()
-    return redirect(f"{base_url}?{qs}" if qs else base_url)
+    fallback = f"{base_url}?{qs}" if qs else base_url
+    return redirect(safe_return_path(request, fallback))
 
 
 @staff_required
@@ -1040,7 +1051,8 @@ def lead_send_email_now(request, pk):
     body = message.replace('{name}', name)
     paragraphs = ''.join(f'<p>{line.strip()}</p>' for line in body.split('\n') if line.strip())
     try:
-        ok = _send(appointment, subject or 'Following up', _wrap(paragraphs))
+        ok = _send(appointment, subject or 'Following up', _wrap(paragraphs),
+                   category='followup')
     except Exception as exc:
         ok = False
         logger.warning('Custom email send failed for apt %s: %s', pk, exc)
@@ -1127,56 +1139,55 @@ def resume_chatbot(request, pk):
 @staff_required
 @require_POST
 def pause_auto_followup(request, pk):
-    """Pause automatic follow-ups for a specific lead"""
+    """Stop every automated follow-up for this lead.
+
+    Writes the lead-level [FOLLOWUPS_OFF] tag, which is read by
+    `send_followups._exclude_suppressed_states` (the WhatsApp schedule and both
+    nudge loops) and by `post_visit.lead_is_suppressed` (the post-visit asks,
+    and the plan-quote / visit-proposal sequences that extend it). The decision
+    has to live on the LEAD, or each send path re-litigates it.
+
+    This used to write `manual_followup_paused` / `manual_followup_paused_until`
+    -- columns migration 0018 REMOVED -- so the button raised a success message
+    and stopped nothing at all. There is deliberately no duration: a timed pause
+    needs a column, and "stop, and I will put it back" is the ask. The bot still
+    answers if the customer writes; only the proactive sends stop.
+    """
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
-    
-    pause_duration = request.POST.get('pause_duration')
-    
-    if pause_duration == 'permanent':
-        # Pause indefinitely
-        appointment.manual_followup_paused = True
-        appointment.manual_followup_paused_until = None
-        pause_msg = "permanently"
+
+    if appointment.pause_followups():
+        _append_admin_note(
+            appointment,
+            f"{request.user.username}: automated follow-ups stopped.",
+        )
+        messages.success(request, 'Automated follow-ups stopped for this lead.')
+        logger.info("Auto follow-ups stopped for appointment %s by %s", pk, request.user.username)
     else:
-        # Pause for specified hours
-        hours = int(pause_duration)
-        pause_until = timezone.now() + timedelta(hours=hours)
-        appointment.manual_followup_paused = True
-        appointment.manual_followup_paused_until = pause_until
-        
-        # Human-friendly duration
-        if hours == 24:
-            pause_msg = "for 24 hours"
-        elif hours == 48:
-            pause_msg = "for 48 hours"
-        elif hours == 168:
-            pause_msg = "for 1 week"
-        elif hours == 720:
-            pause_msg = "for 1 month"
-        else:
-            pause_msg = f"for {hours} hours"
-    
-    appointment.save()
-    
-    messages.success(request, f'⏸️ Automatic follow-ups paused {pause_msg}')
-    logger.info(f"Auto follow-ups paused {pause_msg} for appointment {pk} by {request.user.username}")
-    
+        messages.info(request, 'Automated follow-ups were already off for this lead.')
+
     return _followup_redirect(request, pk)
 
 
 @staff_required
 @require_POST
 def resume_auto_followup(request, pk):
-    """Resume automatic follow-ups for a specific lead"""
+    """Put this lead's automated follow-ups back on (clears [FOLLOWUPS_OFF]).
+
+    The schedule is measured from the lead's LAST MESSAGE, so resuming a lead
+    who went quiet weeks ago does not fire a burst -- their run is already spent.
+    """
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
-    
-    appointment.manual_followup_paused = False
-    appointment.manual_followup_paused_until = None
-    appointment.save()
-    
-    messages.success(request, '▶️ Automatic follow-ups resumed')
-    logger.info(f"Auto follow-ups resumed for appointment {pk} by {request.user.username}")
-    
+
+    if appointment.resume_followups():
+        _append_admin_note(
+            appointment,
+            f"{request.user.username}: automated follow-ups restarted.",
+        )
+        messages.success(request, 'Automated follow-ups restarted for this lead.')
+        logger.info("Auto follow-ups resumed for appointment %s by %s", pk, request.user.username)
+    else:
+        messages.info(request, 'Automated follow-ups were already on for this lead.')
+
     return _followup_redirect(request, pk)
 
 

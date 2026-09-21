@@ -22,7 +22,6 @@ LETTERHEAD = {
     'bank': {'account_name': 'Barmak Plumbing Private Limited',
              'account_number': '1154714543'},
     'terms': ['deposit 75%'],
-    'default_deposit_percent': 75,
 }
 
 

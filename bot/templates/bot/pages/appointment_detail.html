@@ -945,6 +945,10 @@
   .fu-pill--sent    { background: rgba(37, 211, 102, 0.16); color: #0f7a3d; }
   .fu-pill--pending { background: var(--color-primary-fixed); color: var(--color-on-primary-fixed-variant); }
   .fu-pill--overdue { background: var(--color-error-container); color: var(--color-on-error-container); }
+  /* Staff switched this lead's follow-ups off, so nothing here is coming.
+     The rows stay, greyed, because they are what Restart would put back. */
+  .fu-pill--stopped   { background: var(--color-surface-variant, #eef1f5); color: var(--color-on-surface-variant, #5b6470); }
+  .fu-pill--cancelled { background: var(--color-surface-variant, #eef1f5); color: var(--color-on-surface-variant, #5b6470); }
 
   /* Templated-email catalogue rows */
   .em-cat-row {
@@ -2417,7 +2421,7 @@
               </p>
             </div>
             {% if report.outcome == 'went_ahead' %}
-            <a href="{% url 'create_quotation' appointment.pk %}" class="visit-prompt-btn">
+            <a href="{% url 'create_quotation' appointment.pk %}{{ frame_query }}" class="visit-prompt-btn">
               <i class="fas fa-file-invoice-dollar"></i> Create quote
             </a>
             {% endif %}
@@ -2684,7 +2688,19 @@
                     </button>
                     {% endif %}
                     {% if appointment.status != 'cancelled' %}
-                    <a href="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}" class="action-btn danger"><i class="fas fa-times"></i> Cancel</a>
+                    {% comment %}
+                    Cancel posts through this form's CSRF token via formaction,
+                    the same trick Complete and Delete use -- a nested <form>
+                    here would be invalid HTML. It is POST because cancelling
+                    is a mutation and a prefetched link must not fire it.
+                    {% endcomment %}
+                    <button type="submit"
+                            formaction="{% url 'cancel_appointment' appointment.pk %}?{{ request.GET.urlencode }}"
+                            formmethod="post"
+                            onclick="return confirm('Cancel this appointment?');"
+                            class="action-btn danger">
+                      <i class="fas fa-times"></i> Cancel
+                    </button>
                     {% endif %}
                     {% comment %}
                     Delete reuses this form's CSRF token via formaction (same
@@ -2831,7 +2847,7 @@
             <div class="detail-card-header">
               <span>Quotations</span>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a href="{% url 'create_quotation' appointment.pk %}" class="action-btn primary"><i class="fas fa-plus"></i> New Quote</a>
+                <a href="{% url 'create_quotation' appointment.pk %}{{ frame_query }}" class="action-btn primary"><i class="fas fa-plus"></i> New Quote</a>
                 <div style="position:relative;">
                   <button class="action-btn success" type="button" onclick="toggleTemplateDropdown()" id="templateDropdownBtn">
                     <i class="fas fa-file-invoice"></i> From Template
@@ -2873,7 +2889,7 @@
                   </div>
                   <div class="quote-actions">
                     <a href="{% url 'view_quotation' quote.id %}" class="action-btn ghost"><i class="fas fa-eye"></i> View</a>
-                    <a href="{% url 'edit_quotation' quote.id %}" class="action-btn ghost"><i class="fas fa-edit"></i> Edit</a>
+                    <a href="{% url 'edit_quotation' quote.id %}{{ frame_query }}" class="action-btn ghost"><i class="fas fa-edit"></i> Edit</a>
                     <form method="post" action="{% url 'duplicate_quotation' quote.id %}">
                       {% csrf_token %}
                       <button type="submit" class="action-btn warning" onclick="return confirm('Duplicate this quotation?');"><i class="fas fa-copy"></i> Duplicate</button>
@@ -2905,10 +2921,13 @@
                     {% comment %}
                     A missing address is a missing detail, not a closed door, so
                     this is a link to the screen that captures one rather than a
-                    dead button. _top because the editor is a whole page: opened
-                    in the frame it would sit squeezed into the record pane.
+                    dead button. It opens in the pane like the other two: the
+                    editor carries `frame_query`, so inside the workspace iframe
+                    it renders without chrome instead of stacking a second nav
+                    bar, and taking over the whole window is no longer the only
+                    way to avoid that.
                     {% endcomment %}
-                    <a href="{% url 'edit_quotation' quote.id %}" target="_top" class="action-btn ghost"
+                    <a href="{% url 'edit_quotation' quote.id %}{{ frame_query }}" class="action-btn ghost"
                        title="Add an email address on the quote, then send"><i class="fas fa-envelope"></i> Add email</a>
                     {% endif %}
                     {% comment %}
@@ -2935,6 +2954,45 @@
       {# ── WhatsApp follow-ups tab ── #}
       <div class="appt-tab-pane" id="tab-wa-followups">
         <div class="appt-detail-content">
+
+          {% comment %}
+          The master switch for this lead's AUTOMATED follow-ups: the WhatsApp
+          schedule, both nudge loops, and the post-visit / plan-quote /
+          visit-proposal email sequences. Those are not rows in a queue -- they
+          are projected from lead state -- so there is nothing to cancel one at
+          a time; what can be stopped is the sequence. It writes the lead-level
+          [FOLLOWUPS_OFF] tag every proactive send path already reads.
+
+          The queued rows below are a different thing and keep their own per-row
+          Cancel: one is a message a person typed and scheduled, this is the
+          machine talking on its own.
+          {% endcomment %}
+          <div class="detail-card">
+            <div class="detail-card-header">Automated Follow-ups</div>
+            <div class="detail-card-body">
+              {% if appointment.followups_paused %}
+              <p class="fu-hint" style="margin:0 0 10px;">
+                Automated follow-ups are <strong>stopped</strong> for this lead. The bot still
+                replies if they message; nothing goes out on its own.
+              </p>
+              <form method="post" action="{% url 'resume_auto_followup' appointment.pk %}?{{ request.GET.urlencode }}">
+                {% csrf_token %}
+                <button type="submit" class="action-btn primary"><i class="fas fa-play"></i> Restart follow-ups</button>
+              </form>
+              {% else %}
+              <p class="fu-hint" style="margin:0 0 10px;">
+                Automated follow-ups are <strong>running</strong>. Stopping them halts the WhatsApp
+                schedule and every automated email sequence for this lead. The bot still replies
+                if they message.
+              </p>
+              <form method="post" action="{% url 'pause_auto_followup' appointment.pk %}?{{ request.GET.urlencode }}"
+                    onsubmit="return confirm('Stop all automated follow-ups for this lead?');">
+                {% csrf_token %}
+                <button type="submit" class="action-btn danger"><i class="fas fa-ban"></i> Stop follow-ups</button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
 
           {# ── Schedule a WhatsApp follow-up (real send queue) ── #}
           <div class="detail-card">

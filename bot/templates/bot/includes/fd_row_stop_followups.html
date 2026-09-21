@@ -1,0 +1,31 @@
+{% comment %}
+Stop (or restart) a lead's AUTOMATED follow-ups from the follow-ups dashboard.
+
+Takes `lead`. These touches are not rows in a queue -- the WhatsApp schedule and
+the post-visit / plan-quote / visit-proposal email sequences are projected from
+lead state -- so there is nothing to cancel one at a time. What can be stopped
+is the sequence, which is what `[FOLLOWUPS_OFF]` does, and every proactive send
+path reads it.
+
+Sibling of the row's <a>, never inside it.
+{% endcomment %}
+<div class="fd-rowact">
+  {% if lead.followups_paused %}
+  <form method="post" action="{% url 'resume_auto_followup' lead.pk %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit" class="fd-rowbtn fd-rowbtn--muted" title="Restart automated follow-ups for this lead">
+      <i class="fas fa-play"></i><span class="fd-rowbtn-text">Restart</span>
+    </button>
+  </form>
+  {% else %}
+  <form method="post" action="{% url 'pause_auto_followup' lead.pk %}"
+        onsubmit="return confirm('Stop all automated follow-ups for this lead? The bot still replies if they message.');">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit" class="fd-rowbtn" title="Stop automated follow-ups for this lead">
+      <i class="fas fa-ban"></i><span class="fd-rowbtn-text">Stop</span>
+    </button>
+  </form>
+  {% endif %}
+</div>

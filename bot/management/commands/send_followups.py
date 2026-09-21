@@ -681,6 +681,7 @@ class Command(BaseCommand):
             .exclude(internal_notes__contains='[EXCLUDED_AREA')
             .exclude(internal_notes__contains='[STOP_REQUESTED]')
             .exclude(internal_notes__contains='[OOS_DECLINED]')
+            .exclude(internal_notes__contains='[FOLLOWUPS_OFF]')
         )
 
         count = candidates.count()
@@ -908,6 +909,7 @@ class Command(BaseCommand):
             .exclude(internal_notes__contains='[EXCLUDED_AREA')
             .exclude(internal_notes__contains='[STOP_REQUESTED]')
             .exclude(internal_notes__contains='[OOS_DECLINED]')
+            .exclude(internal_notes__contains='[FOLLOWUPS_OFF]')
         )
 
         count = candidates.count()
@@ -1382,6 +1384,8 @@ class Command(BaseCommand):
               .exclude(internal_notes__contains='[EXCLUDED_AREA')
               .exclude(internal_notes__contains='[STOP_REQUESTED]')
               .exclude(internal_notes__contains='[OOS_DECLINED]')
+              # Staff switched this lead's follow-ups off from the dashboard.
+              .exclude(internal_notes__contains='[FOLLOWUPS_OFF]')
         )
 
     def _get_eligible_leads(self, now_local, force):

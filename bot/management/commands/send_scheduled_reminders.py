@@ -108,6 +108,7 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                         ok = send_email_to_recipients(
                             recipients, subject, body, html_message=_plumber_html(subject, body),
                             tenant=getattr(apt, 'tenant', None),
+                            category='reminder', appointment=apt, to_role='plumber',
                         )
                         if not ok:
                             raise RuntimeError('plumber email send returned False')
@@ -133,6 +134,7 @@ def dispatch_due_scheduled_reminders(now=None, dry_run=False, log=None):
                             recipients, subject, body,
                             html_message=_plumber_html(subject, body),
                             tenant=getattr(apt, 'tenant', None),
+                            category='reminder', appointment=apt, to_role='plumber',
                         )
                         if not ok:
                             raise RuntimeError('plumber email send returned False')

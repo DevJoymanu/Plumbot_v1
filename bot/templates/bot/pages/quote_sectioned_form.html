@@ -208,15 +208,16 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
                     <td></td>
                 </tr>
                 {% comment %}
-                The deposit, adjustable on every quote. It starts from the
-                business's own default (Profile page) because that is what they
-                usually ask for, and it is typed over here whenever this job is
-                different — a figure that only lived in the payment-terms text
-                could be printed but never actually changed per job.
+                The deposit, and THE one place it is set (owner rule,
+                2026-09-21). A new quote opens at 0 and the plumber types what
+                was agreed for this job. There used to be a business-wide
+                default on the Profile page seeding this field, which meant the
+                same figure was adjustable in two places and every sheet opened
+                carrying a percentage nobody had agreed for that job.
 
                 Asked for as a PERCENTAGE with the money derived, so it cannot
                 fall out of step with a grand total that moves on every edit.
-                Set it to 0 and the row is left off the customer's copy.
+                Left at 0 the row is off the customer's copy entirely.
                 {% endcomment %}
                 <tr class="bq-deposit">
                     <td class="bq-lbl" colspan="3">DEPOSIT (<input type="number" step="0.5" min="0" max="100"

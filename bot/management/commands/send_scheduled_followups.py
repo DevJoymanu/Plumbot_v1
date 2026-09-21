@@ -88,7 +88,7 @@ def dispatch_due_scheduled_followups(now=None, dry_run=False, log=None):
                         paragraphs = ''.join(
                             f'<p>{line.strip()}</p>' for line in body.split('\n') if line.strip()
                         )
-                        ok = _send(apt, subject, _wrap(paragraphs))
+                        ok = _send(apt, subject, _wrap(paragraphs), category='followup')
                         if not ok:
                             raise RuntimeError('email send returned False')
                         apt.add_conversation_message('assistant', f'[SCHEDULED EMAIL] {subject}: {body}')

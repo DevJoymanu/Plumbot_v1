@@ -393,6 +393,25 @@
     }
     .pb-sched-row:hover { background: rgba(255, 255, 255, 0.6); }
 
+    /* A diary row with its own cancel beside it. The <form> is a SIBLING of the
+       <a> -- a form inside an anchor is invalid HTML -- so the row and its
+       action sit in one flex wrapper. */
+    .pb-sched-line { display: flex; align-items: center; }
+    .pb-sched-line > .pb-sched-row { flex: 1 1 auto; min-width: 0; }
+    .pb-sched-cancel { flex: 0 0 auto; padding-right: 16px; }
+    .pb-sched-cancel__btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        min-width: 44px; min-height: 44px; padding: 8px 12px;
+        border-radius: 12px; cursor: pointer;
+        font-family: var(--font-label); font-size: 12px; font-weight: 700;
+        color: var(--color-on-error-container, #93000a);
+        background: transparent;
+        border: 1px solid rgba(147, 0, 10, .22);
+    }
+    .pb-sched-cancel__btn:hover { background: var(--color-error-container, #ffdad6); }
+    .pb-sched-cancel__text { display: none; }
+    @media (min-width: 640px) { .pb-sched-cancel__text { display: inline; } }
+
     .pb-time-block {
         flex-shrink: 0;
         min-width: 52px;
@@ -777,6 +796,7 @@
                     </button>
                     <div id="sched-today" class="pb-schedule__body">
                         {% for appt in todays_confirmed_appointments %}
+                        <div class="pb-sched-line">
                         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
                             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                                 {{ appt.scheduled_datetime|date:"j M"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
@@ -792,6 +812,8 @@
                                 </span>
                             </div>
                         </a>
+                        {% include "bot/includes/diary_cancel_appointment.html" %}
+                        </div>
                         {% empty %}
                         <div class="pb-empty-inline"><i class="far fa-calendar"></i>No appointments booked for today</div>
                         {% endfor %}
@@ -808,6 +830,7 @@
                     </button>
                     <div id="sched-tomorrow" class="pb-schedule__body collapsed">
                         {% for appt in tomorrows_confirmed_appointments %}
+                        <div class="pb-sched-line">
                         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
                             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                                 {{ appt.scheduled_datetime|date:"j M"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
@@ -823,6 +846,8 @@
                                 </span>
                             </div>
                         </a>
+                        {% include "bot/includes/diary_cancel_appointment.html" %}
+                        </div>
                         {% empty %}
                         <div class="pb-empty-inline"><i class="far fa-calendar"></i>No appointments booked for tomorrow</div>
                         {% endfor %}
@@ -839,6 +864,7 @@
                     </button>
                     <div id="sched-week" class="pb-schedule__body collapsed">
                         {% for appt in this_week_appointments %}
+                        <div class="pb-sched-line">
                         <a href="{% url 'appointment_detail' appt.pk %}?source=dashboard&response_age={{ selected_response_age }}" class="pb-sched-row">
                             <div class="pb-time-block {% if appt.status == 'confirmed' %}pb-tb--confirmed{% else %}pb-tb--pending{% endif %}">
                                 {{ appt.scheduled_datetime|date:"D j"|default:"--" }}<small>{{ appt.scheduled_datetime|date:"H:i" }}</small>
@@ -854,6 +880,8 @@
                                 </span>
                             </div>
                         </a>
+                        {% include "bot/includes/diary_cancel_appointment.html" %}
+                        </div>
                         {% empty %}
                         <div class="pb-empty-inline"><i class="far fa-calendar"></i>No more appointments this week</div>
                         {% endfor %}

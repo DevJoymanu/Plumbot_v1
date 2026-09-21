@@ -385,6 +385,10 @@ def _followups_workspace_data(response_age='1w_minus', tenant=None):
     ):
         upcoming_email.append({
             'lead': sf.appointment,
+            # The row's own pk, so the dashboard can cancel it in place. A
+            # projected row has none -- there is no row to cancel, only the
+            # lead's whole sequence to stop.
+            'id': sf.pk,
             'label': sf.subject or sf.message or 'Email follow-up',
             'scheduled_for': sf.scheduled_for,
             'status': sf.status,
@@ -410,23 +414,47 @@ def _followups_workspace_data(response_age='1w_minus', tenant=None):
     upcoming_email.sort(key=lambda x: x['scheduled_for'])
     upcoming_email = upcoming_email[:60]
 
-    # Recently-sent follow-ups, flattened from each lead's history. Bounded to
-    # the most recently-updated leads so the page stays fast; each event carries
-    # its lead so the template can link straight to the conversation.
+    # Recently-sent WhatsApp follow-ups, flattened from each lead's history.
+    # Bounded to the most recently-updated leads so the page stays fast; each
+    # event carries its lead so the template can link straight to the
+    # conversation. (Email is read from SentEmail below, not from here.)
     _epoch = datetime(1970, 1, 1, tzinfo=pytz.utc)
-    sent_whatsapp, sent_email = [], []
+    sent_whatsapp = []
     for apt in Appointment.objects.for_tenant_or_seed(tenant).real().order_by('-updated_at')[:200]:
         for ev in apt.get_followup_log():
+            if ev['channel'] != 'whatsapp':
+                continue
             ts = ev.get('timestamp')
             if cutoff and ts and ts < cutoff:
                 continue
-            (sent_whatsapp if ev['channel'] == 'whatsapp' else sent_email).append(
-                {'lead': apt, 'ev': ev}
-            )
+            sent_whatsapp.append({'lead': apt, 'ev': ev})
     sent_whatsapp.sort(key=lambda x: x['ev']['timestamp'] or _epoch, reverse=True)
-    sent_email.sort(key=lambda x: x['ev']['timestamp'] or _epoch, reverse=True)
     sent_whatsapp = sent_whatsapp[:40]
-    sent_email = sent_email[:40]
+
+    # Sent emails come off SentEmail -- the row written at the one send choke
+    # point -- not off conversation-history markers. Only three markers are
+    # EMAIL ([DELAY LAST CHECK], [SCHEDULED EMAIL], [EMAIL FOLLOW-UP], the last
+    # of which nothing writes), and two of those are only ever written by a
+    # staff-queued send, so every automated email -- post-visit asks, quotes,
+    # reminders, delay re-engagements, visit check-ins -- was invisible here and
+    # the section read empty on a workspace that had sent plenty.
+    from ..models import SentEmail as _SentEmail
+    _se = _SentEmail.objects.select_related('appointment')
+    _se = _se.filter(tenant_id=_fu_tenant_id)
+    if cutoff:
+        _se = _se.filter(created_at__gte=cutoff)
+    sent_email = [
+        {
+            'lead': row.appointment,
+            'row': row,
+            'ev': {
+                'kind': row.get_category_display(),
+                'text': row.subject or '(no subject)',
+                'timestamp': row.sent_at or row.created_at,
+            },
+        }
+        for row in _se.order_by('-created_at')[:40]
+    ]
 
     # Split queued items into Overdue vs Upcoming. Overdue is limited to the
     # last 7 days — older missed items are dropped rather than piling up forever.

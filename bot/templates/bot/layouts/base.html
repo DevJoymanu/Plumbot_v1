@@ -9,8 +9,16 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-<div class="pb-shell">
-    {% include "bot/includes/main_nav.html" %}
+{% comment %}
+`chromeless` is set when this page is rendered inside one of the app's own
+iframes (the conversations workspace, the follow-ups dashboard), which already
+carries the sidebar and the bottom bar. Rendering them again stacks a SECOND
+nav inside the frame - what every quote editor opened from a lead's Quotes tab
+used to do. The page itself is unchanged: it keeps .pb-content as its scroller,
+so a long sheet still scrolls, which is why this is not the panel layout.
+{% endcomment %}
+<div class="pb-shell{% if chromeless %} pb-shell--chromeless{% endif %}">
+    {% if not chromeless %}{% include "bot/includes/main_nav.html" %}{% endif %}
 
     <div class="pb-main">
         <div class="pb-content" id="pb-content">
@@ -23,7 +31,7 @@
     </div>
 </div>
 
-{% include "bot/includes/mobile_nav.html" %}
+{% if not chromeless %}{% include "bot/includes/mobile_nav.html" %}{% endif %}
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {

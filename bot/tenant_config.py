@@ -438,9 +438,12 @@ class TenantConfig:
             'bank': bank if any(bank.values()) else {},
             'terms': lines('terms'),
             'default_vat_percent': raw.get('default_vat_percent') or 0,
-            # What this business normally asks for up front. A starting point
-            # for a new quote, never a lock: the plumber adjusts it per job.
-            'default_deposit_percent': raw.get('default_deposit_percent') or 0,
+            # No 'default_deposit_percent' (owner rule, 2026-09-21). The deposit
+            # is agreed per job, so the quote's own field is the ONE place it is
+            # set; a tenant-level default was a second place to adjust the same
+            # figure and started every quote on a percentage nobody had agreed.
+            # Absent from the schema on purpose: a key nothing exposes cannot be
+            # read back in by a screen that forgets the rule.
             'currency': self.currency,
         }
 

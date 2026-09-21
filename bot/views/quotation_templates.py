@@ -485,7 +485,9 @@ def template_form_context(request, mode, template=None):
         # sheet exactly where a quote will carry them, and set on the Profile
         # page rather than here.
         'default_vat_percent': letterhead.get('default_vat_percent') or 0,
-        'default_deposit_percent': letterhead.get('default_deposit_percent') or 0,
+        # No deposit row: there is no business-wide deposit to show. It is
+        # agreed per job and typed on the quote itself (owner rule,
+        # 2026-09-21), so a template cannot start one either.
         'default_terms': list(letterhead.get('terms') or []),
     }
 

@@ -220,8 +220,11 @@ is the same bug wearing a different hat: removing item 2 renumbered item 3.
             {% comment %}
             The deposit is asked for as a PERCENTAGE and the money is derived,
             so it cannot drift out of step with a total that moves every time
-            an item is edited. It starts from the tenant's own default and is
-            adjustable here on every quote. 0 leaves the line off the document.
+            an item is edited. This field is THE one place it is set (owner
+            rule, 2026-09-21): a new quote opens at 0 and the plumber types what
+            was agreed for this job, rather than starting from a business-wide
+            default that made the same figure adjustable in two places. Left at
+            0 the line is off the document.
             {% endcomment %}
             <div class="pbq-total-row">
                 <span><label for="depositPercent" style="margin:0;">Deposit %</label></span>

@@ -96,6 +96,8 @@ SUPPRESSED_TAGS = (
     '[STOP_REQUESTED]',
     '[OOS_DECLINED]',
     '[EXCLUDED_AREA',
+    # Staff switched this lead's follow-ups off from the dashboard.
+    '[FOLLOWUPS_OFF]',
 )
 
 

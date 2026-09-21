@@ -559,6 +559,7 @@ def _send_email(recipients, subject, html, dry_run, apt=None):
     return send_email_to_recipients(
         recipients, subject, plain, html_message=html,
         tenant=getattr(apt, 'tenant', None),
+        category='reminder', appointment=apt, to_role='customer',
     )
 
 

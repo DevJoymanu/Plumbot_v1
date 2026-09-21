@@ -64,6 +64,27 @@
   .fd-row:hover { transform: translateX(2px); box-shadow: var(--shadow-glow); }
   .fd-row--attn { border-left: 4px solid var(--color-error); }
 
+  /* A row with its own action beside it. The <form> is a SIBLING of the <a>,
+     never a child: a form inside an anchor is invalid HTML and the browser
+     unnests it, which drops the button out of the row. .fd-rowwrap carries the
+     margin the row had, so a row with an action lines up with one without. */
+  .fd-rowwrap { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+  .fd-rowwrap > .fd-row { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+  .fd-rowact { display: flex; align-items: center; flex: 0 0 auto; }
+  .fd-rowbtn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 44px; min-height: 44px; padding: 8px 12px;
+    border-radius: var(--radius-md); cursor: pointer;
+    font-family: var(--font-label); font-size: 12px; font-weight: 700;
+    background: var(--color-surface-lowest); color: #93000a;
+    border: 1px solid rgba(147, 0, 10, .25);
+  }
+  .fd-rowbtn:hover { background: #ffdad6; }
+  .fd-rowbtn--muted { color: var(--color-on-surface-variant, #5b6470); border-color: rgba(0, 101, 145, .2); }
+  .fd-rowbtn--muted:hover { background: var(--color-surface-variant, #eef1f5); }
+  .fd-rowbtn .fd-rowbtn-text { display: none; }
+  @media (min-width: 640px) { .fd-rowbtn .fd-rowbtn-text { display: inline; } }
+
   .fd-avatar {
     width: 46px; height: 46px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -290,6 +311,7 @@
       {% if ready_leads %}
       <div class="fd-section-label"><span class="fd-dot fd-dot--attn"></span> Needs Attention · {{ ready_leads|length }}</div>
       {% for lead in ready_leads %}
+      <div class="fd-rowwrap">
       <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ selected_response_age }}"
          class="fd-row fd-row--attn">
         <div class="fd-avatar" data-name="{{ lead.customer_name|default:'?' }}">
@@ -320,6 +342,8 @@
           {% with ev=lead.last_followup_event %}{% if ev.timestamp %}<div class="fd-row-date">Last: {{ ev.timestamp|date:"j M, H:i" }}</div>{% endif %}{% endwith %}
         </div>
       </a>
+      {% include "bot/includes/fd_row_stop_followups.html" with lead=lead %}
+      </div>
       {% endfor %}
       {% endif %}
 
@@ -327,6 +351,7 @@
       {% if recent_responses %}
       <div class="fd-section-label"><span class="fd-dot" style="background:#0f7a3d;"></span> Recent Responses · {{ recent_responses|length }}</div>
       {% for lead in recent_responses %}
+      <div class="fd-rowwrap">
       <a href="{% url 'appointment_detail' lead.pk %}?source=followups&response_age={{ selected_response_age }}"
          class="fd-row">
         <div class="fd-avatar" data-name="{{ lead.customer_name|default:'?' }}">
@@ -352,6 +377,8 @@
           {% if lead.last_customer_response %}<div class="fd-row-date">{{ lead.last_customer_response|date:"j M, H:i" }}</div>{% endif %}
         </div>
       </a>
+      {% include "bot/includes/fd_row_stop_followups.html" with lead=lead %}
+      </div>
       {% endfor %}
       {% endif %}
 
@@ -392,6 +419,7 @@
         {% if overdue_whatsapp %}
         <div class="fd-section-label">⚠️ Overdue — {{ overdue_whatsapp|length }}</div>
         {% for sf in overdue_whatsapp %}
+        <div class="fd-rowwrap">
         <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
           <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
@@ -401,11 +429,14 @@
           </div>
           <div class="fd-row-time urgent" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
         </a>
+        {% include "bot/includes/fd_row_cancel.html" with sf_id=sf.id %}
+        </div>
         {% endfor %}
         {% endif %}
 
         <div class="fd-section-label">⏰ Upcoming — {{ upcoming_whatsapp|length }}</div>
         {% for sf in upcoming_whatsapp %}
+        <div class="fd-rowwrap">
         <a href="{% url 'appointment_detail' sf.appointment.pk %}?source=followups" class="fd-row">
           <div class="fd-avatar" data-name="{{ sf.appointment.customer_name|default:'?' }}">{{ sf.appointment.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
@@ -415,6 +446,8 @@
           </div>
           <div class="fd-row-time normal" style="text-align:right;">{{ sf.scheduled_for|date:"j M, H:i" }}</div>
         </a>
+        {% include "bot/includes/fd_row_cancel.html" with sf_id=sf.id %}
+        </div>
         {% empty %}
         <div class="fd-empty">No upcoming WhatsApp follow-ups scheduled.</div>
         {% endfor %}
@@ -440,6 +473,7 @@
         {% if overdue_email %}
         <div class="fd-section-label">⚠️ Overdue — {{ overdue_email|length }}</div>
         {% for em in overdue_email %}
+        <div class="fd-rowwrap">
         <a href="{% url 'appointment_detail' em.lead.pk %}?source=followups" class="fd-row">
           <div class="fd-avatar" data-name="{{ em.lead.customer_name|default:'?' }}">{{ em.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
@@ -449,11 +483,20 @@
           </div>
           <div class="fd-row-time urgent" style="text-align:right;">{{ em.scheduled_for|date:"j M, H:i" }}</div>
         </a>
+        {% comment %}
+        A staff-queued row is cancelled on its own; a row the automation
+        PROJECTS from lead state has nothing to cancel, so the control there
+        stops the lead's whole sequence.
+        {% endcomment %}
+        {% if em.id %}{% include "bot/includes/fd_row_cancel.html" with sf_id=em.id %}
+        {% else %}{% include "bot/includes/fd_row_stop_followups.html" with lead=em.lead %}{% endif %}
+        </div>
         {% endfor %}
         {% endif %}
 
         <div class="fd-section-label">⏰ Upcoming — {{ upcoming_email|length }}</div>
         {% for em in upcoming_email %}
+        <div class="fd-rowwrap">
         <a href="{% url 'appointment_detail' em.lead.pk %}?source=followups" class="fd-row">
           <div class="fd-avatar" data-name="{{ em.lead.customer_name|default:'?' }}">{{ em.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
           <div class="fd-row-main">
@@ -463,17 +506,31 @@
           </div>
           <div class="fd-row-time normal" style="text-align:right;">{{ em.scheduled_for|date:"j M, H:i" }}</div>
         </a>
+        {% comment %}
+        A staff-queued row is cancelled on its own; a row the automation
+        PROJECTS from lead state has nothing to cancel, so the control there
+        stops the lead's whole sequence.
+        {% endcomment %}
+        {% if em.id %}{% include "bot/includes/fd_row_cancel.html" with sf_id=em.id %}
+        {% else %}{% include "bot/includes/fd_row_stop_followups.html" with lead=em.lead %}{% endif %}
+        </div>
         {% empty %}
         <div class="fd-empty">No upcoming emails due.</div>
         {% endfor %}
 
         <div class="fd-section-label">✅ Recently Sent — {{ sent_email|length }}</div>
         {% for item in sent_email %}
-        <a href="{% url 'appointment_detail' item.lead.pk %}?source=followups" class="fd-row">
-          <div class="fd-avatar" data-name="{{ item.lead.customer_name|default:'?' }}">{{ item.lead.customer_name|default:"?"|slice:":2"|upper }}</div>
+        <a href="{% url 'sent_email_detail' item.row.pk %}" class="fd-row" target="fdDetail">
+          <div class="fd-avatar" data-name="{{ item.lead.customer_name|default:'?' }}">
+            {% if item.row.to_role == 'plumber' %}<i class="fas fa-user-hard-hat"></i>{% else %}{{ item.lead.customer_name|default:item.row.recipient_display|slice:":2"|upper }}{% endif %}
+          </div>
           <div class="fd-row-main">
-            <div class="fd-row-name">{{ item.lead.customer_name|default:item.lead.phone_number|cut:"whatsapp:"|default:"Unknown Customer" }}</div>
-            <div class="fd-row-note">{{ item.ev.kind }} · {{ item.ev.text|default:"(no text)"|truncatechars:60 }}</div>
+            <div class="fd-row-name">{{ item.lead.customer_name|default:item.row.recipient_display|truncatechars:40 }}</div>
+            <div class="fd-row-note">{{ item.ev.kind }} · {{ item.ev.text|default:"(no subject)"|truncatechars:60 }}</div>
+            <div>
+              <span class="se-pill se-pill--{{ item.row.status }}">{{ item.row.get_status_display }}</span>
+              <span class="fd-chan fd-chan--{{ item.row.to_role }}">{{ item.row.get_to_role_display }}</span>
+            </div>
           </div>
           <div class="fd-row-time normal" style="text-align:right;">{% if item.ev.timestamp %}{{ item.ev.timestamp|date:"j M, H:i" }}{% endif %}</div>
         </a>
@@ -488,11 +545,13 @@
           {% with base="?response_age="|add:selected_response_age|add:"&tab=sent" %}
           <div class="se-filter-row">
             <span class="se-filter-label">Type</span>
-            <a class="se-chip {% if se_group == 'dashboard' %}is-active{% endif %}" href="{{ base }}&se_group=dashboard&se_status={{ se_status }}">Post-visit + Quote + Site visit</a>
+            <a class="se-chip {% if se_group == 'all' %}is-active{% endif %}" href="{{ base }}&se_group=all&se_status={{ se_status }}">All email</a>
+            <a class="se-chip {% if se_group == 'followup' %}is-active{% endif %}" href="{{ base }}&se_group=followup&se_status={{ se_status }}">Follow-ups</a>
             <a class="se-chip {% if se_group == 'post_visit' %}is-active{% endif %}" href="{{ base }}&se_group=post_visit&se_status={{ se_status }}">Post-visit</a>
             <a class="se-chip {% if se_group == 'quote' %}is-active{% endif %}" href="{{ base }}&se_group=quote&se_status={{ se_status }}">Quote</a>
             <a class="se-chip {% if se_group == 'site_visit' %}is-active{% endif %}" href="{{ base }}&se_group=site_visit&se_status={{ se_status }}">Site visit</a>
-            <a class="se-chip {% if se_group == 'all' %}is-active{% endif %}" href="{{ base }}&se_group=all&se_status={{ se_status }}">All email</a>
+            <a class="se-chip {% if se_group == 'plumber' %}is-active{% endif %}" href="{{ base }}&se_group=plumber&se_status={{ se_status }}">Plumber alerts</a>
+            <a class="se-chip {% if se_group == 'dashboard' %}is-active{% endif %}" href="{{ base }}&se_group=dashboard&se_status={{ se_status }}">Post-visit + Quote + Site visit</a>
           </div>
           <div class="se-filter-row">
             <span class="se-filter-label">Status</span>

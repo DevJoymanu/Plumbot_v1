@@ -510,11 +510,35 @@ class AppointmentLifecycleActionTests(StaffClientTestCase):
         self.assertFalse(self.lead.chatbot_paused)
         self.assertTrue(self.lead.is_lead_active)
 
-    def test_cancel_appointment(self):
-        response = self.client.get(reverse('cancel_appointment', args=[self.lead.pk]))
+    def test_cancel_appointment_requires_post_and_cancels(self):
+        """Cancel is a mutation, so a GET must not fire it -- it was a plain
+        <a href> until the diary and follow-ups dashboard grew their own cancel
+        controls, which a browser can prefetch."""
+        rejected = self.client.get(reverse('cancel_appointment', args=[self.lead.pk]))
+        self.assertEqual(rejected.status_code, 405)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.status, 'pending')
+
+        response = self.client.post(reverse('cancel_appointment', args=[self.lead.pk]))
         self.assertEqual(response.status_code, 302)
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.status, 'cancelled')
+
+    def test_cancel_appointment_returns_to_the_screen_it_was_pressed_on(self):
+        """A validated `next` keeps the plumber on the diary / follow-ups
+        dashboard; anything foreign falls back to the lead's own page."""
+        response = self.client.post(
+            reverse('cancel_appointment', args=[self.lead.pk]),
+            {'next': '/dashboard/?response_age=all'})
+        self.assertEqual(response['Location'], '/dashboard/?response_age=all')
+
+        self.lead.status = 'pending'
+        self.lead.save(update_fields=['status'])
+        response = self.client.post(
+            reverse('cancel_appointment', args=[self.lead.pk]),
+            {'next': 'https://evil.example.com/steal'})
+        self.assertIn(str(self.lead.pk), response['Location'])
+        self.assertNotIn('evil.example.com', response['Location'])
 
     def test_complete_lead_requires_post_and_completes(self):
         rejected = self.client.get(
@@ -777,21 +801,43 @@ class FollowupActionTests(StaffClientTestCase):
                 )
                 self.assertEqual(response.status_code, 302)
 
-    @unittest.expectedFailure
     def test_pause_auto_followup_actually_persists(self):
-        """KNOWN DEAD FEATURE: pause_auto_followup writes
-        manual_followup_paused / manual_followup_paused_until, but those
-        fields were REMOVED in migration 0018 — the view sets plain Python
-        attributes that save() never persists, so the 'Pause auto follow-ups'
-        button does nothing. Kept as an expectedFailure so the suite starts
-        failing loudly the day someone re-adds the fields (then promote this
-        to a real test and wire send_followups eligibility to honour it)."""
-        self.client.post(
-            reverse('pause_auto_followup', args=[self.lead.pk]),
-            {'pause_duration': 'permanent'},
-        )
+        """Stopping a lead's automated follow-ups sticks, and every proactive
+        send path sees it.
+
+        This was an expectedFailure for a long time: the view wrote
+        `manual_followup_paused` / `manual_followup_paused_until`, columns
+        migration 0018 REMOVED, so it set plain Python attributes that save()
+        never persisted -- the button reported success and stopped nothing.
+        It now writes the lead-level [FOLLOWUPS_OFF] tag, which the follow-up
+        crons and `post_visit.lead_is_suppressed` already read, so there is no
+        second resolver to keep in step.
+        """
+        from bot.post_visit import lead_is_suppressed
+
+        self.client.post(reverse('pause_auto_followup', args=[self.lead.pk]))
         self.lead.refresh_from_db()
-        self.assertTrue(getattr(self.lead, 'manual_followup_paused', False))
+        self.assertTrue(self.lead.followups_paused)
+        self.assertIn('[FOLLOWUPS_OFF]', self.lead.internal_notes or '')
+        self.assertTrue(lead_is_suppressed(self.lead))
+
+        self.client.post(reverse('resume_auto_followup', args=[self.lead.pk]))
+        self.lead.refresh_from_db()
+        self.assertFalse(self.lead.followups_paused)
+        self.assertNotIn('[FOLLOWUPS_OFF]', self.lead.internal_notes or '')
+        self.assertFalse(lead_is_suppressed(self.lead))
+
+    def test_paused_lead_is_off_the_whatsapp_followup_schedule(self):
+        """The cron's own queryset guard, not just the model flag: a stopped
+        lead must drop out of `_exclude_suppressed_states`."""
+        from bot.management.commands.send_followups import Command
+        from bot.models import Appointment
+
+        qs = Appointment.objects.filter(pk=self.lead.pk)
+        self.assertEqual(Command()._exclude_suppressed_states(qs).count(), 1)
+
+        self.lead.pause_followups()
+        self.assertEqual(Command()._exclude_suppressed_states(qs).count(), 0)
 
     @patch('bot.views.followups.whatsapp_api.send_media_message')
     def test_send_image_to_lead(self, mock_send):
@@ -9124,24 +9170,47 @@ class QuoteDepositTests(StaffClientTestCase):
         text = QuotePdfMatchesTheAppTests._text(self._create())
         self.assertNotIn('Deposit due', text)
 
-    # -- the business sets its own starting figure --------------------------
+    # -- one place, and it starts at nothing --------------------------------
+    #
+    # The Profile page used to carry a "Default deposit %" that seeded every
+    # new quote, so the same figure was adjustable in two places and a sheet
+    # opened asking for a percentage nobody had agreed for that job.
 
-    def test_the_default_is_the_tenants_own_and_reaches_a_new_quote(self):
-        response = self.client.post(reverse('profile'), {
-            'letterhead_submit': '1',
-            'lh_default_deposit_percent': '40',
-        })
-        self.assertEqual(response.status_code, 302)
+    def test_a_new_quote_opens_at_no_deposit(self):
+        for name, url in (('from a lead', reverse('create_quotation', args=[self.lead.pk])),
+                          ('standalone', reverse('standalone_quotation'))):
+            with self.subTest(editor=name):
+                response = self.client.get(url)
+                self.assertEqual(response.context['quote_deposit_percent'], 0)
 
-        profile = TenantProfile.objects.get(tenant=Tenant.objects.get(slug='homebase'))
-        self.assertEqual(profile.letterhead['default_deposit_percent'], 40)
+    def test_a_stored_tenant_default_can_no_longer_seed_one(self):
+        """Belt and braces: a letterhead written before the rule must not put a
+        figure back on a fresh sheet through a reader we missed."""
+        tenant = Tenant.objects.get(slug='homebase')
+        profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
+        profile.letterhead = dict(profile.letterhead or {},
+                                  default_deposit_percent=40)
+        profile.save(update_fields=['letterhead'])
 
         response = self.client.get(reverse('create_quotation', args=[self.lead.pk]))
-        self.assertEqual(response.context['quote_deposit_percent'], 40)
+        self.assertEqual(response.context['quote_deposit_percent'], 0)
+        self.assertNotIn('default_deposit_percent', response.context['lh'])
 
-    def test_the_profile_page_offers_the_setting(self):
+    def test_the_profile_page_no_longer_offers_a_second_place_to_set_it(self):
         body = self.client.get(reverse('profile')).content.decode()
-        self.assertIn('name="lh_default_deposit_percent"', body)
+        self.assertNotIn('lh_default_deposit_percent', body)
+
+    def test_saving_the_profile_drops_a_default_written_before_the_rule(self):
+        tenant = Tenant.objects.get(slug='homebase')
+        profile, _ = TenantProfile.objects.get_or_create(tenant=tenant)
+        profile.letterhead = dict(profile.letterhead or {},
+                                  default_deposit_percent=40)
+        profile.save(update_fields=['letterhead'])
+
+        response = self.client.post(reverse('profile'), {'letterhead_submit': '1'})
+        self.assertEqual(response.status_code, 302)
+        profile.refresh_from_db()
+        self.assertNotIn('default_deposit_percent', profile.letterhead)
 
 
 class QuoteSendableWithoutEmailTests(StaffClientTestCase):
@@ -9223,8 +9292,7 @@ class SectionedEditorWorkflowTests(TestCase):
         self.tenant = Tenant.objects.create(name='Barmak Plumbing',
                                             slug='barmak-workflow')
         TenantProfile.objects.create(tenant=self.tenant,
-                                     letterhead=dict(SECTIONED_LETTERHEAD,
-                                                     default_deposit_percent=75))
+                                     letterhead=dict(SECTIONED_LETTERHEAD))
         self.user = get_user_model().objects.create_user(
             username='sectioned-staff', password='pass12345', is_staff=True)
         TenantMembership.objects.create(user=self.user, tenant=self.tenant, role='staff')
@@ -9298,10 +9366,14 @@ class SectionedEditorWorkflowTests(TestCase):
 
     # -- the deposit ---------------------------------------------------------
 
-    def test_the_deposit_row_starts_at_the_businesss_own_default(self):
+    def test_the_deposit_row_starts_at_nothing_and_is_typed_here(self):
+        """The sheet's own field is the ONE place a deposit is set (owner rule,
+        2026-09-21), and it opens at 0: the business-wide default that used to
+        seed it made the same figure adjustable in two places."""
         html = self._html(reverse('create_quotation', args=[self.lead.pk]))
         self.assertIn('id="t-depositpct"', html)
-        self.assertIn('value="75"', html)
+        row = html.split('id="t-depositpct"', 1)[1].split('>', 1)[0]
+        self.assertIn('value="0"', row)
 
     def test_the_saved_sheet_shows_the_deposit_only_when_there_is_one(self):
         quote = Quotation.objects.create(appointment=self.lead,
@@ -10093,6 +10165,102 @@ class QuoteReturnToCallerTests(StaffClientTestCase):
                               'a blocked popup must keep the handoff')
 
 
+class OneNavBarInsideTheFrameTests(StaffClientTestCase):
+    """One nav bar on screen, always.
+
+    The conversations workspace and the follow-ups dashboard load a whole page
+    into a pane and mark it `frame=1`. The quote editors extend the full app
+    layout, and nothing told them where they were - so "New Quote" pressed on a
+    lead's Quotes tab rendered a second sidebar and a second bottom bar INSIDE
+    the frame, under the ones already on screen.
+
+    `chromeless` (one reader, bot.context_processors.in_app_frame) is what the
+    layout acts on, and `frame_query` is what carries the flag from the framed
+    detail page onto the links that leave it.
+    """
+
+    SECTIONED_SLUG = 'barmak-oneframe'
+
+    # The MARKUP, not the class name: both selectors appear in the shared
+    # stylesheet on every page, framed or not.
+    SIDEBAR = '<nav class="pb-sidenav"'
+    BOTTOMBAR = '<nav class="pb-bottomnav"'
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(9688, customer_name='Framed Client',
+                              customer_email='framed@example.com')
+        self.quote = Quotation.objects.create(appointment=self.lead)
+
+    def _editors(self):
+        return {
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'standalone': reverse('standalone_quotation'),
+            'edit': reverse('edit_quotation', args=[self.quote.pk]),
+        }
+
+    def _html(self, url, frame=False):
+        response = self.client.get(url, {'frame': '1'} if frame else {})
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode()
+
+    def test_the_editors_drop_the_app_chrome_inside_a_frame(self):
+        for name, url in self._editors().items():
+            with self.subTest(editor=name):
+                html = self._html(url, frame=True)
+                self.assertNotIn(self.SIDEBAR, html, 'a second sidebar in the frame')
+                self.assertNotIn(self.BOTTOMBAR, html, 'a second bottom bar in the frame')
+
+    def test_the_same_editors_keep_it_when_opened_on_their_own(self):
+        """The flag is about the FRAME, never about the screen. Opened from the
+        sidebar or the quotes list these are ordinary pages and must still
+        carry the nav, or there is no way out of them."""
+        for name, url in self._editors().items():
+            with self.subTest(editor=name):
+                html = self._html(url)
+                self.assertIn(self.SIDEBAR, html)
+                self.assertIn(self.BOTTOMBAR, html)
+
+    def test_the_sectioned_editor_follows_the_flat_one(self):
+        tenant = Tenant.objects.create(name='Barmak Frame', slug=self.SECTIONED_SLUG)
+        TenantProfile.objects.create(tenant=tenant, letterhead={'layout': 'sectioned'})
+        # A member of that tenant and no other, so the workspace resolves to it
+        # without going through the switcher.
+        user = get_user_model().objects.create_user(
+            username='frame-sectioned', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        self.client.force_login(user)
+        lead = make_lead(9689, tenant=tenant, customer_name='Sect Framed')
+
+        html = self._html(reverse('create_quotation', args=[lead.pk]), frame=True)
+        self.assertIn('bq-sheet', html, 'not the sectioned sheet')
+        self.assertNotIn(self.SIDEBAR, html)
+        self.assertNotIn(self.BOTTOMBAR, html)
+
+    def test_the_framed_lead_page_carries_the_flag_onto_its_quote_links(self):
+        html = self._html(
+            reverse('appointment_detail', args=[self.lead.pk]) + '?frame=1')
+        for target in (reverse('create_quotation', args=[self.lead.pk]),
+                       reverse('edit_quotation', args=[self.quote.pk])):
+            self.assertIn(target + '?frame=1', html,
+                          f'{target} would open chromed inside the frame')
+        # The editor is reached in the pane now, not by taking the whole window.
+        self.assertNotIn('target="_top" class="action-btn ghost"', html)
+
+    def test_the_unframed_lead_page_adds_nothing(self):
+        html = self._html(reverse('appointment_detail', args=[self.lead.pk]))
+        self.assertNotIn('?frame=1', html)
+
+    def test_a_framed_editor_hands_back_into_the_frame(self):
+        """The fallback return target keeps the flag. Without it a Save from a
+        reloaded editor would land the pane on a fully chromed lead page - the
+        second nav bar again, one step later."""
+        response = self.client.get(
+            reverse('create_quotation', args=[self.lead.pk]), {'frame': '1'})
+        self.assertEqual(response.context['quote_return_url'],
+                         reverse('appointment_detail', args=[self.lead.pk]) + '?frame=1')
+
+
 class QuotePlanTabTests(StaffClientTestCase):
     """Two tabs stuck to the quote screen: QUOTE, and the plan behind it.
 
@@ -10269,7 +10437,6 @@ class SectionedTemplateBuilderTests(TestCase):
         'bank': {'account_name': 'Barmak Plumbing Private Limited', 'bank_name': 'CABS',
                  'branch': 'Park street', 'account_number': '1154714543'},
         'terms': ['deposit 75%', 'Balance to be paid on completion of 1st stage'],
-        'default_deposit_percent': 75,
     }
 
     #: The document, top to bottom — the same blocks in the same order as the
@@ -10396,13 +10563,18 @@ class SectionedTemplateBuilderTests(TestCase):
         self.assertNotIn('Banking Details', html)
 
     def test_the_per_job_figures_are_shown_but_not_editable(self):
-        """VAT, the deposit and the terms are the business's own defaults, set
-        on the Profile page and applied per quote. They belong on the sheet
-        where the quote will carry them, and nowhere near an input here."""
+        """VAT and the terms are the business's own defaults, set on the
+        Profile page and applied per quote. They belong on the sheet where the
+        quote will carry them, and nowhere near an input here.
+
+        The DEPOSIT is not among them: it is agreed per job and typed on the
+        quote itself (owner rule, 2026-09-21), so there is no business-wide
+        figure for a template to preview or to start one at."""
         html = self._html(reverse('create_quotation_template'))
         totals = html.split('<table class="bq-totals"', 1)[1].split('</table>', 1)[0]
-        self.assertIn('DEPOSIT (75%)', totals)
-        self.assertIn('deposit 75%', totals)
+        self.assertIn('deposit 75%', totals,
+                      'the terms line is the tenant own wording and stays')
+        self.assertNotIn('DEPOSIT (', totals)
         self.assertNotIn('<input', totals.split('VAT (', 1)[1])
 
     def test_labour_and_transport_are_the_only_figures_typed_here(self):
@@ -11015,6 +11187,234 @@ class SentEmailDashboardTests(StaffClientTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Dashboard-visible quote')
         self.assertContains(resp, 'Sent Emails')
+
+
+# ======================================================================
+# Cancelling: a scheduled appointment, and a lead's follow-ups
+# ======================================================================
+class CancelControlsTests(StaffClientTestCase):
+    """The controls existed on the lead's own page and nowhere else, so
+    stopping something you could SEE on the diary or the follow-ups dashboard
+    meant navigating away to find it. Each control posts with a validated
+    `next`, so pressing it leaves you where you were.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from .models import Tenant
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.lead = make_lead(8300, tenant=self.homebase,
+                              customer_name='Ida Rhodes',
+                              customer_email='ida@example.com')
+
+    def _queue(self, channel='whatsapp', hours=6):
+        from .models import ScheduledFollowup
+        return ScheduledFollowup.objects.create(
+            appointment=self.lead, tenant=self.homebase, channel=channel,
+            scheduled_for=timezone.now() + timedelta(hours=hours),
+            subject='Checking in', message='Hi {name}, just checking in',
+            status='pending')
+
+    def test_diary_row_offers_cancel(self):
+        self.lead.status = 'confirmed'
+        self.lead.scheduled_datetime = timezone.now() + timedelta(hours=3)
+        self.lead.save()
+        resp = self.client.get(reverse('dashboard'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, reverse('cancel_appointment', args=[self.lead.pk]))
+
+    def test_a_cancelled_row_offers_no_cancel(self):
+        """A control that does nothing is worse than no control."""
+        self.lead.status = 'cancelled'
+        self.lead.scheduled_datetime = timezone.now() + timedelta(hours=3)
+        self.lead.save()
+        resp = self.client.get(reverse('dashboard'))
+        self.assertNotContains(resp, reverse('cancel_appointment', args=[self.lead.pk]))
+
+    def test_followup_dashboard_offers_cancel_on_a_queued_row(self):
+        sf = self._queue()
+        resp = self.client.get(reverse('followup_dashboard'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, reverse('cancel_scheduled_followup', args=[sf.pk]))
+
+    def test_followup_dashboard_offers_stop_on_a_lead_row(self):
+        """An automated touch is projected from lead state, not queued, so
+        there is no row to cancel -- only the sequence to stop."""
+        self.lead.last_customer_response = timezone.now() - timedelta(days=2)
+        self.lead.save()
+        resp = self.client.get(reverse('followup_dashboard') + '?response_age=all')
+        self.assertContains(resp, reverse('pause_auto_followup', args=[self.lead.pk]))
+
+    def test_cancelling_a_queued_followup_returns_to_the_dashboard(self):
+        sf = self._queue()
+        resp = self.client.post(
+            reverse('cancel_scheduled_followup', args=[sf.pk]),
+            {'next': reverse('followup_dashboard') + '?tab=wa'})
+        sf.refresh_from_db()
+        self.assertEqual(sf.status, 'cancelled')
+        self.assertEqual(resp['Location'], reverse('followup_dashboard') + '?tab=wa')
+
+    def test_a_foreign_next_falls_back_to_the_lead(self):
+        sf = self._queue()
+        resp = self.client.post(
+            reverse('cancel_scheduled_followup', args=[sf.pk]),
+            {'next': 'https://evil.example.com/steal'})
+        self.assertNotIn('evil.example.com', resp['Location'])
+        self.assertIn(str(self.lead.pk), resp['Location'])
+
+    def test_a_stopped_lead_has_no_pending_email(self):
+        """Every send path re-checks suppression before it sends, so a row
+        still reading 'pending' would describe a send that cannot happen. The
+        rows stay, marked stopped -- they are what Restart puts back."""
+        self.lead.status = 'confirmed'
+        self.lead.scheduled_datetime = timezone.now() + timedelta(days=3)
+        self.lead.save()
+        before = self.lead.get_upcoming_emails()
+        self.assertGreater(before['pending'], 0)
+
+        self.lead.pause_followups()
+        after = self.lead.get_upcoming_emails()
+        self.assertEqual(after['pending'], 0)
+        self.assertEqual(len(after['items']), len(before['items']))
+        self.assertTrue(any(it['status'] == 'stopped' for it in after['items']))
+
+
+# ======================================================================
+# The email sections of the Follow-ups dashboard showed nothing at all
+# ======================================================================
+class FollowupEmailSectionsTests(StaffClientTestCase):
+    """Both email sections on the Follow-ups dashboard read empty on a
+    workspace that had sent plenty. Two separate causes:
+
+      * the Sent-Emails tab defaulted to the narrow post-visit/quote/site-visit
+        group, and almost nothing was TAGGED with one of those categories --
+        nine of twelve live rows sat on `other` because their senders passed no
+        `category` at all, so the default filter excluded them;
+      * the Emails tab's "Recently Sent" read conversation-history markers, of
+        which only three are email and two are written solely by a staff-queued
+        send, so every automated email was invisible there.
+
+    Both now read what was actually sent.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from .models import Tenant
+        self.homebase = Tenant.objects.get(slug='homebase')
+        self.lead = make_lead(8200, tenant=self.homebase,
+                              customer_name='Grace Hopper',
+                              customer_email='grace@example.com')
+
+    def _row(self, **kw):
+        from .models import SentEmail
+        kw.setdefault('tenant', self.homebase)
+        kw.setdefault('appointment', self.lead)
+        kw.setdefault('to_role', 'customer')
+        kw.setdefault('recipients', ['grace@example.com'])
+        kw.setdefault('status', SentEmail.Status.SENT)
+        return SentEmail.objects.create(**kw)
+
+    def test_sent_tab_defaults_to_every_email_not_the_narrow_group(self):
+        """The default listing is ALL email for the workspace. A delay
+        re-engagement and a plumber alert are most of what a real workspace
+        holds, and neither is in the post-visit/quote/site-visit set."""
+        self._row(category='delay', subject='Quick last check')
+        self._row(category='plumber_alert', to_role='plumber',
+                  subject='New booking raised')
+        resp = self.client.get(reverse('followup_dashboard') + '?tab=sent')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._listed(resp),
+                         {'Quick last check', 'New booking raised'})
+
+    def _listed(self, resp):
+        """Subjects in the Sent-Emails TAB. Asserted off the context rather
+        than the HTML: the Emails tab on the same page renders its own
+        'Recently Sent' list, which is deliberately unfiltered, so a subject
+        can be on the page without being in this tab's listing."""
+        return {row.subject for row in resp.context['sent_emails']}
+
+    def test_narrow_group_is_still_one_chip(self):
+        """Broadening the default must not take the owner's original set away."""
+        self._row(category='delay', subject='Quick last check')
+        self._row(category='quote_sent', subject='Your quote for the bathroom')
+        resp = self.client.get(
+            reverse('followup_dashboard') + '?tab=sent&se_group=dashboard')
+        self.assertEqual(self._listed(resp), {'Your quote for the bathroom'})
+
+    def test_followup_group_gathers_the_chasing_email(self):
+        self._row(category='followup', subject='Staff queued note')
+        self._row(category='reminder', subject='Reminder for tomorrow')
+        self._row(category='quote_sent', subject='Your quote for the bathroom')
+        resp = self.client.get(
+            reverse('followup_dashboard') + '?tab=sent&se_group=followup')
+        self.assertEqual(self._listed(resp),
+                         {'Staff queued note', 'Reminder for tomorrow'})
+
+    def test_recently_sent_reads_sent_emails_not_history_markers(self):
+        """An automated email writes no [SCHEDULED EMAIL] marker, so the old
+        section could never show one."""
+        self._row(category='post_visit_ask', subject='How did the visit go')
+        resp = self.client.get(reverse('followup_dashboard') + '?tab=email')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'How did the visit go')
+
+    def test_recently_sent_is_workspace_scoped(self):
+        from .models import SentEmail, Tenant
+        other = Tenant.objects.create(name='Other Co', slug='other-co-fes')
+        SentEmail.objects.create(
+            tenant=other, category='post_visit_ask', recipients=['x@y.com'],
+            subject='Another tenants email', status=SentEmail.Status.SENT)
+        self._row(category='post_visit_ask', subject='Our own email')
+        resp = self.client.get(reverse('followup_dashboard') + '?tab=email')
+        self.assertContains(resp, 'Our own email')
+        self.assertNotContains(resp, 'Another tenants email')
+
+    def test_customer_email_senders_all_carry_a_category(self):
+        """The root cause: a send that passes no category lands on `other` and
+        falls out of every group. Each of these used to."""
+        from . import customer_emails
+
+        cases = [
+            ('send_booking_confirmation_email', (self.lead,), 'booking'),
+            ('send_customer_reminder_email', (self.lead, 'day_before'), 'reminder'),
+            ('send_delay_followup_email', (self.lead,), 'delay'),
+            ('send_delay_last_check_email', (self.lead,), 'delay'),
+        ]
+        for fn_name, args, expected in cases:
+            with self.subTest(fn_name):
+                with patch.object(customer_emails, '_send', return_value=True) as sent:
+                    getattr(customer_emails, fn_name)(*args)
+                self.assertTrue(sent.called, fn_name + ' did not send')
+                self.assertEqual(sent.call_args[1].get('category'), expected)
+
+    def test_a_send_blocked_by_the_tenant_switch_is_recorded(self):
+        """Outbound email OFF sends nothing and, without a row, showed nothing
+        either -- indistinguishable from a tenant with no mail to send, which
+        is the one state a screen about sent email must not be ambiguous about.
+        """
+        from .models import SentEmail
+        from .plumber_notifications import send_email_to_recipients
+
+        with patch('bot.platform_flags.email_sending_enabled', return_value=False):
+            ok = send_email_to_recipients(
+                ['grace@example.com'], 'Blocked by the switch', 'body',
+                tenant=self.homebase, category='post_visit_ask',
+                appointment=self.lead, to_role='customer')
+
+        self.assertFalse(ok)
+        row = SentEmail.objects.get(subject='Blocked by the switch')
+        self.assertEqual(row.status, SentEmail.Status.FAILED)
+        self.assertIn('switched off', row.error)
+
+    def test_a_dry_run_blocked_by_the_switch_records_nothing(self):
+        from .models import SentEmail
+        from .plumber_notifications import send_email_to_recipients
+
+        with patch('bot.platform_flags.email_sending_enabled', return_value=False):
+            send_email_to_recipients(
+                ['grace@example.com'], 'Dry run only', 'body', dry_run=True,
+                tenant=self.homebase)
+        self.assertFalse(SentEmail.objects.filter(subject='Dry run only').exists())
 
 
 class FlexibleAvailabilityTests(TestCase):

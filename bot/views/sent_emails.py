@@ -54,6 +54,19 @@ CATEGORY_GROUPS = {
         SentEmail.Category.VISIT_CHECKIN,
         SentEmail.Category.SITE_VISIT_FORM,
     ],
+    # Everything the follow-up machinery sends the lead between first contact
+    # and the visit. Without this group the delay re-engagements, reminders,
+    # booking confirmations and staff-queued emails -- the bulk of what
+    # actually goes out -- had no chip to select them.
+    'followup': [
+        SentEmail.Category.FOLLOWUP,
+        SentEmail.Category.DELAY,
+        SentEmail.Category.REMINDER,
+        SentEmail.Category.BOOKING,
+    ],
+    'plumber': [
+        SentEmail.Category.PLUMBER_ALERT,
+    ],
 }
 
 
@@ -92,15 +105,23 @@ def sent_emails_queryset(request):
 
 def sent_email_filters(request):
     """Resolve the ?se_group / ?se_status filters and return
-    (queryset, active_group, active_status)."""
-    group = (request.GET.get('se_group') or 'dashboard').strip()
+    (queryset, active_group, active_status).
+
+    The default is ALL email for the workspace. It used to be the narrow
+    post-visit/quote/site-visit set, which is why the tab read as empty: nearly
+    every row a real workspace holds is a delay re-engagement, a reminder, a
+    booking confirmation or a plumber alert, and none of those were in that set.
+    A tab called "Sent Emails" that shows a third of the email we sent is worse
+    than no tab, because it gets believed -- the narrow set is still one chip.
+    """
+    group = (request.GET.get('se_group') or 'all').strip()
     status = (request.GET.get('se_status') or '').strip()
 
     qs = sent_emails_queryset(request)
     if group in CATEGORY_GROUPS:
         qs = qs.filter(category__in=CATEGORY_GROUPS[group])
-    else:  # 'dashboard' (default) = every in-scope category; 'all' = no filter
-        group = group if group == 'all' else 'dashboard'
+    else:  # 'dashboard' = the post-visit/quote/site-visit set; 'all' = no filter
+        group = group if group == 'dashboard' else 'all'
         if group == 'dashboard':
             qs = qs.filter(category__in=list(SentEmail.DASHBOARD_CATEGORIES))
 

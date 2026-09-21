@@ -1008,6 +1008,13 @@ class AppointmentDetailView(DetailView):
             'active_nav': active_nav,
             'is_frame': is_frame,
             'base_template': base_template,
+            # Carried onto every link that leaves this page for a WHOLE page of
+            # its own (the quote editors). Those extend the full layout, so
+            # followed from inside the workspace iframe they rendered their own
+            # sidebar and bottom bar inside the frame - a second nav bar over
+            # the one already on screen. `frame=1` makes them chromeless, the
+            # same flag this page is loaded with.
+            'frame_query': '?frame=1' if is_frame else '',
             'quotes_tab_url': quotes_tab_url,
             'slot_datetime': getattr(appointment, slot_field),
             'slot_label': ('Job scheduled' if slot_field == 'job_scheduled_datetime'
@@ -1372,12 +1379,36 @@ def unbook_appointment(request, pk):
 
 
 @staff_required
+@require_POST
 def cancel_appointment(request, pk):
+    """Cancel a scheduled appointment.
+
+    POST-only: it is a mutating action, so a crawled or prefetched link must
+    never be able to fire it (it was a plain `<a href>` until now). Reversible
+    -- `confirm_appointment` / `unbook_appointment` put the lead back -- and a
+    cancel also stops every proactive send, because `lead_is_suppressed` and the
+    follow-up crons already treat status='cancelled' as a stop.
+
+    A validated `next` returns the user to the screen they pressed it on (the
+    diary, the follow-ups dashboard), falling back to the lead's own page.
+    """
+    from .quotations import safe_return_path
+
     appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
+    reason = (request.POST.get('reason') or '').strip()
     appointment.status = 'cancelled'
-    appointment.save()
-    messages.success(request, 'Appointment cancelled')
-    return _detail_redirect(request, appointment.pk)
+    appointment.save(update_fields=['status'])
+    _append_admin_note(
+        appointment,
+        f"{request.user.username}: appointment cancelled"
+        + (f" ({reason})." if reason else "."),
+    )
+    messages.success(request, 'Appointment cancelled.')
+
+    base_url = reverse('appointment_detail', kwargs={'pk': appointment.pk})
+    qs = request.GET.urlencode()
+    fallback = f"{base_url}?{qs}" if qs else base_url
+    return redirect(safe_return_path(request, fallback))
 
 
 @owner_required

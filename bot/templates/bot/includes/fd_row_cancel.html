@@ -1,0 +1,20 @@
+{% comment %}
+Cancel one staff-queued follow-up, from the follow-ups dashboard.
+
+Takes `sf_id`. POST, because it mutates, with the dashboard's own full path as
+`next` so the tab, window and filters survive the round trip
+(`_followup_redirect` validates it down to a local path).
+
+Rendered as a SIBLING of the row's <a>, never inside it -- a <form> nested in an
+anchor is invalid HTML and the browser unnests it.
+{% endcomment %}
+<div class="fd-rowact">
+  <form method="post" action="{% url 'cancel_scheduled_followup' sf_id %}"
+        onsubmit="return confirm('Cancel this scheduled follow-up? It will not be sent.');">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit" class="fd-rowbtn" title="Cancel this scheduled follow-up">
+      <i class="fas fa-ban"></i><span class="fd-rowbtn-text">Cancel</span>
+    </button>
+  </form>
+</div>

@@ -1,0 +1,21 @@
+{% comment %}
+Cancel a booked appointment straight from the diary.
+
+Takes `appt`. POST with a validated `next` (the page's own full path), so the
+plumber stays on the diary instead of being thrown onto the lead's page. Hidden
+once the row is already cancelled or completed -- a control that does nothing is
+worse than no control.
+
+Sibling of the row's <a>, never inside it: a <form> nested in an anchor is
+invalid HTML and the browser unnests it.
+{% endcomment %}
+{% if appt.status != 'cancelled' and appt.status != 'completed' %}
+<form method="post" action="{% url 'cancel_appointment' appt.pk %}" class="pb-sched-cancel"
+      onsubmit="return confirm('Cancel this appointment?');">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <button type="submit" class="pb-sched-cancel__btn" title="Cancel this appointment">
+    <i class="fas fa-times"></i><span class="pb-sched-cancel__text">Cancel</span>
+  </button>
+</form>
+{% endif %}

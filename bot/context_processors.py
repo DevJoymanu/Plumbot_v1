@@ -44,6 +44,25 @@ NAV_MAP = {
 QUOTES_NAV_GROUP = {"quotations", "new_quote", "templates", "offer"}
 
 
+def in_app_frame(request) -> bool:
+    """Is this page being rendered INSIDE one of the app's own iframes?
+
+    The conversations workspace and the follow-ups dashboard both load a whole
+    page into a pane and mark it with `frame=1`. That page already sits inside
+    the shell's chrome, so rendering its own sidebar and bottom bar puts a
+    SECOND nav bar on screen - which is what every quote editor opened from a
+    lead's Quotes tab did, because the editors extend the full layout and
+    nothing told them where they were.
+
+    ONE reader for the question, so a page cannot answer it differently from
+    the layout that acts on it. `base_template` (appointment detail, the job
+    screens) is the older answer to the same question and stays as it is: it
+    swaps the layout outright for pages that also need the panel's fixed
+    height.
+    """
+    return getattr(request, "GET", {}).get("frame") == "1"
+
+
 def plumbot_shell(request):
     match = getattr(request, "resolver_match", None)
     url_name = getattr(match, "url_name", "") or ""
@@ -60,6 +79,10 @@ def plumbot_shell(request):
         # Templates gate the delete-conversation control on this, matching
         # @owner_required on the view. Superuser is deliberately NOT enough.
         "is_platform_owner": is_platform_owner(getattr(request, "user", None)),
+        # Read by base.html, which then renders neither nav. The page keeps its
+        # own scroller and layout - only the chrome the frame already has comes
+        # off.
+        "chromeless": in_app_frame(request),
     }
 
     try:

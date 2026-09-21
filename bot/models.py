@@ -1966,6 +1966,15 @@ class Appointment(models.Model):
     # ── Follow-up suppression states (internal_notes-backed, no migration) ──────
     HANDOFF_TAG = '[HANDED_OFF]'   # handed-off / awaiting-human
     PARKED_TAG  = '[PARKED]'       # parked / soft brush-off
+    # Staff switched the automated follow-ups off for this lead. Deliberately
+    # its OWN tag rather than [STOP_REQUESTED]: that one means the CUSTOMER
+    # asked us to stop and is never cleared automatically, while this is our
+    # own decision and the same staff member can put it back. It is read
+    # wherever the other suppression tags are -- post_visit.SUPPRESSED_TAGS
+    # (which plan_quote and visit_proposal extend) and
+    # send_followups._exclude_suppressed_states -- so there is no new resolver
+    # and no new column: one tag, honoured by every proactive send path.
+    FOLLOWUPS_OFF_TAG = '[FOLLOWUPS_OFF]'
 
     def _add_notes_tag(self, tag, save=True):
         notes = (self.internal_notes or '').strip()
@@ -2000,6 +2009,23 @@ class Appointment(models.Model):
         """Customer asked to be left alone / soft brush-off: suppress follow-ups
         until they re-engage."""
         return self._add_notes_tag(self.PARKED_TAG, save=save)
+
+    @property
+    def followups_paused(self):
+        """True when staff have switched this lead's automated follow-ups off."""
+        return self.FOLLOWUPS_OFF_TAG in (self.internal_notes or '')
+
+    def pause_followups(self, save=True):
+        """Stop every automated follow-up for this lead -- the WhatsApp
+        schedule, the delay and parked nudges, and the post-visit / plan-quote /
+        visit-proposal email sequences. The bot still answers if they write."""
+        return self._add_notes_tag(self.FOLLOWUPS_OFF_TAG, save=save)
+
+    def resume_followups(self, save=True):
+        """Put the automated follow-ups back on. The schedule is measured from
+        the lead's last message, so a lead who has gone quiet past the end of
+        their run stays finished rather than receiving a burst."""
+        return self._remove_notes_tag(self.FOLLOWUPS_OFF_TAG, save=save)
 
     # A slot we were holding that the customer has since deferred. The tag keeps
     # the released time on the record (the row's own datetime is cleared) so the
@@ -2642,6 +2668,18 @@ class Appointment(models.Model):
         for item in items:
             item.setdefault('to', 'customer')
             item.setdefault('source', 'other')
+
+        # A lead whose follow-ups staff have switched off has no PENDING email:
+        # every send path re-checks suppression before it sends, so a row still
+        # reading 'pending' here would describe a send that cannot happen. The
+        # rows stay visible, marked stopped, because what they show is what
+        # WOULD run again on Restart -- and the dashboard's upcoming/overdue
+        # lists read the status, so they drop out of both.
+        if self.followups_paused:
+            for item in items:
+                if item['status'] != 'sent':
+                    item['status'] = 'stopped'
+                    item['note'] = 'Follow-ups are stopped for this lead.'
 
         # Limit overdue items to the last 7 days — drop ones that have been
         # missed for longer so stale follow-ups don't pile up indefinitely.
@@ -4149,6 +4187,7 @@ class SentEmail(models.Model):
         REMINDER = 'reminder', 'Appointment reminder'
         DELAY = 'delay', 'Delay re-engagement'
         BOOKING = 'booking', 'Booking confirmation'
+        FOLLOWUP = 'followup', 'Follow-up'
         PLUMBER_ALERT = 'plumber_alert', 'Plumber alert'
         OTHER = 'other', 'Other'
 

@@ -678,7 +678,7 @@ def send_booking_confirmation_email(apt):
     """Send HTML booking confirmation to the customer immediately after booking."""
     try:
         subject, html = build_booking_confirmation_email(apt)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='booking')
         if ok:
             logger.info("Booking confirmation email sent — apt %s", apt.pk)
         return ok
@@ -768,6 +768,7 @@ def send_delay_quote_email(apt, follow_up_date_str=None, preview_only=False):
             apt, subject, html,
             attachment=pdf,
             attachment_name=f"{slug}_portfolio.pdf",
+            category='quote_followup',
         )
         if ok:
             logger.info("Delay quote email sent with PDF — apt %s", apt.pk)
@@ -873,7 +874,7 @@ def send_customer_reminder_email(apt, reminder_type):
     """Send HTML reminder email to the customer."""
     try:
         subject, html = build_customer_reminder_email(apt, reminder_type)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='reminder')
         if ok:
             logger.info("Customer reminder email (%s) sent — apt %s", reminder_type, apt.pk)
         return ok
@@ -985,7 +986,7 @@ def send_delay_followup_email(apt):
     """Send the contextual re-engagement email (see build_delay_followup_email)."""
     try:
         subject, html = build_delay_followup_email(apt)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='delay')
         if ok:
             logger.info("Delay follow-up email sent — apt %s", apt.pk)
         return ok
@@ -1032,7 +1033,7 @@ def send_delay_last_check_email(apt):
     """Send the final re-engagement email (see build_delay_last_check_email)."""
     try:
         subject, html = build_delay_last_check_email(apt)
-        ok = _send(apt, subject, html)
+        ok = _send(apt, subject, html, category='delay')
         if ok:
             logger.info("Delay last-check email sent — apt %s", apt.pk)
         return ok

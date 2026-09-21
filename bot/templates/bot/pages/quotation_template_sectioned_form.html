@@ -326,13 +326,13 @@ the sectioned quote editor uses, so where both name a box the document wins.
                         <td class="bq-amt" id="t-grand">{{ quote_currency }}0.00</td>
                         <td></td>
                     </tr>
-                    {% if default_deposit_percent %}
-                    <tr class="bqt-static">
-                        <td class="bq-lbl" colspan="3">DEPOSIT ({{ default_deposit_percent }}%)</td>
-                        <td class="bq-amt" id="t-deposit">{{ quote_currency }}0.00</td>
-                        <td></td>
-                    </tr>
-                    {% endif %}
+                    {% comment %}
+                    No DEPOSIT row. It used to show the business's own default,
+                    and there is no longer one to show: the deposit is agreed
+                    per job and typed on the quote itself (owner rule,
+                    2026-09-21), so there is nothing a template could start it
+                    at and nothing here to preview.
+                    {% endcomment %}
                     {% for term in default_terms %}
                     <tr class="bq-terms bqt-static"><td colspan="5">{{ term }}</td></tr>
                     {% endfor %}
@@ -343,8 +343,8 @@ the sectioned quote editor uses, so where both name a box the document wins.
         </div>
 
         <p class="bqt-note bq-no-print">
-            VAT, the deposit and the payment terms come from your Profile and
-            are set on each quote. Everything above them is what a quote built
+            VAT and the payment terms come from your Profile. The deposit is
+            asked for on each quote. Everything above them is what a quote built
             from this template starts with.
         </p>
 
@@ -402,7 +402,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // The tenant's own symbol, never a hardcoded "US$".
     const CURRENCY = "{{ quote_currency|escapejs }}";
     const VAT_PCT = parseFloat("{{ default_vat_percent|escapejs }}") || 0;
-    const DEPOSIT_PCT = parseFloat("{{ default_deposit_percent|escapejs }}") || 0;
 
     const tbody = document.getElementById('bqtSections');
     const anchor = document.getElementById('bqtAddSectionRow');
@@ -488,8 +487,6 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('t-subtotal').textContent = currency(subtotal);
         document.getElementById('t-vat').textContent = currency(vat);
         document.getElementById('t-grand').textContent = currency(grand);
-        const deposit = document.getElementById('t-deposit');
-        if (deposit) { deposit.textContent = currency(grand * DEPOSIT_PCT / 100); }
     }
 
     /* The heading is typed once and written onto every row beneath it: the

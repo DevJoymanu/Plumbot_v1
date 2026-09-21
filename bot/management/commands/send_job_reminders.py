@@ -247,6 +247,7 @@ Plumber: {plumber_name}
                 ok = send_email_to_recipients(
                     [job.customer_email], subject, message,
                     tenant=getattr(job, 'tenant', None),
+                    category='reminder', appointment=job, to_role='customer',
                 )
                 if ok:
                     self.stdout.write(f"  {reminder_type} reminder [email] -> {job.customer_email}")

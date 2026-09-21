@@ -76,6 +76,7 @@ from .quote_layout import (
     document_context, is_sectioned, letterhead_for, quote_terms,
     sections_payload, tenant_of,
 )
+from ..context_processors import in_app_frame
 
 
 # An editor is not somewhere to hand the plumber back TO: a Referer pointing at
@@ -110,12 +111,18 @@ def quote_return_url(request, appointment=None, quotation=None):
         if not _QUOTE_EDITOR_PATH.match(path):
             return path + (('?' + parsed.query) if parsed.query else '')
 
+    # An editor reached inside the workspace iframe hands back INTO the frame,
+    # so the fallback keeps `frame=1`. Without it the pane would land on a page
+    # rendering its own sidebar and bottom bar - the second nav bar this whole
+    # flag exists to keep off the screen.
+    suffix = '?frame=1' if in_app_frame(request) else ''
+
     lead = appointment or getattr(quotation, 'appointment', None)
     if lead is not None and not str(
             getattr(lead, 'phone_number', '') or '').startswith(
                 ('quotation_only_', 'email_')):
-        return reverse('appointment_detail', kwargs={'pk': lead.pk})
-    return reverse('quotations_list')
+        return reverse('appointment_detail', kwargs={'pk': lead.pk}) + suffix
+    return reverse('quotations_list') + suffix
 
 
 def safe_return_path(request, fallback):
@@ -212,11 +219,13 @@ def _sectioned_form_context(request, appointment=None, quotation=None):
             quote_terms(quotation, letterhead) if quotation
             else list(letterhead.get('terms') or [])
         ),
-        # The business's own default on a new quote, whatever was agreed on
-        # this one when reopening it.
+        # A new quote opens at NO deposit and the plumber types what was
+        # agreed for this job (owner rule, 2026-09-21); reopening one shows
+        # whatever was agreed on it. There is no tenant-level default to start
+        # from any more - that was a second place to adjust the same figure,
+        # and it put a percentage on the sheet nobody had agreed.
         'deposit_percent_initial': (
-            quotation.deposit_percent if quotation
-            else letterhead.get('default_deposit_percent') or 0
+            quotation.deposit_percent if quotation else 0
         ),
     }
 
@@ -659,12 +668,11 @@ def flat_form_context(request, *, mode, appointment=None, quotation=None):
     from ..lead_handoff import quote_message_body
     context['quote_blurb_body'] = quote_message_body(lead)
 
-    # A new quote starts at the business's own default deposit; an existing one
-    # comes back on whatever was agreed for that job.
-    letterhead = context['lh']
+    # A new quote starts at NO deposit; an existing one comes back on whatever
+    # was agreed for that job. Same rule as the sectioned sheet: the quote's own
+    # field is the one place a deposit is set (owner rule, 2026-09-21).
     context['quote_deposit_percent'] = (
-        _to_float(quotation.deposit_percent) if quotation is not None
-        else letterhead.get('default_deposit_percent') or 0)
+        _to_float(quotation.deposit_percent) if quotation is not None else 0)
 
     profile = getattr(tenant, 'profile', None) if tenant is not None else None
     context['quote_email_mode'] = getattr(profile, 'quote_email_mode', 'platform') or 'platform'

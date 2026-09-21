@@ -274,6 +274,24 @@ def send_email_to_recipients(
             "Email OFF for tenant=%s — skipped '%s' to %s",
             getattr(tenant, 'slug', None), subject, ", ".join(recipients),
         )
+        # Record the skip. A tenant whose outbound-email switch is off sends
+        # nothing and, without this, shows nothing either -- the Sent-Emails
+        # tab reads exactly like a tenant that had no mail to send, which is
+        # the one state a screen about sent email must not be ambiguous about.
+        # It is a FAILED attempt, because that is what it is: the mail was
+        # raised and did not go. A dry run records nothing, as everywhere else.
+        if dry_run:
+            return False
+        _log_sent_email(
+            recipients=recipients, subject=subject,
+            html_body=(html_message or message), text_body=message,
+            tenant=tenant,
+            appointment=appointment or _appointment_from_message_id(message_id),
+            category=category, to_role=to_role, provider='', message_id='',
+            ok=False,
+            error='Outbound email is switched off for this tenant '
+                  '(Settings > Email).',
+        )
         return False
 
     if dry_run:
