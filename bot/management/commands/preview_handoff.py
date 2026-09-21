@@ -60,8 +60,10 @@ class Command(BaseCommand):
                           'does not arm, the booking pivot runs instead.')
         self._section('Plumber link offer (sent with the portfolio)',
                       plumber_link.quote_offer(lead))
-        self._section('Pre-filled message the lead sends the plumber',
-                      plumber_link.lead_voice_message(lead))
+        self._section('Second follow-up: the handoff (delay-signal and three-field leads)',
+                      plumber_link.handoff_message(lead))
+        self._section('The link on its own (the plumber\'s short link once one is set)',
+                      plumber_link.quote_link(lead))
         self._section(f'Touch at job - 7 ({ladder.step_day(job, 0):%a %d %b})',
                       ladder.touch_message(lead, ladder.STEP_FIRST))
         self._section(f'Touch at job - 3 ({ladder.step_day(job, 1):%a %d %b})',

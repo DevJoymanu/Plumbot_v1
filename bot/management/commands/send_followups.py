@@ -155,6 +155,17 @@ def _greet(hi, body):
     return f'{hi}, {body}'
 
 
+def _tell_plumber_if_handoff(lead, message):
+    """After a touch that carried the plumber's link, email him the lead's
+    details (plumber_link.notify_plumber_of_handoff). The short link's
+    pre-fill is generic, so without this he gets "Hi I would like a free
+    quote" from a number he cannot place. Called by all three loops after the
+    send and the transcript write; never raises."""
+    if 'https://wa.me/' in (message or '') or 'https://api.whatsapp.com/' in (message or ''):
+        from bot.plumber_link import notify_plumber_of_handoff
+        notify_plumber_of_handoff(lead)
+
+
 def handoff_sent_since_last_reply(lead) -> bool:
     """Has a PROACTIVE touch carried the plumber's link since the lead last spoke?
 
@@ -176,7 +187,9 @@ def handoff_sent_since_last_reply(lead) -> bool:
         if (message or {}).get('role') != 'assistant':
             continue
         content = (message.get('content') or '').lstrip()
-        if not content.startswith(PROACTIVE_MARKERS) or 'https://wa.me/' not in content:
+        if not content.startswith(PROACTIVE_MARKERS):
+            continue
+        if 'https://wa.me/' not in content and 'https://api.whatsapp.com/' not in content:
             continue
         stamp = _parse_history_stamp(message.get('timestamp'))
         if since is not None and (stamp is None or stamp <= since):
@@ -808,7 +821,7 @@ class Command(BaseCommand):
                 message = ''
                 if nudge_count + 1 == self.HANDOFF_ATTEMPT:
                     from bot.plumber_link import handoff_message
-                    message = handoff_message(lead, delayed=True)
+                    message = handoff_message(lead)
                 if not message:
                     template = self._DELAY_NUDGE_MESSAGES[step][nudge_count]
                     if '{date}' in template and not date:
@@ -839,6 +852,7 @@ class Command(BaseCommand):
                 lead.add_conversation_message(
                     'assistant', f'[DELAY NUDGE {nudge_count + 1}] {message}'
                 )
+                _tell_plumber_if_handoff(lead, message)
 
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Delay nudge #{nudge_count + 1}/4 → lead {lead.id} [{step}]'
@@ -1049,7 +1063,7 @@ class Command(BaseCommand):
                 message = ''
                 if nudge_count + 1 == self.HANDOFF_ATTEMPT:
                     from bot.plumber_link import handoff_message
-                    message = handoff_message(lead, delayed=True)
+                    message = handoff_message(lead)
                 if not message:
                     message = _greet(hi, self._PARKED_NUDGE_MESSAGES[nudge_count])
                 message = dequalify_free_visit(lead, message)
@@ -1068,6 +1082,7 @@ class Command(BaseCommand):
                 lead.add_conversation_message(
                     'assistant', f'[PARKED NUDGE {nudge_count + 1}] {message}'
                 )
+                _tell_plumber_if_handoff(lead, message)
 
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Parked nudge #{nudge_count + 1}/'
@@ -1769,6 +1784,7 @@ class Command(BaseCommand):
         lead.save()
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
+        _tell_plumber_if_handoff(lead, message)
         if handoff:
             from bot.plumber_link import LINK_SENT_TAG
             if LINK_SENT_TAG not in (lead.internal_notes or ''):
@@ -1814,7 +1830,7 @@ class Command(BaseCommand):
         if not (service_label(lead) and (lead.project_description or '').strip()
                 and (lead.customer_area or '').strip()):
             return ''
-        return handoff_message(lead, delayed=False)
+        return handoff_message(lead)
 
     # ─── Timing ───────────────────────────────────────────────────────────────
 

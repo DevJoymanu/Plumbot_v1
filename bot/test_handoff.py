@@ -254,7 +254,11 @@ class SecondFollowupHandoffTests(OfflineTestCase):
         self.assertTrue(first.startswith('Hi Rudo, one thing'), first)  # no stray capital
         second = self._tick('_nudge_delay_flow_ghosts', lead, 8)
         self.assertIn(PLUMBER_WA, second)
-        self.assertIn('no rush at all on the timing', second)
+        self.assertTrue(second.startswith("I've messaged a couple of times"), second)
+        # ...and the plumber is told who is about to message him.
+        from bot.plumber_notifications import send_email_to_recipients
+        subjects = [c[0][1] for c in send_email_to_recipients.call_args_list]
+        self.assertTrue(any(s.startswith('[Quote lead]') for s in subjects), subjects)
         self.assertNotIn('Now you are talking', second)
         # The handoff was the last touch of this silence.
         self.assertIsNone(self._tick('_nudge_delay_flow_ghosts', lead, 14))

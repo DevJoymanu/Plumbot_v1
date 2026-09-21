@@ -139,6 +139,43 @@ PLUMBER_QUOTE_OFFER = (
     "itemised PDF of the full quote too."
 )
 
+# The handoff: the SECOND automatic follow-up of a silence, the same for a
+# lead who gave a delay signal and one with all three fields. The owner's own
+# words (2026-09-21): the opener, then who handles the quotes. "he'll send"
+# became "you'll get": the name is the tenant's plumber and nothing tells us
+# which pronoun they use. The link and the plumber's number go at the BOTTOM
+# (owner, same day), each on its own line. HANDOFF_QUOTES_HERE is the line for
+# a tenant with no plumber or business name on file. Built by
+# plumber_link.handoff_message.
+HANDOFF_LEAVE_IT_HERE = (
+    "I've messaged a couple of times, so I'll leave this here. If you'd still "
+    "like a free price, no one needs to come round for it."
+)
+HANDOFF_WHO_HANDLES_QUOTES = (
+    "{who} handles the quotes. Send a few photos, measurements or a rough plan "
+    "and what you need done, and you'll get a clear price for your job as a PDF."
+)
+HANDOFF_QUOTES_HERE = (
+    "Quotes are handled on the number below. Send a few photos, measurements or "
+    "a rough plan and what you need done, and you'll get a clear price for your "
+    "job as a PDF."
+)
+
+# Why the link is long, said before it (owner, 2026-09-21): the long link
+# carries their job details already typed in, and a long link from a business
+# they met on a Facebook ad reads as a scam unless it is explained. Used only
+# with the long per-lead link; the plumber's own short link needs no apology.
+HANDOFF_WHY_LINK_IS_LONG = (
+    "The link below is long because your job details are already typed into it, "
+    "so it's the easiest way: tap it and press send."
+)
+HANDOFF_TAP_THE_LINK = "Tap the link below to send your details."
+
+# The last line: the plumber's number, so they can save it or message it
+# themselves. WhatsApp makes a +number tappable.
+HANDOFF_NUMBER_OF = "{who}'s number: {number}"
+HANDOFF_NUMBER = "Number: {number}"
+
 # A lead who is not ready: park them warmly, door open.
 WHENEVER_YOURE_READY = (
     "No problem at all! Whenever you're ready, just drop us a message "

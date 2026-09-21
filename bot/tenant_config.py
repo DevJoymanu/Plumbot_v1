@@ -205,6 +205,22 @@ class TenantConfig:
         return self._field('business_whatsapp')
 
     @property
+    def plumber_quote_link(self) -> str:
+        """The plumber's own WhatsApp Business short link (wa.me/message/...),
+        which carries his pre-filled "free quote" message, or ''.
+
+        Created by the plumber in his WhatsApp Business app (Business tools,
+        Short link): his number is on the app, not the Cloud API, so we cannot
+        make one for him. Stored under ``scripts['plumber_quote_link']`` on the
+        profile (a JSON key, no column). A business fact: absent means the
+        caller falls back to a plain wa.me link for the lead's OWN tenant's
+        plumber, never another tenant's link.
+        """
+        scripts = self._field('scripts', None) or {}
+        link = str(scripts.get('plumber_quote_link') or '').strip() if isinstance(scripts, dict) else ''
+        return link if link.startswith(('https://wa.me/', 'https://api.whatsapp.com/')) else ''
+
+    @property
     def location_line(self) -> str:
         return self._field('location_line')
 

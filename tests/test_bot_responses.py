@@ -13058,6 +13058,7 @@ try:
     from datetime import date as _hb_date
     from urllib.parse import unquote as _hb_unquote
     from bot import plumber_link as _pl, job_date_ladder as _jl, copy_catalog as _hb_cc
+    from unittest import mock as _hb_mock
 
     def _hb_lead(**kw):
         base = dict(id=91, customer_name='Rudo', project_type='bathroom_renovation',
@@ -13068,35 +13069,72 @@ try:
         base.update(kw)
         lead = _hb_types.SimpleNamespace(**base)
         lead.plumber_contact = lambda: number
+        lead.plumber_display_name = lambda: 'Takudzwa'
+        lead.plumber_contact_number = ''
         lead.get_project_type_display = lambda: str(lead.project_type or '').replace('_', ' ').title()
         return lead
 
-    # -- The pre-filled message, the brief's own rendered example ---------------
+    # -- The link (owner, 2026-09-21) --------------------------------------------
+    # WhatsApp's own domain, never ours or a shortener: Facebook-ad leads have
+    # their guard up about scams. Until the plumber makes his WhatsApp Business
+    # short link, it is wa.me/<number> carrying the PER-LEAD pre-fill.
     _want = ("Hi, I'm interested in a bathroom renovation in Borrowdale. Full re-tile "
              "and new fittings. I'd like a free online quote. I can send measurements, "
              "photos, and a plan of the space so you can quote without coming out. "
              "Can you help?")
-    results.log("plumber link: the brief's rendered example, word for word",
+    results.log("plumber link: the per-lead pre-fill, word for word",
                 _pl.lead_voice_message(_hb_lead()) == _want,
                 expected=_want, got=_pl.lead_voice_message(_hb_lead()))
     _link = _pl.quote_link(_hb_lead())
-    results.log("plumber link: targets the plumber's own number, digits only",
-                _link.startswith('https://wa.me/263774819901?text='), got=_link[:60])
-    results.log("plumber link: the whole message is URL-encoded (no raw space or ?)",
-                ' ' not in _link and _link.count('?') == 1
-                and _hb_unquote(_link.split('text=', 1)[1]) == _want, got=_link[-80:])
-    results.log("plumber link: a thin description drops its sentence, never a blank",
+    results.log("plumber link: wa.me/<plumber> carrying the per-lead pre-fill, encoded",
+                _link.startswith('https://wa.me/263774819901?text=')
+                and ' ' not in _link and _link.count('?') == 1
+                and _hb_unquote(_link.split('text=', 1)[1]) == _want, got=_link[:80])
+    results.log("plumber link: a thin description or 'other' service still reads whole",
                 _pl.lead_voice_message(_hb_lead(project_description='tub'))
-                == "Hi, I'm interested in a bathroom renovation in Borrowdale. "
-                   + _pl._ONLINE_QUOTE_LINE,
-                got=_pl.lead_voice_message(_hb_lead(project_description='tub')))
-    results.log("plumber link: no area and 'other' service still read as a sentence",
-                _pl.lead_voice_message(_hb_lead(project_type='other', customer_area='',
-                                                project_description=''))
+                == "Hi, I'm interested in a bathroom renovation in Borrowdale. " + _pl._ONLINE_QUOTE_LINE
+                and _pl.lead_voice_message(_hb_lead(project_type='other', customer_area='',
+                                                    project_description=''))
                 == "Hi, I'm interested in some plumbing work. " + _pl._ONLINE_QUOTE_LINE)
-    results.log("plumber link: the measurements line is fixed",
-                _pl._ONLINE_QUOTE_LINE in _pl.lead_voice_message(
-                    _hb_lead(project_description='Kitchen sink keeps blocking every week')))
+    results.log("plumber link: chat saved as the job is never put in their mouth",
+                'talking' not in _pl.lead_voice_message(
+                    _hb_lead(project_description='Ok\nNow you are talking')))
+    with _hb_mock.patch.object(_pl, '_tenant_short_link',
+                               return_value='https://wa.me/message/ABCD1234EFGH1'):
+        results.log("plumber link: the plumber's own short link is used when set",
+                    _pl.quote_link(_hb_lead()) == 'https://wa.me/message/ABCD1234EFGH1')
+        _override = _hb_lead()
+        _override.plumber_contact_number = '+263770000999'
+        results.log("plumber link: a per-lead plumber outranks the tenant's short link",
+                    _pl.quote_link(_override).startswith('https://wa.me/263774819901?'))
+    # The owner's layout: copy, why the link is long, the link, the number last.
+    _ho = _pl.handoff_message(_hb_lead())
+    _ho_want = ("I've messaged a couple of times, so I'll leave this here. If you'd still "
+                "like a free price, no one needs to come round for it.\n\n"
+                "Takudzwa handles the quotes. Send a few photos, measurements or a rough "
+                "plan and what you need done, and you'll get a clear price for your job "
+                "as a PDF.\n\n"
+                "The link below is long because your job details are already typed into "
+                "it, so it's the easiest way: tap it and press send.\n"
+                f"{_link}\n\n"
+                "Takudzwa's number: +263774819901")
+    results.log("plumber link: the handoff is the owner's copy, link and number at the bottom",
+                _ho == _ho_want, expected=_ho_want, got=_ho)
+    with _hb_mock.patch.object(_pl, '_tenant_short_link',
+                               return_value='https://wa.me/message/ABCD1234EFGH1'):
+        _ho_short = _pl.handoff_message(_hb_lead())
+    results.log("plumber link: the short link needs no 'why it is long' line",
+                'is long because' not in _ho_short
+                and _ho_short.endswith("https://wa.me/message/ABCD1234EFGH1\n\n"
+                                       "Takudzwa's number: +263774819901"), got=_ho_short[-160:])
+    _nameless = _hb_lead()
+    _nameless.plumber_display_name = lambda: 'the plumber'
+    results.log("plumber link: no plumber name never says 'the plumber'",
+                'the plumber' not in _pl.handoff_message(_nameless).lower()
+                and _link in _pl.handoff_message(_nameless),
+                got=_pl.handoff_message(_nameless)[-200:])
+    results.log("plumber link: the handoff has no dash and no emoji",
+                ' - ' not in _ho and '—' not in _ho and all(ord(c) < 0x2500 for c in _ho))
     results.log("plumber link: no plumber number means no link and no offer (never borrowed)",
                 _pl.quote_link(_hb_lead(plumber='')) == ''
                 and _pl.quote_offer(_hb_lead(plumber='')) == '')
@@ -13156,21 +13194,23 @@ try:
                 not _hb_sent(_hb_hist(_before)))
     results.log("plumber link: a link in a conversational reply is not a handoff touch",
                 not _hb_sent(_hb_hist(_after, prefix='')))
-    _delayed = _pl.handoff_message(_hb_lead(), delayed=True)
-    results.log("plumber link: the delay group's handoff says no rush, then the link",
-                _delayed.startswith('Hi Rudo, no rush at all on the timing.')
-                and _delayed.endswith(_link) and '?' not in _delayed.split('https://')[0],
-                got=_delayed[:120])
     results.log("plumber link: no plumber number means the ordinary nudge goes instead",
-                _pl.handoff_message(_hb_lead(plumber=''), delayed=True) == '')
-    results.log("plumber link: a stray reply saved as the job is not put in their mouth",
-                'Now you are talking' not in _pl.lead_voice_message(
-                    _hb_lead(project_description='Ok\nNow you are talking')))
-    results.log("plumber link: only the first line of a joined description is used",
-                'Toilet, Ruwa.' in _pl.lead_voice_message(
-                    _hb_lead(project_description='toilet, Ruwa\nHow much'))
-                and 'How much' not in _pl.lead_voice_message(
-                    _hb_lead(project_description='toilet, Ruwa\nHow much')))
+                _pl.handoff_message(_hb_lead(plumber='')) == '')
+    results.log("plumber link: the handoff survives the free-visit stripper intact",
+                _hb_dq(_told, _ho) == _ho, got=_hb_dq(_told, _ho))
+    # The plumber is emailed the lead's details at handoff, because the short
+    # link's pre-fill is generic. Chat saved as the job is never quoted to him.
+    with _hb_mock.patch('bot.plumber_notifications.send_plumber_notification_email',
+                        return_value=True) as _hb_mail:
+        _pl.notify_plumber_of_handoff(_hb_lead(project_description='Ok\nNow you are talking'))
+    _hb_subj, _hb_body = _hb_mail.call_args[0][:2]
+    results.log("plumber link: the plumber gets the lead's details at handoff",
+                _hb_subj.startswith('[Quote lead] Rudo') and 'Borrowdale' in _hb_body
+                and '+263770000001' in _hb_body and 'Now you are talking' not in _hb_body,
+                got=_hb_body[:200])
+    results.log("plumber link: a joined description gives the plumber its first line",
+                _pl._description_line(_hb_lead(project_description='toilet, Ruwa\nHow much'))
+                == 'toilet, Ruwa')
     results.log("followups: a nudge body joins the greeting as one sentence",
                 _hb_greet('Hi there', 'Happy to hold the quote.') == 'Hi there, happy to hold the quote.'
                 and _hb_greet('Hi there', "I'll wait.") == "Hi there, I'll wait.")
