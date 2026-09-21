@@ -5,8 +5,7 @@ The lead messaging the PLUMBER's own WhatsApp, with a message already written.
 
 WHAT: the link to the plumber's separate number (short, and on WhatsApp's own
 domain), the owner's handoff follow-up that carries it, the paragraph the
-delay flow puts beside the portfolio, and the heads-up email that tells the
-plumber who is about to message him.
+delay flow puts beside the portfolio.
 
 WHY: the plumber runs on a separate WhatsApp Business app number with no
 template protection, so he must never open a cold thread. A link the LEAD taps
@@ -25,9 +24,9 @@ we cannot make it for him. It is read from the tenant
 (``TenantConfig.plumber_quote_link``). Until one is set (owner, 2026-09-21),
 the link is wa.me/<number> with the PER-LEAD pre-fill (service, area, job and
 the fixed measurements line), about 330 characters, so the handoff says why it
-is long before it and puts it at the bottom. The plumber is also emailed the
-lead's details at the moment of handoff (``notify_plumber_of_handoff``), which
-matters most once the short link's generic pre-fill replaces this one.
+is long before it and puts it at the bottom. The plumber is NOT emailed on a
+handoff (owner, 2026-09-21: not an email for every handoff sent); the per-lead
+pre-fill is what tells him who the lead is.
 
 Nothing here sends to a customer. Tenancy: the link and number come from the
 lead's OWN tenant (``plumber_contact()``, then its profile); none means no link
@@ -55,7 +54,7 @@ _ONLINE_QUOTE_LINE = (
 # it. The follow-up handoff does not read it: it goes on every silence.
 LINK_SENT_TAG = '[PLUMBER_LINK_SENT]'
 
-# The job line in the plumber's heads-up email is one line, not a paragraph.
+# The job line in the pre-filled message is one line, not a paragraph.
 _DESCRIPTION_MAX_CHARS = 140
 
 
@@ -157,8 +156,8 @@ def quote_link(appointment) -> str:
 
 # The first sentence of the handoff follow-up. Recognises a handoff in the
 # transcript whatever form its link took (wa.me, the plumber's short link, the
-# business-domain short link), for the stop-after-handoff check and the
-# plumber's heads-up email in send_followups.
+# business-domain short link), for the stop-after-handoff check in
+# send_followups and the "is this about the link?" detector.
 def is_handoff_text(text) -> bool:
     """True when `text` is (or carries) the plumber handoff: the owner's copy,
     or any of the link forms it has ever used."""
@@ -330,7 +329,7 @@ def quote_offer(appointment) -> str:
 
 
 def _description_line(appointment) -> str:
-    """The job in one line for the plumber's email, or '' when it is chat.
+    """The job in one line for the pre-filled message, or '' when it is chat.
 
     First line only (a stored description is often the lead's messages joined),
     chat dropped through bot/job_text, cut at a word boundary.
@@ -344,44 +343,3 @@ def _description_line(appointment) -> str:
     if len(raw) > _DESCRIPTION_MAX_CHARS:
         raw = raw[:_DESCRIPTION_MAX_CHARS].rsplit(' ', 1)[0].rstrip(',;: ')
     return raw
-
-
-def notify_plumber_of_handoff(appointment, dry_run=False) -> bool:
-    """Email the plumber that this lead has just been given his link.
-
-    WHY: the short link carries a generic pre-fill, so the message he gets is
-    "Hi I would like a free quote" from a number he does not know. This puts
-    the lead's details in front of him first, so he can answer as someone who
-    already knows the job. Internal copy, so it names people plainly.
-    HOW: the normal plumber-alert channel (the lead's own tenant's inbox);
-    never raises, returns whether the email went.
-    """
-    try:
-        from .lead_handoff import service_label
-        from .plumber_notifications import send_plumber_notification_email
-        name = (getattr(appointment, 'customer_name', '') or '').strip()
-        phone = _digits(getattr(appointment, 'phone_number', ''))
-        label = name or (f'+{phone}' if phone else 'A lead')
-        lines = [
-            f'{label} has just been sent your WhatsApp link for a free quote, so '
-            'they may message you directly. Their details, so you know who it is:',
-            '',
-            f'Name: {name or "not given"}',
-            f'WhatsApp: +{phone}' if phone else 'WhatsApp: not given',
-            f'Service: {service_label(appointment) or "not given"}',
-            f'Area: {getattr(appointment, "customer_area", "") or "not given"}',
-            f'Job: {_description_line(appointment) or "not given"}',
-            f'Email: {getattr(appointment, "customer_email", "") or "not given"}',
-            '',
-            'They were asked to send photos, measurements or a rough plan and what '
-            'they need done, for a clear price as a PDF.',
-        ]
-        return bool(send_plumber_notification_email(
-            f'[Quote lead] {label} may message you for a free quote',
-            '\n'.join(lines), dry_run=dry_run,
-            tenant=getattr(appointment, 'tenant', None), appointment=appointment,
-        ))
-    except Exception:
-        logger.exception('Plumber handoff heads-up failed for apt %s',
-                         getattr(appointment, 'pk', None))
-        return False

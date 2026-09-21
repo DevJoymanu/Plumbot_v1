@@ -155,17 +155,6 @@ def _greet(hi, body):
     return f'{hi}, {body}'
 
 
-def _tell_plumber_if_handoff(lead, message):
-    """After a touch that carried the plumber's link, email him the lead's
-    details (plumber_link.notify_plumber_of_handoff). The short link's
-    pre-fill is generic, so without this he gets "Hi I would like a free
-    quote" from a number he cannot place. Called by all three loops after the
-    send and the transcript write; never raises."""
-    from bot.plumber_link import is_handoff_text, notify_plumber_of_handoff
-    if is_handoff_text(message):
-        notify_plumber_of_handoff(lead)
-
-
 def handoff_sent_since_last_reply(lead) -> bool:
     """Has a PROACTIVE touch carried the plumber's link since the lead last spoke?
 
@@ -897,7 +886,6 @@ class Command(BaseCommand):
                 lead.add_conversation_message(
                     'assistant', f'[DELAY NUDGE {nudge_count + 1}] {message}'
                 )
-                _tell_plumber_if_handoff(lead, message)
 
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Delay nudge #{nudge_count + 1}/4 → lead {lead.id} [{step}]'
@@ -1131,7 +1119,6 @@ class Command(BaseCommand):
                 lead.add_conversation_message(
                     'assistant', f'[PARKED NUDGE {nudge_count + 1}] {message}'
                 )
-                _tell_plumber_if_handoff(lead, message)
 
                 self.stdout.write(self.style.SUCCESS(
                     f'✅ Parked nudge #{nudge_count + 1}/'
@@ -1844,7 +1831,6 @@ class Command(BaseCommand):
         lead.save()
 
         lead.add_conversation_message('assistant', f'[AUTO FOLLOW-UP] {message}')
-        _tell_plumber_if_handoff(lead, message)
         if handoff:
             from bot.plumber_link import LINK_SENT_TAG
             if LINK_SENT_TAG not in (lead.internal_notes or ''):

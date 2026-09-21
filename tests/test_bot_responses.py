@@ -13305,17 +13305,13 @@ try:
                 _pl.handoff_message(_hb_lead(plumber='')) == '')
     results.log("plumber link: the handoff survives the free-visit stripper intact",
                 _hb_dq(_told, _ho) == _ho, got=_hb_dq(_told, _ho))
-    # The plumber is emailed the lead's details at handoff, because the short
-    # link's pre-fill is generic. Chat saved as the job is never quoted to him.
-    with _hb_mock.patch('bot.plumber_notifications.send_plumber_notification_email',
-                        return_value=True) as _hb_mail:
-        _pl.notify_plumber_of_handoff(_hb_lead(project_description='Ok\nNow you are talking'))
-    _hb_subj, _hb_body = _hb_mail.call_args[0][:2]
-    results.log("plumber link: the plumber gets the lead's details at handoff",
-                _hb_subj.startswith('[Quote lead] Rudo') and 'Borrowdale' in _hb_body
-                and '+263770000001' in _hb_body and 'Now you are talking' not in _hb_body,
-                got=_hb_body[:200])
-    results.log("plumber link: a joined description gives the plumber its first line",
+    # No email to the plumber per handoff (owner, 2026-09-21): the per-lead
+    # pre-fill already tells him who the lead is. The email function is gone,
+    # so nothing can call it again by accident. SecondFollowupHandoffTests
+    # checks no plumber email goes out when a handoff is sent.
+    results.log("plumber link: there is no per-handoff plumber email",
+                not hasattr(_pl, 'notify_plumber_of_handoff'))
+    results.log("plumber link: a joined description gives the pre-fill its first line",
                 _pl._description_line(_hb_lead(project_description='toilet, Ruwa\nHow much'))
                 == 'toilet, Ruwa')
     results.log("followups: a nudge body joins the greeting as one sentence",
