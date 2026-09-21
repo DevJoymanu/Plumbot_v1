@@ -360,7 +360,10 @@ class ShortLinkTests(OfflineTestCase):
         msg = handoff_message(self.lead)
         self.assertIn(f'https://wa.homebase.test/q/{encode(self.lead.pk)}', msg)
         self.assertNotIn('?text=', msg)
-        self.assertNotIn('is long because', msg)
+        # Short, so not called long; it forwards to the per-lead link, so it
+        # still carries their details.
+        self.assertNotIn('so long', msg)
+        self.assertIn('with your details already typed in', msg)
         self.assertTrue(msg.rstrip().endswith("number: +263774819901"), msg)
 
     def test_tapping_it_forwards_to_the_per_lead_wa_me_link(self):

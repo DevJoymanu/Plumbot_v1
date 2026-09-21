@@ -13210,8 +13210,11 @@ try:
                 "Takudzwa handles the quotes. Send a few photos, measurements or a rough "
                 "plan and what you need done, and you'll get a clear price for your job "
                 "as a PDF.\n\n"
-                "The link below is long because your job details are already typed into "
-                "it, so it's the easiest way: tap it and press send.\n"
+                # Names the plumber and says where the link goes (owner,
+                # 2026-09-21): straight to his WhatsApp, details already in.
+                "The link below takes you straight to Takudzwa's WhatsApp with your "
+                "details already typed in, so you just tap it and press send. That's "
+                "also why the link is so long.\n"
                 f"{_link}\n\n"
                 "Takudzwa's number: +263774819901")
     results.log("plumber link: the handoff is the owner's copy, link and number at the bottom",
@@ -13219,10 +13222,18 @@ try:
     with _hb_mock.patch.object(_pl, '_tenant_short_link',
                                return_value='https://wa.me/message/ABCD1234EFGH1'):
         _ho_short = _pl.handoff_message(_hb_lead())
-    results.log("plumber link: the short link needs no 'why it is long' line",
-                'is long because' not in _ho_short
+    # The plumber's own short link carries HIS fixed message, not their
+    # details, so it is never described as holding their details or as long.
+    results.log("plumber link: the short link says a message is ready, never that it is long",
+                'so long' not in _ho_short and 'details already typed' not in _ho_short
+                and "takes you straight to Takudzwa's WhatsApp with a message ready" in _ho_short
                 and _ho_short.endswith("https://wa.me/message/ABCD1234EFGH1\n\n"
-                                       "Takudzwa's number: +263774819901"), got=_ho_short[-160:])
+                                       "Takudzwa's number: +263774819901"), got=_ho_short[-260:])
+    _offer_named = _pl.quote_offer(_hb_lead())
+    results.log("plumber link: the portfolio reply names the plumber and where the link goes",
+                _offer_named.startswith('Takudzwa handles our quotes')
+                and "straight to Takudzwa's WhatsApp with your details already typed in"
+                in _offer_named and _offer_named.endswith(_link), got=_offer_named[:260])
     _nameless = _hb_lead()
     _nameless.plumber_display_name = lambda: 'the plumber'
     results.log("plumber link: no plumber name never says 'the plumber'",

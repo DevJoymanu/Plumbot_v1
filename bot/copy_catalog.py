@@ -132,12 +132,38 @@ PORTFOLIO_SENT_ACK = "Have a look whenever suits, and if anything changes just s
 # supplies measurements, photos or a plan; the formal PDF is the other thing
 # the direct line can do. `plumber_link.quote_offer` puts the link under it on
 # its own line. English only: the Shona delay copy does not carry it yet.
+#
+# Names the plumber and says he handles the quotes (owner, 2026-09-21: the link
+# message must say whose WhatsApp it opens). {who} is the tenant's plumber's
+# name, else the business name; PLUMBER_QUOTE_OFFER_NAMELESS when neither is
+# on file. The line saying where the link goes (LINK_OPENS_*) sits under it,
+# then the link. plumber_link.quote_offer assembles it.
 PLUMBER_QUOTE_OFFER = (
-    "You can also message us directly for a free online quote. Send "
-    "measurements, a few photos or a plan of the space with what you need "
-    "done, and we can price it without coming out. We can send you a formal, "
-    "itemised PDF of the full quote too."
+    "{who} handles our quotes and can give you a free online quote without "
+    "coming out. Send measurements, a few photos or a plan of the space with "
+    "what you need done, and you'll get a formal, itemised PDF of the full quote."
 )
+PLUMBER_QUOTE_OFFER_NAMELESS = (
+    "You can also get a free online quote without anyone coming out. Send "
+    "measurements, a few photos or a plan of the space with what you need "
+    "done, and you'll get a formal, itemised PDF of the full quote."
+)
+
+# Where the link goes, said just above it in every message that carries it
+# (owner, 2026-09-21): straight to the plumber's WhatsApp, with their details
+# already typed in. {whose} is "Takudzwa's" or, with no name on file, "our
+# quotes". The long per-lead link adds LINK_WHY_LONG_TAIL; the plumber's own
+# short link carries his fixed message, not their details, so it gets
+# LINK_OPENS_READY instead.
+LINK_OPENS_WITH_DETAILS = (
+    "The link below takes you straight to {whose} WhatsApp with your details "
+    "already typed in, so you just tap it and press send."
+)
+LINK_OPENS_READY = (
+    "The link below takes you straight to {whose} WhatsApp with a message ready "
+    "to send."
+)
+LINK_WHY_LONG_TAIL = "That's also why the link is so long."
 
 # The handoff: the SECOND automatic follow-up of a silence, the same for a
 # lead who gave a delay signal and one with all three fields. The owner's own
@@ -160,16 +186,6 @@ HANDOFF_QUOTES_HERE = (
     "a rough plan and what you need done, and you'll get a clear price for your "
     "job as a PDF."
 )
-
-# Why the link is long, said before it (owner, 2026-09-21): the long link
-# carries their job details already typed in, and a long link from a business
-# they met on a Facebook ad reads as a scam unless it is explained. Used only
-# with the long per-lead link; the plumber's own short link needs no apology.
-HANDOFF_WHY_LINK_IS_LONG = (
-    "The link below is long because your job details are already typed into it, "
-    "so it's the easiest way: tap it and press send."
-)
-HANDOFF_TAP_THE_LINK = "Tap the link below to send your details."
 
 # A lead who asks what the plumber link is, or is wary of it ("is this a scam?",
 # "why is the link so long?", "I'm not clicking that"). Owner, 2026-09-21: say

@@ -209,11 +209,32 @@ def handoff_message(appointment) -> str:
     cc = copy_catalog
     who = _who_handles_quotes(appointment)
     handles = cc.HANDOFF_WHO_HANDLES_QUOTES.format(who=who) if who else cc.HANDOFF_QUOTES_HERE
-    why = cc.HANDOFF_WHY_LINK_IS_LONG if is_long_link(link) else cc.HANDOFF_TAP_THE_LINK
+    opens = _link_opens_line(link, who)
     number = f'+{plumber_number(appointment)}'
     contact = (cc.HANDOFF_NUMBER_OF.format(who=who, number=number) if who
                else cc.HANDOFF_NUMBER.format(number=number))
-    return f'{cc.HANDOFF_LEAVE_IT_HERE}\n\n{handles}\n\n{why}\n{link}\n\n{contact}'
+    return f'{cc.HANDOFF_LEAVE_IT_HERE}\n\n{handles}\n\n{opens}\n{link}\n\n{contact}'
+
+
+def _link_opens_line(link, who) -> str:
+    """The sentence just above the link: whose WhatsApp it opens, and what is
+    already in it.
+
+    Owner, 2026-09-21: name the plumber and say the link goes straight to his
+    WhatsApp with their details already typed in. The long per-lead link adds
+    why it is long; the plumber's own short link carries his fixed message,
+    not their details, so it says "a message ready to send" instead (never a
+    claim the link cannot keep). No name on file reads "our quotes WhatsApp".
+    """
+    cc = copy_catalog
+    whose = f"{who}'s" if who else 'our quotes'
+    if is_long_link(link):
+        return f'{cc.LINK_OPENS_WITH_DETAILS.format(whose=whose)} {cc.LINK_WHY_LONG_TAIL}'
+    if '/message/' in (link or ''):
+        return cc.LINK_OPENS_READY.format(whose=whose)
+    # The business-domain short link forwards to the per-lead wa.me link, so
+    # their details ARE in it; it is only not long.
+    return cc.LINK_OPENS_WITH_DETAILS.format(whose=whose)
 
 
 # ── A lead asking about, or wary of, the link ───────────────────────────────
@@ -300,7 +321,12 @@ def quote_offer(appointment) -> str:
     link = quote_link(appointment)
     if not link:
         return ''
-    return f'{copy_catalog.PLUMBER_QUOTE_OFFER}\n\n{link}'
+    # Names the plumber and says where the link goes, like the handoff (owner,
+    # 2026-09-21); the link stays last, on its own line.
+    who = _who_handles_quotes(appointment)
+    offer = (copy_catalog.PLUMBER_QUOTE_OFFER.format(who=who) if who
+             else copy_catalog.PLUMBER_QUOTE_OFFER_NAMELESS)
+    return f'{offer}\n\n{_link_opens_line(link, who)}\n{link}'
 
 
 def _description_line(appointment) -> str:
