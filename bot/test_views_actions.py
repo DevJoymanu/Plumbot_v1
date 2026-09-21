@@ -866,6 +866,50 @@ class FollowupActionTests(StaffClientTestCase):
         mock_send.assert_called_once()
 
 
+class ManualSendButtonsTests(StaffClientTestCase):
+    """The lead page's "Send portfolio PDF" and "Send plumber handoff" buttons
+    (owner, 2026-09-21). POST only, the lead's own tenant, outbound mocked."""
+
+    def setUp(self):
+        super().setUp()
+        self.lead = make_lead(71, customer_name='Rudo', project_type='bathroom_renovation',
+                              project_description='whole bathroom', customer_area='Borrowdale')
+
+    @patch('bot.out_of_scope_handler.send_lead_magnet_on_whatsapp', return_value=True)
+    def test_portfolio_pdf_is_sent_even_if_the_bot_sent_it_before(self, send):
+        response = self.client.post(reverse('send_portfolio_pdf_to_lead', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 302)
+        send.assert_called_once()
+        self.assertTrue(send.call_args.kwargs.get('force'))
+
+    def test_the_buttons_do_nothing_on_get(self):
+        for name in ('send_portfolio_pdf_to_lead', 'send_plumber_handoff_to_lead'):
+            self.assertEqual(self.client.get(reverse(name, args=[self.lead.pk])).status_code, 405)
+
+    @patch('bot.views.followups.get_client_for_tenant')
+    def test_the_handoff_names_the_plumber_links_his_whatsapp_and_stops_follow_ups(self, client):
+        from bot.management.commands.send_followups import handoff_sent_since_last_reply
+        client.return_value.send_text_message.return_value = {'messages': [{'id': 'wamid.H'}]}
+        self.lead.last_customer_response = timezone.now() - timedelta(hours=2)
+        self.lead.save(update_fields=['last_customer_response'])
+        response = self.client.post(reverse('send_plumber_handoff_to_lead', args=[self.lead.pk]))
+        self.assertEqual(response.status_code, 302)
+        text = client.return_value.send_text_message.call_args[0][1]
+        self.assertIn('https://wa.me/', text)
+        self.assertIn('handles our quotes', text)
+        self.lead.refresh_from_db()
+        last = self.lead.conversation_history[-1]
+        self.assertTrue(last['content'].startswith('[MANUAL HANDOFF]'))
+        self.assertEqual(last.get('message_id'), 'wamid.H')
+        self.assertTrue(handoff_sent_since_last_reply(self.lead))
+
+    @patch('bot.views.followups.get_client_for_tenant')
+    def test_a_synthetic_key_lead_gets_no_whatsapp(self, client):
+        stub = make_lead(72, phone_number='email_rudo@example.com')
+        self.client.post(reverse('send_plumber_handoff_to_lead', args=[stub.pk]))
+        client.return_value.send_text_message.assert_not_called()
+
+
 # ======================================================================
 # 4. Quotation & template actions
 # ======================================================================

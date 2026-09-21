@@ -13150,6 +13150,65 @@ try:
                 and _pl.is_handoff_text('x https://wa.homebase.co.zw/q/Jd7Kx2')
                 and not _pl.is_handoff_text('Hi there, which suburb are you in?'))
 
+    # -- Multi-intent: an area is not a location question, and no Homebase
+    # price line (barmak 1231, 2026-09-21: "In shurugwi" + "I need prices
+    # first" got "We're based in Harare." and Homebase's fixture prices).
+    from bot.faq import asks_our_location as _aol
+    from bot.views.plumbot.response_mixin import ResponseMixin as _HbRM
+    for _q in ('Where are you based?', 'your location please', 'where are you located'):
+        results.log("location question: %r asks where we are" % _q, _aol(_q))
+    for _q in ('In shurugwi', 'Borrowdale', 'In shurugwi. I need prices first'):
+        results.log("location question: %r is the lead's own area" % _q, not _aol(_q))
+    _mi = _HbRM()
+    _mi.appointment = _hb_types.SimpleNamespace(tenant=None)
+    _mi._split_intents = lambda m: [{'intent': 'location', 'question': m},
+                                    {'intent': 'combined_pricing', 'question': m}]
+    results.log("multi-intent: a general price ask is left to the per-tenant pricing path",
+                _mi.compose_multi_answer('In shurugwi. I need prices first') is None)
+    # -- Price guide: a general price ask from a lead with the three fields ---
+    # (owner, 2026-09-21) gets the PDF and "a quick look, or a quote online
+    # first?"; the answer routes to the booking question or the plumber handoff.
+    from bot import price_guide as _pgd
+    for _q, _want in (('online please', 'online'), ('A quick look', 'visit'),
+                      ('Come and see it', 'visit'), ('the first one', 'visit'),
+                      ('whatsapp is fine', 'online'), ('send photos here', 'online'),
+                      ('ndoda kuti muuye', 'visit'), ('either is fine', ''),
+                      ('come and look, or online', '')):
+        results.log("price guide: %r reads as %r" % (_q, _want or 'no choice'),
+                    _pgd.read_choice(_q) == _want, got=_pgd.read_choice(_q))
+    _pg_bot = _hb_types.SimpleNamespace(
+        _asks_price_figure=lambda m: _HbRM._asks_price_figure(_HbRM(), m), tenant_cfg=None)
+    _pg_lead = lambda **kw: _hb_types.SimpleNamespace(**{**dict(
+        project_type='bathroom_renovation', project_description='whole bathroom',
+        customer_area='Shurugwi', status='pending', internal_notes=''), **kw},
+        get_project_type_display=lambda: 'Bathroom Renovation')
+    results.log("price guide: a general price ask with the three fields gets it",
+                _pgd.applies('I need prices first', _pg_lead(), _pg_bot))
+    results.log("price guide: a named item keeps its own price",
+                not _pgd.applies('how much is a tub?', _pg_lead(), _pg_bot))
+    results.log("price guide: not before the three fields are in",
+                not _pgd.applies('I need prices first', _pg_lead(customer_area=''), _pg_bot))
+    results.log("price guide: never to a lead who has booked",
+                not _pgd.applies('I need prices first', _pg_lead(status='confirmed'), _pg_bot))
+    results.log("price guide: the choice question is one question, visit or online",
+                _hb_cc.PRICE_CHOICE_ASK.count('?') == 1 and 'online' in _hb_cc.PRICE_CHOICE_ASK
+                and 'quick look' in _hb_cc.PRICE_CHOICE_ASK)
+
+    # "I need prices first" is a price question; "I need a new shower" is a job.
+    from bot.whatsapp_webhook import _is_genuine_pricing_question as _gpq
+    _fresh_appt = lambda: _hb_types.SimpleNamespace(pricing_overview_sent=False,
+                                                     sent_pricing_intents=[])
+    for _q in ('In shurugwi. I need prices first', 'I need the price',
+               'we want to know the cost'):
+        results.log("genuine price ask: %r gets the pricing overview" % _q,
+                    _gpq(_q, _fresh_appt()) is True)
+    for _q in ('I need a new shower', 'I want a quote for my bathroom', 'ok thanks'):
+        results.log("genuine price ask: %r is not a price question" % _q,
+                    _gpq(_q, _fresh_appt()) is False)
+    import inspect as _hb_inspect
+    results.log("multi-intent: no hardcoded Homebase price line in the composer",
+                'geyser from US$160' not in _hb_inspect.getsource(_HbRM.compose_multi_answer))
+
     # -- Context over the script: the repeat guard (owner, 2026-09-21) -------
     # "Do not just keep looping the delay signal messages." A scripted draft
     # that repeats one of our recent SENT messages is read in context.

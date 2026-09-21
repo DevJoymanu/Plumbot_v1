@@ -30,7 +30,10 @@
     "0|expect|how may we assist you on plumbing services": false,
     "1|reject|US$": true,
     "2|reject|what area are you in": true,
-    "2|reject|when were you hoping to get started": true
+    "2|reject|when were you hoping to get started": true,
+    "3|reject|geyser from": true,
+    "3|reject|we're based in": true,
+    "3|reject|which of these do you need": true
   },
   "budget_ladder_soft_close.txt": {
     "0|expect|US$": false,
@@ -132,7 +135,7 @@
     "2|reject|costs nothing": true,
     "2|reject|free": true,
     "2|reject|no charge": true,
-    "3|reject|free": false,
+    "3|reject|free": true,
     "3|reject|free of charge": true,
     "4|reject|free": true,
     "5|expect|free": true
@@ -237,6 +240,17 @@
     "2|reject|US$": true,
     "2|reject|describe what you'd like done": true
   },
+  "price_guide_after_three_fields.txt": {
+    "0|expect|how may we assist you on plumbing services": false,
+    "1|reject|US$": true,
+    "2|reject|what area are you in": true,
+    "3|expect|online first": false,
+    "3|expect|price guide": false,
+    "3|expect|quick look": true,
+    "3|reject|US$": true,
+    "4|expect|handles our quotes": false,
+    "4|expect|wa.me": false
+  },
   "price_tiedown_yes_not_availability.txt": {
     "0|expect|US$": true,
     "0|expect|willing to invest": true,
@@ -319,6 +333,6 @@
     "0|reject|tub": true,
     "1|reject|US$": true,
     "1|reject|package": true,
-    "2|expect|US$": false
+    "2|expect|US$": true
   }
 }

@@ -237,6 +237,20 @@ def _tenant_triggers(tenant) -> dict:
     return out
 
 
+def asks_our_location(message: str, tenant=None) -> bool:
+    """Is the lead asking where WE are ("where are you based?", "your location")?
+
+    WHY: the multi-intent splitter labelled "In shurugwi", the lead telling us
+    THEIR area, as a location question, and the reply opened "We're based in
+    Harare." (barmak 1231, 2026-09-21). A lead's area is an answer, not a
+    question about us. HOW: the same location triggers the FAQ matches on, plus
+    the tenant's own names; no API call. Pinned by "location question" in TEST 0.
+    """
+    text = (message or '').lower()
+    extra = _tenant_triggers(tenant).get('location', ())
+    return any(t in text for t in _TRIGGERS['location']) or any(t in text for t in extra)
+
+
 def match_faq_topic(message: str, tenant=None) -> str | None:
     """Return the matched FAQ topic (e.g. 'location', 'services'), or None. Same
     matching as lookup_faq — pure string matching, no API calls.

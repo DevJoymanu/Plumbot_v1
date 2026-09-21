@@ -529,6 +529,92 @@ class TwoFollowupsAndSilenceTests(OfflineTestCase):
         self.assertFalse(has_agreed_checkback(make_lead(106)))
 
 
+class AgreedCheckbackHoldsFollowupsTests(SecondFollowupHandoffTests):
+    """Homebase 1233, 2026-09-21: deferred to "mid next month" (check back
+    Thursday 15 October), took the portfolio on WhatsApp, said "Thank you
+    ndaiwona", and at 18:05 got a portfolio check-in AND an [AUTO FOLLOW-UP]
+    asking "What exactly needs doing?" four seconds apart. The check-in had
+    overwritten delay_followup_due_at with its own moment, so once it went out
+    the main loop no longer saw the agreed date, and neither loop could see the
+    other's send. Inherits the frozen-clock helpers; the parent's tests are
+    switched off below so they run once, in their own class."""
+
+    def test_delay_signal_no_email_no_fields_second_nudge_is_the_handoff(self): pass
+    def test_a_reply_resets_the_delay_nudges(self): pass
+    def test_a_parked_lead_second_nudge_is_the_handoff_then_stops(self): pass
+    def test_the_main_loop_stops_after_the_handoff_until_they_reply(self): pass
+
+    def _deferred(self, n, replied_after_pdf=True):
+        """1233's state at 18:05: agreed 15 days out, the portfolio check-in
+        due, the portfolio sent 5 min before their last message."""
+        from bot.management.commands.send_followups import SA_TIMEZONE
+        agreed = (self.t0 + timedelta(days=15)).date().isoformat()
+        pdf_at = self.t0 - timedelta(minutes=5)
+        lead = self._lead(n, f'[FOLLOW_UP_DATE] {agreed}\n[DELAY_SIGNAL]\n'
+                             f'[DELAY_KIND] pdf_checkin\n[LEAD_MAGNET_WA_SENT]\n'
+                             f'[PDF_CHECKIN_FROM] {pdf_at.isoformat()}',
+                          is_delayed=True, project_description='',
+                          delay_followup_due_at=self.t0 + timedelta(hours=10))
+        if not replied_after_pdf:
+            self._replied(lead, pdf_at - timedelta(minutes=5))
+        return lead
+
+    def test_a_lead_who_replied_after_the_portfolio_gets_no_check_in(self):
+        lead = self._deferred(120)
+        self.assertIsNone(self._tick('_process_delayed_reactivations', lead, 11))
+        self.assertFalse(lead.is_delayed)                # retired, not retried
+        self.assertNotIn('pdf_checkin', lead.internal_notes)
+
+    def test_a_lead_silent_since_the_portfolio_still_gets_the_check_in(self):
+        lead = self._deferred(121, replied_after_pdf=False)
+        sent = self._tick('_process_delayed_reactivations', lead, 11)
+        self.assertIn('portfolio', sent)
+
+    def test_the_main_loop_waits_for_the_agreed_date(self):
+        from bot.management.commands.send_followups import SA_TIMEZONE
+        lead = self._deferred(122)
+        self._tick('_process_delayed_reactivations', lead, 11)
+        # The column is in the past now; the agreed date in the notes is not.
+        for hours in (11, 30, 24 * 7):
+            now = self.t0 + timedelta(hours=hours)
+            with patch('django.utils.timezone.now', return_value=now):
+                ready, why = self.cmd._is_ready_for_followup(
+                    lead, now.astimezone(SA_TIMEZONE), False)
+                self.assertIsNone(self.cmd.next_followup_due_at(lead))
+            self.assertFalse(ready)
+            self.assertIn('check-back', why)
+
+    def test_one_loops_send_blocks_another_loops_send_in_the_same_run(self):
+        """A lead with no agreed date: a check-in just went out, so the main
+        loop's quiet-after-outbound gap applies to it (the cron never stamps
+        last_outbound_at; the transcript marker is what it reads)."""
+        from bot.management.commands.send_followups import SA_TIMEZONE, last_proactive_at
+        lead = self._lead(123, '')
+        at = self.t0 + timedelta(hours=11)
+        lead.conversation_history = [{'role': 'assistant',
+                                      'content': '[DELAY PORTFOLIO CHECK-IN] Hi there',
+                                      'timestamp': at.isoformat()}]
+        lead.save(update_fields=['conversation_history'])
+        self.assertEqual(last_proactive_at(lead), at)
+        now = at + timedelta(seconds=4)
+        with patch('django.utils.timezone.now', return_value=now):
+            ready, why = self.cmd._is_ready_for_followup(
+                lead, now.astimezone(SA_TIMEZONE), False)
+        self.assertFalse(ready)
+        self.assertIn('since we last messaged', why)
+
+    def test_the_agreed_date_itself_is_not_held(self):
+        """On the day, send_reminders owns the check-back; a date already
+        passed is no promise any more."""
+        from bot.out_of_scope_handler import has_agreed_checkback
+        today = timezone.now().date()
+        self.assertFalse(has_agreed_checkback(make_lead(124, internal_notes=f'[FOLLOW_UP_DATE] {today}')))
+        self.assertFalse(has_agreed_checkback(make_lead(
+            125, internal_notes=f'[FOLLOW_UP_DATE] {today - timedelta(days=3)}')))
+        self.assertTrue(has_agreed_checkback(make_lead(
+            126, internal_notes=f'[FOLLOW_UP_DATE] {today + timedelta(days=3)}')))
+
+
 class JobLadderCronTests(OfflineTestCase):
     """send_followups walking the ladder, on a frozen clock."""
 

@@ -179,7 +179,19 @@ def has_agreed_checkback(appointment) -> bool:
     due = getattr(appointment, 'delay_followup_due_at', None)
     if due and due > _tz.now():
         return True
-    return '[JOB_DATE]' in (getattr(appointment, 'internal_notes', '') or '')
+    notes = getattr(appointment, 'internal_notes', '') or ''
+    if '[JOB_DATE]' in notes:
+        return True
+    # The agreed DATE itself, not only the due column. A near-term portfolio
+    # or access check-in overwrites delay_followup_due_at with its own moment,
+    # and once it has gone out the column sits in the past, so a lead who had
+    # agreed "Thursday 15 October" read as not deferred and the main
+    # follow-up loop asked "What exactly needs doing?" the same evening
+    # (homebase 1233). The latest [FOLLOW_UP_DATE] still ahead of today is
+    # the promise. Pinned by AgreedCheckbackHoldsFollowupsTests.
+    today = _tz.now().astimezone(pytz.timezone('Africa/Johannesburg')).date().isoformat()
+    agreed = re.findall(r'\[FOLLOW_UP_DATE\] (\d{4}-\d{2}-\d{2})', notes)
+    return bool(agreed) and max(agreed) > today
 
 
 # ── Bare acknowledgements while a hold is on ──────────────────────────────────
@@ -349,15 +361,19 @@ def mark_delay_signal(appointment, source_message: str = "") -> bool:
     return marked
 
 
-def send_lead_magnet_on_whatsapp(appointment) -> bool:
+def send_lead_magnet_on_whatsapp(appointment, force: bool = False) -> bool:
     """
     Send the portfolio/pricing PDF (our lead magnet) straight to the customer on
     WhatsApp as a document, instead of emailing it. Used when a lead asks to get
-    it "on this number / on WhatsApp / right here". Guarded by a
-    [LEAD_MAGNET_WA_SENT] note so we never double-send.
+    it "on this number / on WhatsApp / right here", by the price-guide step
+    (bot/price_guide.py) and by the staff "Send portfolio PDF" button.
+    Guarded by a [LEAD_MAGNET_WA_SENT] note so the automated paths never
+    double-send; `force=True` (the staff button only) sends it again anyway.
+    The send is recorded in the transcript with its WAMID ([PDF SENT] ...), so
+    a lead replying to the PDF resolves back to it.
     """
     notes = appointment.internal_notes or ''
-    if '[LEAD_MAGNET_WA_SENT]' in notes:
+    if '[LEAD_MAGNET_WA_SENT]' in notes and not force:
         return True
     try:
         import os as _os, tempfile as _tempfile
@@ -397,7 +413,7 @@ def send_lead_magnet_on_whatsapp(appointment) -> bool:
                 doc_path, is_temp = tmp.name, True
 
         client = get_client_for_tenant(tenant)
-        client.send_local_document(
+        result = client.send_local_document(
             to, doc_path,
             caption=f"{business}'s portfolio of past projects plus a pricing guide.",
             filename=f"{slug}_portfolio.pdf",
@@ -405,8 +421,19 @@ def send_lead_magnet_on_whatsapp(appointment) -> bool:
         if is_temp:
             try: _os.unlink(doc_path)
             except OSError: pass
-        appointment.internal_notes = f'{notes}\n[LEAD_MAGNET_WA_SENT]'.strip()
-        appointment.save(update_fields=['internal_notes'])
+        if '[LEAD_MAGNET_WA_SENT]' not in notes:
+            appointment.internal_notes = f'{notes}\n[LEAD_MAGNET_WA_SENT]'.strip()
+            appointment.save(update_fields=['internal_notes'])
+        # The transcript records what was sent, with its WAMID (new send paths
+        # stamp theirs, CLAUDE.md), so "is this the price list?" quoting the
+        # PDF resolves back to it.
+        try:
+            wamid = (result or {}).get('messages', [{}])[0].get('id')
+            if wamid:
+                appointment.record_sent_media(
+                    {wamid: f'{slug}_portfolio.pdf'}, f'[PDF SENT] {slug}_portfolio.pdf')
+        except Exception:
+            logger.warning("Could not record the lead magnet send", exc_info=True)
         logger.info("Lead magnet PDF sent on WhatsApp — apt %s",
                     getattr(appointment, 'pk', None))
         return True
@@ -3453,6 +3480,13 @@ def _deliver_pdf_and_schedule_checkin(appointment, iso_date) -> bool:
         notes = appointment.internal_notes or ''
         if '[DELAY_KIND] pdf_checkin' not in notes:
             notes = f'{notes}\n[DELAY_KIND] pdf_checkin'.strip()
+        # When the portfolio went out, so the cron can tell whether the lead
+        # has written since. A lead who has ("Thank you ndaiwona", 1233) has
+        # already answered "did you get a chance to look?", and the check-in
+        # is skipped (send_followups.replied_since_portfolio).
+        from django.utils import timezone as _tz
+        notes = re.sub(r'\[PDF_CHECKIN_FROM\][^\n]*\n?', '', notes).strip()
+        notes = f'{notes}\n[PDF_CHECKIN_FROM] {_tz.now().isoformat()}'.strip()
         appointment.internal_notes = notes
         appointment.save(update_fields=['delay_followup_due_at', 'internal_notes'])
         logger.info("PDF check-in scheduled %s — apt %s",

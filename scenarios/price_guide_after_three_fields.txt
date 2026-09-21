@@ -1,0 +1,27 @@
+# Owner rule, 2026-09-21: once a lead has given the three fields (service type,
+# description, area), a GENERAL price question gets the portfolio / price-guide
+# PDF instead of a price block, then one choice: "a personalised quote from a
+# quick look at the space, or a quote online first?". "Online" gets the plumber
+# handoff (his name, that he handles the quotes, his WhatsApp with their details
+# already typed in); "a look" gets the booking question. A price question that
+# names one item still gets that item's price. bot/price_guide.py, webhook
+# STEP 1d (the guide) and STEP 0-b (the answer).
+
+> Hello! Can I get more info on this?
+expect: how may we assist you on plumbing services
+
+> I want my whole bathroom redone, new tub and tiles
+reject: US$
+
+> Borrowdale
+reject: what area are you in
+
+> I need prices first
+expect: price guide
+expect: quick look
+expect: online first
+reject: US$
+
+> online please
+expect: wa.me
+expect: handles our quotes

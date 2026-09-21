@@ -19,3 +19,15 @@ reject: US$
 > In shurugwi
 reject: when were you hoping to get started
 reject: what area are you in
+
+# Later the same day (barmak 1231, 14:03): "In shurugwi" and "I need prices
+# first", tapped together and batched into one turn. The multi-intent composer
+# read the area as "where are you?" ("We're based in Harare.") and answered the
+# price ask with a hardcoded line of HOMEBASE fixture prices ending "Which of
+# these do you need?", to a barmak lead who had already said "the whole
+# bathroom". A general price ask now goes to the per-tenant, per-job pricing
+# path, and a lead's area is never a question about our location.
+> In shurugwi. I need prices first
+reject: we're based in
+reject: which of these do you need
+reject: geyser from

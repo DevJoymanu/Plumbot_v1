@@ -105,11 +105,75 @@ FOLLOWUP_CAP_PER_REPLY = 4
 # prefix as it sends, so the transcript is the one place that knows the total
 # regardless of which counter each loop keeps.
 # '[JOB DATE FOLLOW-UP]' is job_date_ladder.TRANSCRIPT_MARKER, the -7/-3 touches.
+# The near-term check-ins ('[DELAY PORTFOLIO CHECK-IN]', '[DELAY ACCESS
+# CHECK-IN]') are proactive touches like the rest. They were missing, so a
+# check-in and an [AUTO FOLLOW-UP] went to the same lead four seconds apart
+# and neither saw the other (homebase 1233).
 PROACTIVE_MARKERS = (
     '[AUTO FOLLOW-UP]', '[AUTOMATIC FOLLOW-UP]',
     '[DELAY NUDGE', '[PARKED NUDGE', '[DELAY REACTIVATION]',
     '[JOB DATE FOLLOW-UP]',
+    '[DELAY PORTFOLIO CHECK-IN]', '[DELAY ACCESS CHECK-IN]',
 )
+
+
+def has_agreed_checkback(lead) -> bool:
+    """The webhook's own reader (out_of_scope_handler.has_agreed_checkback),
+    imported at call time like the file's other out_of_scope_handler uses, so
+    the chat and the cron cannot disagree about whether a lead said "not yet".
+    False if the reader fails: a broken check must not silence every lead."""
+    try:
+        from bot.out_of_scope_handler import has_agreed_checkback as _agreed
+        return _agreed(lead)
+    except Exception:
+        logger.warning('Agreed check-back read failed for lead %s',
+                       getattr(lead, 'pk', None), exc_info=True)
+        return False
+
+
+def replied_since_portfolio(lead) -> bool:
+    """Has the lead written to us since the portfolio PDF went out?
+
+    WHY: the portfolio check-in asks "hope you got a chance to look through
+    the portfolio". A lead who has written since has answered that already;
+    1233 said "Thank you ndaiwona" (thanks, I've seen it) at 07:20 and still
+    got the check-in at 18:05.
+    HOW: compares last_customer_response with the [PDF_CHECKIN_FROM] stamp
+    written when the check-in was scheduled. Leads scheduled before that
+    stamp existed fall back to "their message is newer than our last reply",
+    which is the 1233 shape. Pinned by AgreedCheckbackHoldsFollowupsTests.
+    """
+    last_in = getattr(lead, 'last_customer_response', None)
+    if not last_in:
+        return False
+    found = re.search(r'\[PDF_CHECKIN_FROM\] (\S+)', getattr(lead, 'internal_notes', '') or '')
+    sent_at = _parse_history_stamp(found.group(1)) if found else getattr(
+        lead, 'last_outbound_at', None)
+    return bool(sent_at) and last_in > sent_at
+
+
+def last_proactive_at(lead):
+    """When any loop last sent this lead an automatic message, or None.
+
+    WHY: the "we spoke to them very recently" gap in _is_ready_for_followup
+    read only `last_outbound_at`, which the webhook stamps and the cron loops
+    do not. So a message one loop sent earlier in the SAME run was invisible
+    to the main loop that ran after it. The transcript carries every loop's
+    marker with a timestamp, so it is the one place they all agree on.
+    HOW: the newest stamped assistant turn starting with a PROACTIVE_MARKERS
+    prefix; unstamped entries are skipped. Pinned by
+    AgreedCheckbackHoldsFollowupsTests.
+    """
+    latest = None
+    for message in getattr(lead, 'conversation_history', None) or []:
+        if (message or {}).get('role') != 'assistant':
+            continue
+        if not str(message.get('content') or '').startswith(PROACTIVE_MARKERS):
+            continue
+        stamp = _parse_history_stamp(message.get('timestamp'))
+        if stamp and (latest is None or stamp > latest):
+            latest = stamp
+    return latest
 
 
 def touches_since_last_reply(lead) -> int:
@@ -177,7 +241,12 @@ def handoff_sent_since_last_reply(lead) -> bool:
         if (message or {}).get('role') != 'assistant':
             continue
         content = (message.get('content') or '').lstrip()
-        if not content.startswith(PROACTIVE_MARKERS):
+        # A staff member's [MANUAL HANDOFF] counts too: the handoff is the last
+        # text whoever sent it (owner, 2026-09-21). It is deliberately NOT in
+        # PROACTIVE_MARKERS, which the four-touch cap counts, because the cap
+        # is about the machine talking over itself.
+        if not (content.startswith(PROACTIVE_MARKERS)
+                or content.startswith('[MANUAL HANDOFF]')):
             continue
         # Any link form the handoff has used, or its copy (plumber_link): the
         # business-domain short link carries no wa.me, and checking only for
@@ -1266,6 +1335,26 @@ class Command(BaseCommand):
                 # free-form window (24h organic / 72h ad).
                 is_pdf_checkin = '[DELAY_KIND] pdf_checkin' in (lead.internal_notes or '')
 
+                # The lead has written since the portfolio went out, so "did
+                # you get a chance to look?" is already answered. Retire the
+                # check-in exactly as a sent one would be retired (delay queue
+                # cleared) but send nothing; the agreed [FOLLOW_UP_DATE] still
+                # holds the main loop off until the date (has_agreed_checkback).
+                if is_pdf_checkin and replied_since_portfolio(lead):
+                    if not dry_run:
+                        notes = lead.internal_notes or ''
+                        notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes)
+                        notes = _re.sub(r'\[DELAY_KIND\] pdf_checkin\n?', '', notes)
+                        notes = _re.sub(r'\[PDF_CHECKIN_FROM\][^\n]*\n?', '', notes)
+                        notes = _re.sub(r'\[OOS_PENDING\][^\n]*\n?', '', notes).strip()
+                        lead.is_delayed     = False
+                        lead.internal_notes = notes
+                        lead.save(update_fields=['is_delayed', 'internal_notes'])
+                    self.stdout.write(
+                        f'  Portfolio check-in skipped for lead {lead.id}: '
+                        f'they replied after the portfolio went out')
+                    continue
+
                 # ── Build the WhatsApp message (touch 1 only) ───────────────────
                 if is_access_checkin:
                     message = (
@@ -1353,6 +1442,7 @@ class Command(BaseCommand):
                         notes = lead.internal_notes or ''
                         notes = _re.sub(r'\[DELAY_SIGNAL\][^\n]*\n?', '', notes)
                         notes = _re.sub(r'\[DELAY_KIND\] (?:access_checkin|pdf_checkin)\n?', '', notes)
+                        notes = _re.sub(r'\[PDF_CHECKIN_FROM\][^\n]*\n?', '', notes)
                         notes = _re.sub(r'\[OOS_PENDING\][^\n]*\n?', '', notes).strip()
                         lead.is_delayed     = False
                         lead.internal_notes = notes
@@ -1911,6 +2001,15 @@ class Command(BaseCommand):
         # replies, which resets the count and starts a new cycle.
         if handoff_sent_since_last_reply(lead):
             return False, 'handed off to the plumber, waiting for their reply'
+        # A lead who agreed a check-back date is not chased before it. The
+        # query excludes a future delay_followup_due_at, but a near-term
+        # check-in overwrites that column and leaves it in the past, and the
+        # agreed date only survives as a [FOLLOW_UP_DATE] note. has_agreed_
+        # checkback reads both (and an armed job-date ladder, which owns the
+        # lead's touches). Without it, 1233 ("mid next month", then "Thank you
+        # ndaiwona") was asked "What exactly needs doing?" that evening.
+        if has_agreed_checkback(lead):
+            return False, 'agreed a check-back date that is still ahead'
 
         due_at = self._scheduled_due_at(lead)
         if due_at is None:
@@ -1923,7 +2022,12 @@ class Command(BaseCommand):
         # We spoke to this lead very recently — a follow-up on top of our own
         # message (or on top of theirs, mid-conversation) reads as if nobody is
         # watching the thread. The live conversation IS the follow-up.
-        last_out = getattr(lead, 'last_outbound_at', None)
+        # Our automatic sends count too: the cron does not stamp
+        # last_outbound_at, so without the transcript a check-in sent by an
+        # earlier loop of this same run did not register (see last_proactive_at).
+        stamps = [s for s in (getattr(lead, 'last_outbound_at', None),
+                              last_proactive_at(lead)) if s]
+        last_out = max(stamps) if stamps else None
         if last_out:
             # Relaxed on a last call: the window is minutes from shutting, so a
             # slightly closer touch beats no touch at all.
@@ -2154,6 +2258,10 @@ class Command(BaseCommand):
         # Handed off: nothing more is due until they reply (the cron's own
         # rule in _is_ready_for_followup), so the UI must not show a next send.
         if handoff_sent_since_last_reply(lead):
+            return None
+        # Held until the agreed check-back date (the cron's rule in
+        # _is_ready_for_followup), so no "next follow-up" is shown before it.
+        if has_agreed_checkback(lead):
             return None
         max_fu = max_followups_for(lead)
         if (lead.followup_count or 0) >= max_fu:

@@ -108,6 +108,8 @@ from .followups import (
     send_portfolio_to_lead,
     send_image_to_lead,
     send_pdf_to_lead,
+    send_portfolio_pdf_to_lead,
+    send_plumber_handoff_to_lead,
     send_bulk_followup,
     edit_followup_log,
     update_followup_schedule,

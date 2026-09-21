@@ -1287,6 +1287,87 @@ def send_image_to_lead(request, pk):
     return _followup_redirect(request, pk)
 
 
+def _whatsapp_reachable(appointment) -> bool:
+    """A real WhatsApp number, not a synthetic key (email_… / quotation_only_…),
+    which never get WhatsApp (CLAUDE.md non-negotiable)."""
+    phone = (appointment.phone_number or '')
+    return not phone.startswith(('email_', 'quotation_only_')) and bool(
+        re.sub(r'\D', '', phone))
+
+
+@staff_required
+@require_POST
+def send_portfolio_pdf_to_lead(request, pk):
+    """Staff button: send the portfolio / price-guide PDF on WhatsApp now.
+
+    WHAT: the tenant's lead-magnet PDF (`send_lead_magnet_on_whatsapp`), with
+    `force=True` so a staff member can send it again even if the bot already
+    did. WHY a separate button: "Send portfolio" beside it sends the gallery
+    PHOTOS; this sends the PDF the owner calls the portfolio (owner,
+    2026-09-21). HOW: POST only and scoped to the request's tenant; the send
+    records its WAMID in the transcript. A closed WhatsApp window makes the
+    send fail and the page says so. Pinned by ManualSendButtonsTests.
+    """
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
+    if not _whatsapp_reachable(appointment):
+        messages.error(request, 'This lead has no WhatsApp number to send to.')
+        return _followup_redirect(request, pk)
+    from ..out_of_scope_handler import send_lead_magnet_on_whatsapp
+    if send_lead_magnet_on_whatsapp(appointment, force=True):
+        appointment.last_outbound_at = timezone.now()
+        appointment.save(update_fields=['last_outbound_at'])
+        messages.success(request, 'Portfolio PDF sent on WhatsApp.')
+    else:
+        messages.error(request, "Couldn't send the portfolio PDF. Their WhatsApp "
+                                "window may be closed, or no portfolio is set up.")
+    return _followup_redirect(request, pk)
+
+
+@staff_required
+@require_POST
+def send_plumber_handoff_to_lead(request, pk):
+    """Staff button: send the plumber handoff on WhatsApp now.
+
+    WHAT: the plumber's name, that he handles the quotes, and the link that
+    opens his WhatsApp with their details already typed in
+    (`plumber_link.quote_offer`, the in-conversation form: the follow-up form
+    opens "I've messaged a couple of times", which is not true of a send a
+    person chooses to make). WHY (owner, 2026-09-21): so staff can hand a lead
+    over without waiting for the follow-up. HOW: through `_finalised_for_send`
+    (the outbound chain), stamped with its WAMID, logged as [MANUAL HANDOFF],
+    which `handoff_sent_since_last_reply` reads, so the automated follow-ups
+    stop after it like after the automatic one. No plumber number for the
+    lead's tenant means nothing is sent. Pinned by ManualSendButtonsTests.
+    """
+    appointment = get_object_or_404(Appointment.objects.for_tenant_or_seed(getattr(request, 'tenant', None)), pk=pk)
+    if not _whatsapp_reachable(appointment):
+        messages.error(request, 'This lead has no WhatsApp number to send to.')
+        return _followup_redirect(request, pk)
+    from ..plumber_link import LINK_SENT_TAG, quote_offer
+    text = quote_offer(appointment)
+    if not text:
+        messages.error(request, 'No plumber number is set for this business, so there is no link to send.')
+        return _followup_redirect(request, pk)
+    try:
+        from ..whatsapp_webhook import _finalised_for_send
+        text = _finalised_for_send(text, appointment, check=False)
+        result = get_client_for_tenant(appointment.tenant).send_text_message(
+            clean_phone_number(appointment.phone_number), text)
+        logged = f'[MANUAL HANDOFF] {text}'
+        appointment.add_conversation_message('assistant', logged)
+        wamid = (result or {}).get('messages', [{}])[0].get('id')
+        appointment.attach_message_id('assistant', logged, wamid)
+        if LINK_SENT_TAG not in (appointment.internal_notes or ''):
+            appointment.internal_notes = f"{appointment.internal_notes or ''}\n{LINK_SENT_TAG}".strip()
+        appointment.last_outbound_at = timezone.now()
+        appointment.save(update_fields=['last_outbound_at', 'internal_notes'])
+        messages.success(request, 'Plumber handoff sent on WhatsApp.')
+    except Exception as exc:
+        logger.error('Manual plumber handoff failed for lead %s: %s', pk, exc)
+        messages.error(request, f"Couldn't send the handoff: {exc}")
+    return _followup_redirect(request, pk)
+
+
 @staff_required
 @require_POST
 def send_pdf_to_lead(request, pk):

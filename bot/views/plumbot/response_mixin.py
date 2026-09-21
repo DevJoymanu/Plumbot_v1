@@ -6253,6 +6253,18 @@ class ResponseMixin:
                 if input_type == "unclear" or not reply:
                     return None
 
+                # The canned price rescue asks "Which service are you looking
+                # at?", so it stands aside for a lead whose job we KNOW (a
+                # barmak lead who had said "the whole bathroom" was asked it,
+                # 1231, 2026-09-21: context over the script); the normal retry
+                # answers in context instead. Deliberately NOT a price block
+                # here: tried, it priced "Cost of wiring a new 4 bedroom house"
+                # (contextual_oos_clarification, new_build_rejected), because
+                # this rescue runs on messages the pricing steps chose not to
+                # price.
+                if input_type == "price_query" and self._job_is_known():
+                    return None
+
                 if svc and not self.appointment.project_type:
                     self.appointment.project_type = svc
                     self.appointment.save(update_fields=["project_type"])
@@ -7361,6 +7373,25 @@ class ResponseMixin:
             if 'booking' in distinct:
                 return None
 
+            # A general price question is not composed here: the single-intent
+            # path answers it per tenant AND per job (generate_pricing_overview).
+            # This branch used to answer it with a hardcoded line of HOMEBASE
+            # figures, which went to a barmak lead who had already said "the
+            # whole bathroom", with "Which of these do you need?" on the end
+            # (barmak 1231, 2026-09-21). Tenancy rule: no Homebase value reaches
+            # another tenant's customer. Pinned by "multi-intent" in TEST 0.
+            if 'combined_pricing' in distinct:
+                return None
+
+            # "location" only when they ask where WE are. The splitter read the
+            # lead's own area ("In shurugwi", batched with "I need prices
+            # first") as a location question and the reply opened "We're based
+            # in Harare." A lead's area is an answer (faq.asks_our_location).
+            if 'location' in distinct:
+                from bot.faq import asks_our_location
+                if not asks_our_location(message, getattr(self.appointment, 'tenant', None)):
+                    distinct = [i for i in distinct if i != 'location']
+
             _snippets = self._compose_snippets()
             answerable = [i for i in distinct if i in self._COMPOSE_KNOWN]
             # Single source of truth for "should I volunteer a price?": drop any
@@ -7381,12 +7412,8 @@ class ResponseMixin:
                 if intent == 'pictures':
                     send_photos = True
                     answers.append("Sending photos of our previous work now")
-                elif intent == 'combined_pricing':
-                    answers.append(
-                        "Rough all-in prices (supply + install): geyser from US$160, "
-                        "shower cubicle from US$170, vanity from US$180, toilet from US$70, "
-                        "side chamber from US$160, tub from US$160. Final price confirmed on site."
-                    )
+                # (No combined_pricing branch: it returns None above, and the
+                # hardcoded Homebase price line that lived here is gone.)
                 elif intent in _snippets:
                     answers.append(_snippets[intent])
                 elif intent == 'other':

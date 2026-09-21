@@ -119,6 +119,10 @@ urlpatterns = [
     path('offer/', offer_views.offer_page, name='offer'),
     path('offer/save/', offer_views.offer_save, name='offer_save'),
     path('appointments/<int:pk>/send-pdf/', views.send_pdf_to_lead, name='send_pdf_to_lead'),
+    # Staff buttons on the lead page (owner, 2026-09-21): the portfolio PDF and
+    # the plumber handoff, sent on WhatsApp now. POST only.
+    path('appointments/<int:pk>/send-portfolio-pdf/', views.send_portfolio_pdf_to_lead, name='send_portfolio_pdf_to_lead'),
+    path('appointments/<int:pk>/send-plumber-handoff/', views.send_plumber_handoff_to_lead, name='send_plumber_handoff_to_lead'),
 
         # API endpoints for fetching appointment data
     path('api/appointments/<int:appointment_id>/', appointment_detail_api, name='appointment_detail_api'),

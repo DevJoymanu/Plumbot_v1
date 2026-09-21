@@ -263,7 +263,17 @@ def _is_genuine_pricing_question(message: str, appointment: Appointment) -> bool
         'i need', 'i want', 'let me', 'can you', 'please help',
         'i would like', 'we would like', 'looking to', 'looking for',
     ]
-    if any(phrase in msg for phrase in intent_phrases):
+    # "I need / want the price(s)" is a price question, not a job description.
+    # The phrases above exist for "I need a new shower", and they also threw
+    # out "I need prices first" (barmak 1231, 2026-09-21), which then got a
+    # canned step instead of the tenant's pricing overview. Narrow on purpose:
+    # the price word has to be what they need. Pinned by "genuine price ask"
+    # in TEST 0.
+    import re
+    asks_for_the_price = re.search(
+        r"\b(?:i|we)\s+(?:need|want|would\s+like)\s+(?:to\s+know\s+)?"
+        r"(?:the\s+|your\s+|some\s+|a\s+)?(?:price|prices|pricing|cost|costs)\b", msg)
+    if not asks_for_the_price and any(phrase in msg for phrase in intent_phrases):
         return False
     # Allow "how much" and "marii" even when short — they are unambiguous pricing requests
     explicit_short_pricing = ('how much', 'marii', 'mari', 'mutengo', 'zvakadai')
@@ -948,6 +958,46 @@ def _send_reply_then_contact_card(sender, reply, delay_seconds, message_id=None,
                                    f'[CONTACT CARD] {name} +{number}')
     except Exception as exc:
         print(f"⚠️ Contact card to {sender} failed: {exc}")
+
+
+def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
+                      tenant=None, appointment_pk=None):
+    """The price-guide reply in its three parts, in order: the line, the PDF,
+    then the choice question (bot/price_guide.py).
+
+    WHY one thread: the PDF has to land BETWEEN the line that introduces it and
+    the question about it, and `delayed_response` only sends text. So the line
+    goes through it, the PDF follows only if that line really went (its
+    transcript entry got `sent_at`; a superseded or intercepted reply leaves no
+    orphan PDF), then the question is logged and sent, and only then is the
+    choice marked open (CHOICE_TAG), so an unsent question is never "waiting".
+    The PDF sender records its own WAMID; the texts are stamped by
+    `delayed_response`. Failures are logged, never raised.
+    """
+    delayed_response(sender, intro, delay_seconds, message_id, None, tenant)
+    try:
+        appt = Appointment.objects.filter(pk=appointment_pk).first()
+        if appt is None:
+            return
+        history = appt.conversation_history or []
+        if not any(isinstance(m, dict) and m.get('role') == 'assistant'
+                   and m.get('content') == intro and m.get('sent_at')
+                   for m in history[-6:]):
+            print(f"📄 Price guide held for {sender}: its intro was not sent")
+            return
+        from .out_of_scope_handler import send_lead_magnet_on_whatsapp
+        from .price_guide import CHOICE_TAG
+        send_lead_magnet_on_whatsapp(appt)
+        appt.refresh_from_db()
+        appt.add_conversation_message("assistant", question)
+        time.sleep(random.randint(2, 4))
+        delayed_response(sender, question, 0, None, None, tenant)
+        appt.refresh_from_db()
+        if CHOICE_TAG not in (appt.internal_notes or ''):
+            appt.internal_notes = f"{appt.internal_notes or ''}\n{CHOICE_TAG}".strip()
+            appt.save(update_fields=['internal_notes'])
+    except Exception as exc:
+        print(f"⚠️ Price guide to {sender} failed: {exc}")
 
 
 def delayed_response(sender, reply, delay_seconds, message_id=None, cancel_event=None, tenant=None):
@@ -3744,11 +3794,18 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if _move == 'show_work':
             from .out_of_scope_handler import (
                 _is_explicit_deferral, has_agreed_checkback, in_delay_flow)
+            # A price question is answered, not met with photos: "I need prices
+            # first" got the gallery and "Want me to book you a time?" (the
+            # price-guide flow, STEP 1d, answers it). PriceGuideTests.
             if (uc_intent(_uclass) == 'delay_signal'
                     or _is_explicit_deferral(message_body)
                     or in_delay_flow(appointment)
-                    or has_agreed_checkback(appointment)):
-                print("⏸️ Delay signal or delay flow outranks the proof step")
+                    or has_agreed_checkback(appointment)
+                    or plumbot._asks_price_figure(message_body)
+                    # The portfolio PDF is past work already shown, and the
+                    # lead may be answering the price-guide choice (STEP 0-b).
+                    or '[LEAD_MAGNET_WA_SENT]' in (appointment.internal_notes or '')):
+                print("⏸️ The lead's own words outrank the proof step (not yet / a price ask / portfolio already sent)")
                 _move = None
         if _move == 'show_work':
             from bot import portfolio_catalog as _pc
@@ -4370,6 +4427,47 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 ).start()
                 return
 
+        # -- STEP 0-b: The answer to "a quick look, or a quote online first?" ---
+        # Asked after the price guide (STEP 1d). "Online" gets the plumber
+        # handoff (his WhatsApp, their details already typed in); "a look" gets
+        # the booking question. The open-choice tag is cleared on this turn
+        # whatever the reply says, and a delay or exit signal, or a reply that
+        # picks neither, falls through to the ordinary flow: the customer's
+        # words outrank the question we were waiting on. Pinned by
+        # PriceGuideTests.
+        from .price_guide import CHOICE_TAG as _PG_CHOICE, read_choice as _pg_read
+        if _PG_CHOICE in (appointment.internal_notes or ''):
+            appointment._remove_notes_tag(_PG_CHOICE)
+            from .out_of_scope_handler import _is_explicit_deferral as _pg_defer
+            _choice = ('' if (uc_intent(_uclass) == 'delay_signal'
+                              or _pg_defer(message_body))
+                       else _pg_read(message_body))
+            _choice_reply = None
+            if _choice == 'online':
+                from .plumber_link import LINK_SENT_TAG, quote_offer
+                _choice_reply = quote_offer(appointment) or None
+                if _choice_reply and LINK_SENT_TAG not in (appointment.internal_notes or ''):
+                    appointment.internal_notes = (
+                        f"{appointment.internal_notes or ''}\n{LINK_SENT_TAG}".strip())
+                    appointment.save(update_fields=['internal_notes'])
+            elif _choice == 'visit' and getattr(appointment, 'status', '') != 'confirmed':
+                _choice_reply = plumbot._availability_ask(
+                    detect_language_simple(message_body) == 'shona')
+            if _choice_reply:
+                print(f"📄 Price-guide choice '{_choice}': '{message_body[:60]}'")
+                _choice_reply = finalise_outbound(_choice_reply, appointment,
+                                                  message_body, check=False)
+                appointment.add_conversation_message("assistant", _choice_reply)
+                appointment.last_outbound_at = timezone.now()
+                appointment.last_contacted_at = appointment.last_outbound_at
+                appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+                threading.Thread(
+                    target=delayed_response,
+                    args=(sender, _choice_reply, get_random_delay(sender=sender), message_id),
+                    kwargs={'tenant': tenant}, daemon=True,
+                ).start()
+                return
+
         # -- STEP 0: Multi-intent compose (2+ questions in one message) ---------
         # e.g. "where are you based and how much" → answer both in one reply.
         # Only fires for 2+ answerable INFO intents; booking-related messages
@@ -4648,6 +4746,37 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                     kwargs={'tenant': tenant}, daemon=True,
                 ).start()
                 return
+
+        # -- STEP 1d: A general price question from a lead with the job known --
+        # Owner, 2026-09-21: once service, description and area are in, a
+        # GENERAL price question ("I need prices first") gets the price guide
+        # PDF and then "a quick look at the space, or a quote online first?",
+        # not a price block. Before STEP 2, because STEP 2 answers a
+        # classifier-labelled general ask (combined_pricing) with the overview.
+        # After STEP 1b, so a delay or exit signal still wins. A named item
+        # ("how much is a tub?") keeps its price (price_guide.applies). English
+        # only: a Shona lead keeps the Shona pricing reply below. Pinned by
+        # "price guide" in TEST 0, PriceGuideTests and
+        # scenarios/price_guide_after_three_fields.txt.
+        from .price_guide import applies as _price_guide_applies, intro_line as _pg_intro
+        if (detect_language_simple(message_body) != 'shona'
+                and _price_guide_applies(message_body, appointment, plumbot)):
+            _intro = finalise_outbound(_pg_intro(appointment), appointment,
+                                       message_body, check=False)
+            _question = finalise_outbound(copy_catalog.PRICE_CHOICE_ASK, appointment,
+                                          message_body, check=False)
+            print(f"📄 Price guide for a general price ask: '{message_body[:60]}'")
+            appointment.add_conversation_message("assistant", _intro)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            threading.Thread(
+                target=_send_price_guide,
+                args=(sender, _intro, _question, get_random_delay(sender=sender), message_id),
+                kwargs={'tenant': tenant, 'appointment_pk': appointment.pk},
+                daemon=True,
+            ).start()
+            return
 
         # -- STEP 2: Service-specific pricing inquiry ---------------------------
         any_pricing_sent = (

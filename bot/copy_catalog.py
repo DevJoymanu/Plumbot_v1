@@ -222,6 +222,21 @@ LINK_OR_MESSAGE_DIRECTLY_NAMELESS = (
 HANDOFF_NUMBER_OF = "{who}'s number: {number}"
 HANDOFF_NUMBER = "Number: {number}"
 
+# A general price question from a lead who has given the three fields (owner,
+# 2026-09-21): the price guide PDF instead of a price block, then the choice.
+# PRICE_GUIDE_INTRO goes before the PDF; PRICE_GUIDE_ALREADY_SENT when the PDF
+# is already in the chat; PRICE_CHOICE_ASK after it. "Visit or online": a
+# visit answer gets the booking question, an online one the plumber handoff.
+# bot/price_guide.py assembles and routes them.
+PRICE_GUIDE_INTRO = "Here's our price guide, with past jobs and our starting prices."
+PRICE_GUIDE_ALREADY_SENT = (
+    "Our starting prices are in the price guide we sent just above."
+)
+PRICE_CHOICE_ASK = (
+    "Would you rather get a personalised quote from a quick look at the space, "
+    "or a quote online first?"
+)
+
 # A deferred lead asks for the portfolio on WhatsApp AGAIN after it went out.
 # Answered where they are, not with the next scripted step: it is the PDF in the
 # chat already, and it will be there when they can open it (a lead without data

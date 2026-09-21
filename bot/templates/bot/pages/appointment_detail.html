@@ -2340,9 +2340,20 @@
                 <button type="button" onclick="insertTemplate('greeting')"><i class="fas fa-hand-sparkles"></i> Greeting</button>
                 <button type="button" onclick="insertTemplate('check_in')"><i class="fas fa-bell"></i> Check-in</button>
                 <button type="button" onclick="insertTemplate('reminder')"><i class="fas fa-clock"></i> Reminder</button>
+                {# "Send work photos" sends the gallery images; it was labelled "Send portfolio" until the PDF button below arrived, and two "portfolio" buttons read as one. #}
                 <form method="post" action="{% url 'send_portfolio_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
                   {% csrf_token %}
-                  <button type="submit"><i class="fas fa-images"></i> Send portfolio</button>
+                  <button type="submit"><i class="fas fa-images"></i> Send work photos</button>
+                </form>
+                {# The portfolio / price-guide PDF on WhatsApp, now (owner 2026-09-21); sends even if the bot already did. #}
+                <form method="post" action="{% url 'send_portfolio_pdf_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
+                  {% csrf_token %}
+                  <button type="submit"><i class="fas fa-file-pdf"></i> Send portfolio PDF</button>
+                </form>
+                {# The plumber handoff: his name, that he handles quotes, and his WhatsApp link with their details typed in. Stops the automated follow-ups like the automatic one. #}
+                <form method="post" action="{% url 'send_plumber_handoff_to_lead' appointment.pk %}?{{ request.GET.urlencode }}">
+                  {% csrf_token %}
+                  <button type="submit"><i class="fab fa-whatsapp"></i> Send plumber handoff</button>
                 </form>
               </div>
 
