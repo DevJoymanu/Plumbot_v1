@@ -90,8 +90,20 @@ def _description_line(appointment) -> str:
     said again ("Bathroom renovation. Bathroom renovation."). The first line
     or sentence only, cut at a word boundary, first letter up, full stop on.
     """
-    raw = ' '.join(str(getattr(appointment, 'project_description', '') or '').split())
+    # The FIRST LINE only, before whitespace is collapsed: a stored description
+    # is often the lead's messages joined ("toilet, Ruwa\nHow much"), and
+    # collapsing first ran them into one sentence ("Toilet, Ruwa How much.").
+    first_line = next((ln for ln in str(getattr(appointment, 'project_description', '')
+                                      or '').splitlines() if ln.strip()), '')
+    raw = ' '.join(first_line.split())
     if not raw:
+        return ''
+    # A stray chat reply saved as the job ("Ok\nNow you are talking") says
+    # nothing about the work, and put into the lead's mouth it reads as
+    # nonsense. Appointment.save no longer stores one; this covers rows
+    # written before that, through the same rule (bot/job_text.py).
+    from .job_text import describes_a_job
+    if not describes_a_job(raw):
         return ''
     # The first sentence: a description is often "new tub. also the geyser
     # leaks. and the toilet runs", and one line is what the brief asks for.
@@ -141,6 +153,34 @@ def quote_link(appointment) -> str:
         return ''
     text = quote(lead_voice_message(appointment), safe='')
     return f'https://wa.me/{number}?text={text}'
+
+
+def handoff_message(appointment, delayed: bool = False) -> str:
+    """The second follow-up: the plumber handoff, or '' with no plumber number.
+
+    WHAT: a one-line opener, then `quote_offer` (the free-online-quote
+    paragraph and the link).
+    WHY two openers (owner rule, 2026-09-21): two groups get this as their
+    second follow-up. A lead who gave a delay signal is told there is no rush
+    and here is a way to get a price while they plan; a lead with all three
+    fields who went quiet after the booking ask is told there is a way to get
+    a price if a visit does not suit. Both are statements, so the offer's link
+    is the last thing in the message.
+    HOW: '' when `quote_offer` is '' (no plumber number for the lead's own
+    tenant), and the caller then sends its ordinary message instead.
+    """
+    offer = quote_offer(appointment)
+    if not offer:
+        return ''
+    name = (getattr(appointment, 'customer_name', '') or '').strip()
+    hi = f'Hi {name}' if name else 'Hi there'
+    if delayed:
+        opener = (f"{hi}, no rush at all on the timing. If it helps while you "
+                  "plan, there's another way to get your price.")
+    else:
+        opener = (f"{hi}, if a visit doesn't suit right now, there's another way "
+                  "to get your price.")
+    return f'{opener}\n\n{offer}'
 
 
 def quote_offer(appointment) -> str:

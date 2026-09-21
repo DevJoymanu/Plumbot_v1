@@ -202,6 +202,139 @@ class VagueTimeframeTests(OfflineTestCase):
             self.assertNotIn('[DELAY_TF_REASK]', lead.internal_notes or '', phrase)
 
 
+class SecondFollowupHandoffTests(OfflineTestCase):
+    """Owner rule, 2026-09-21: the SECOND automatic touch of a silence is the
+    plumber handoff, then nothing until the lead replies, and a reply resets
+    the count. Two groups: a lead who gave a delay signal (the delay and
+    parked nudge loops, no field requirements) and a lead with all three
+    fields (the main loop, pinned in TEST 0)."""
+
+    def setUp(self):
+        super().setUp()
+        from bot.management.commands.send_followups import Command, SA_TIMEZONE
+        self.cmd = Command()
+        self.t0 = SA_TIMEZONE.localize(datetime(2030, 3, 12, 6, 0))
+        # These leads are not free-entry leads, and every loop refuses a send
+        # Meta would charge for. That gate is not what is under test here.
+        patcher = patch('bot.management.commands.send_followups.paid_sends_allowed',
+                        return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _lead(self, n, notes, **kw):
+        lead = make_lead(n, internal_notes=notes, **kw)
+        self._replied(lead, self.t0)
+        return lead
+
+    def _replied(self, lead, when):
+        lead.last_inbound_at = lead.last_customer_response = when
+        lead.save(update_fields=['last_inbound_at', 'last_customer_response'])
+
+    def _tick(self, loop, lead, hours):
+        """Run one loop at t0 + hours; return the text sent, or None."""
+        from bot.management.commands import send_followups as sf
+        client = sf.get_client_for_tenant.return_value
+        client.send_text_message.reset_mock()
+        now = self.t0 + timedelta(hours=hours)
+        with patch('django.utils.timezone.now', return_value=now):
+            getattr(self.cmd, loop)(now, False)
+        lead.refresh_from_db()
+        call = client.send_text_message.call_args
+        return call[0][1] if call else None
+
+    def test_delay_signal_no_email_no_fields_second_nudge_is_the_handoff(self):
+        """Lead 1217's shape: delay signal, email asked, never given, and the
+        description a stray reply. Nudge 1 is the email ask; nudge 2 the link."""
+        lead = self._lead(60, '[DELAY_SIGNAL]\n[OOS_PENDING] category=delay_email original=2030-03-26',
+                          is_delayed=True, customer_area='', project_type=None,
+                          project_description='Ok\nNow you are talking')
+        first = self._tick('_nudge_delay_flow_ghosts', lead, 2.5)
+        self.assertIn('email', first.lower())
+        self.assertNotIn('wa.me', first)
+        self.assertTrue(first.startswith('Hi Rudo, one thing'), first)  # no stray capital
+        second = self._tick('_nudge_delay_flow_ghosts', lead, 8)
+        self.assertIn(PLUMBER_WA, second)
+        self.assertIn('no rush at all on the timing', second)
+        self.assertNotIn('Now you are talking', second)
+        # The handoff was the last touch of this silence.
+        self.assertIsNone(self._tick('_nudge_delay_flow_ghosts', lead, 14))
+        self.assertIsNone(self._tick('_nudge_delay_flow_ghosts', lead, 20))
+
+    def test_a_reply_resets_the_delay_nudges(self):
+        lead = self._lead(61, '[DELAY_SIGNAL]\n[OOS_PENDING] category=delay_timeframe original=',
+                          is_delayed=True)
+        self._tick('_nudge_delay_flow_ghosts', lead, 2.5)
+        self.assertIn(PLUMBER_WA, self._tick('_nudge_delay_flow_ghosts', lead, 8))
+        self._replied(lead, self.t0 + timedelta(hours=9))
+        # A new silence: nudge 1 again (contextual), not "stopped" and not #3.
+        again = self._tick('_nudge_delay_flow_ghosts', lead, 11.5)
+        self.assertIsNotNone(again)
+        self.assertNotIn('wa.me', again)
+        self.assertIn(PLUMBER_WA, self._tick('_nudge_delay_flow_ghosts', lead, 17))
+
+    def test_a_parked_lead_second_nudge_is_the_handoff_then_stops(self):
+        lead = self._lead(62, '[PARKED]')
+        first = self._tick('_nudge_parked_leads', lead, 9)
+        self.assertIsNotNone(first)
+        self.assertNotIn('wa.me', first)
+        self.assertIn(PLUMBER_WA, self._tick('_nudge_parked_leads', lead, 13.5))
+        self.assertIsNone(self._tick('_nudge_parked_leads', lead, 18))
+
+    def test_the_main_loop_stops_after_the_handoff_until_they_reply(self):
+        from bot.management.commands.send_followups import SA_TIMEZONE
+        lead = self._lead(63, '')
+        link_touch = f'[AUTO FOLLOW-UP] Hi there https://{PLUMBER_WA}?text=x'
+        lead.conversation_history = [{'role': 'assistant', 'content': link_touch,
+                                      'timestamp': (self.t0 + timedelta(hours=4)).isoformat()}]
+        lead.followup_count = 2
+        lead.save(update_fields=['conversation_history', 'followup_count'])
+        now = self.t0 + timedelta(hours=12)
+        with patch('django.utils.timezone.now', return_value=now):
+            ready, why = self.cmd._is_ready_for_followup(lead, now.astimezone(SA_TIMEZONE), False)
+            self.assertIsNone(self.cmd.next_followup_due_at(lead))
+        self.assertFalse(ready)
+        self.assertIn('handed off', why)
+
+
+class DescriptionNetTests(OfflineTestCase):
+    """Appointment.save never stores chat as the job, whichever path set it
+    (bot/job_text.py). Lead 1217's description was "Ok\\nNow you are talking"."""
+
+    def test_chat_is_not_stored_as_the_job(self):
+        lead = make_lead(80, project_description='Ok\nNow you are talking')
+        lead.refresh_from_db()
+        self.assertIsNone(lead.project_description)
+
+    def test_a_write_of_the_field_alone_is_caught_too(self):
+        lead = make_lead(81)
+        lead.project_description = 'Ok thank ,I will let you'
+        lead.save(update_fields=['project_description'])
+        lead.refresh_from_db()
+        self.assertIsNone(lead.project_description)
+
+    def test_a_real_description_is_kept(self):
+        lead = make_lead(82, project_description='Kuita install copper pipes, 2 showers')
+        lead.refresh_from_db()
+        self.assertEqual(lead.project_description, 'Kuita install copper pipes, 2 showers')
+
+    def test_a_save_of_other_fields_leaves_the_description_alone(self):
+        """The net only acts on a save that writes the field, so saving other
+        columns never changes what the caller holds in memory."""
+        lead = make_lead(83)
+        Appointment.objects.filter(pk=lead.pk).update(project_description='ok')
+        lead.refresh_from_db()
+        lead.customer_area = 'Ruwa'
+        lead.save(update_fields=['customer_area'])
+        self.assertEqual(lead.project_description, 'ok')
+
+    def test_the_raw_message_fallback_does_not_take_a_reaction(self):
+        """The path that stored it: next question is the description, and the
+        batched reply is taken raw when the gate says it looks like one."""
+        from bot.views.plumbot.response_mixin import ResponseMixin
+        gate = ResponseMixin._looks_like_project_description_reply
+        self.assertFalse(gate(ResponseMixin(), 'Ok\nNow you are talking'))
+
+
 class JobLadderCronTests(OfflineTestCase):
     """send_followups walking the ladder, on a frozen clock."""
 

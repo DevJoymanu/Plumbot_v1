@@ -144,6 +144,47 @@ def touches_since_last_reply(lead) -> int:
     return count
 
 
+def _greet(hi, body):
+    """'Hi there, happy to hold…': the greeting and a nudge body joined as one
+    sentence. The bodies are written capitalised, so joining them after a
+    comma sent "Hi there, Happy to hold the quote" to every delayed lead. "I"
+    keeps its capital."""
+    body = (body or '').strip()
+    if body[:1].isupper() and not re.match(r"I\b", body):
+        body = body[0].lower() + body[1:]
+    return f'{hi}, {body}'
+
+
+def handoff_sent_since_last_reply(lead) -> bool:
+    """Has a PROACTIVE touch carried the plumber's link since the lead last spoke?
+
+    WHAT: True once the second follow-up (the plumber handoff) has gone out in
+    the current silence, from any of the three loops.
+    WHY (owner rule, 2026-09-21): the handoff is the LAST automatic touch. After
+    it, every loop stops until the lead writes again; their reply resets the
+    count and the cycle (contextual touch, then handoff) starts over.
+    HOW: the same transcript read as touches_since_last_reply: only entries
+    that start with a PROACTIVE_MARKERS prefix and are stamped after the reply.
+    A link the bot put in a conversational reply (the delay flow's portfolio
+    answer) is not proactive, so it does not stop anything. The link is what is
+    looked for, so no extra tag has to be kept in step with the copy.
+    """
+    history = getattr(lead, 'conversation_history', None) or []
+    since = getattr(lead, 'last_customer_response', None) or getattr(
+        lead, 'last_inbound_at', None)
+    for message in history:
+        if (message or {}).get('role') != 'assistant':
+            continue
+        content = (message.get('content') or '').lstrip()
+        if not content.startswith(PROACTIVE_MARKERS) or 'https://wa.me/' not in content:
+            continue
+        stamp = _parse_history_stamp(message.get('timestamp'))
+        if since is not None and (stamp is None or stamp <= since):
+            continue
+        return True
+    return False
+
+
 def _parse_history_stamp(raw):
     """A conversation_history timestamp as an aware datetime, or None.
 
@@ -703,6 +744,14 @@ class Command(BaseCommand):
                     continue
 
                 nudge_count, last_nudge_at = self._read_delay_nudge_state(notes)
+                # A reply puts the count back to zero (owner rule, 2026-09-21),
+                # as it does for the main follow-ups. Read here rather than
+                # written on the reply: a nudge stamped before their latest
+                # message belongs to the previous silence. It used to carry
+                # over, so a lead who replied mid-flow resumed at nudge #3.
+                if (last_nudge_at and lead.last_inbound_at
+                        and lead.last_inbound_at > last_nudge_at):
+                    nudge_count, last_nudge_at = 0, None
 
                 # Read off THIS LEAD's schedule, bounded by the copy we have.
                 # It used to be max(FOLLOWUP_MIN_COUNT, len(fractions)) - "at
@@ -718,6 +767,10 @@ class Command(BaseCommand):
                 # The cross-loop ceiling: this loop's own counter cannot see the
                 # touches the other loops sent off the same silence.
                 if touches_since_last_reply(lead) >= FOLLOWUP_CAP_PER_REPLY:
+                    continue
+                # The handoff was this silence's last touch: stop until they
+                # reply (owner rule, 2026-09-21).
+                if handoff_sent_since_last_reply(lead):
                     continue
 
                 # A free-form send outside the window bounces with 131047 and
@@ -744,20 +797,30 @@ class Command(BaseCommand):
                     if since_last < self._min_gap_hours(lead, now):
                         continue
 
-                # Build message
+                # Build message. The SECOND nudge of a silence is the plumber
+                # handoff (owner rule, 2026-09-21), whatever step they stopped
+                # at: no email, no date and missing fields do not matter for a
+                # lead who gave a delay signal. The first stays the contextual
+                # nudge for the step they are on. No plumber number for the
+                # lead's tenant means the ordinary nudge goes instead.
                 name    = lead.customer_name or ''
                 hi      = f'Hi {name}' if name else 'Hi there'
-                template = self._DELAY_NUDGE_MESSAGES[step][nudge_count]
-                if '{date}' in template and not date:
-                    # Never render a missing date as the literal word "None" to a
-                    # customer. Skip until the stored follow-up date is available.
-                    logger.warning(
-                        "Delay nudge skipped for lead %s: %s template needs a date "
-                        "but none is stored", lead.id, step,
-                    )
-                    continue
-                body     = template.format(date=date) if '{date}' in template else template
-                message  = f'{hi}, {body}'
+                message = ''
+                if nudge_count + 1 == self.HANDOFF_ATTEMPT:
+                    from bot.plumber_link import handoff_message
+                    message = handoff_message(lead, delayed=True)
+                if not message:
+                    template = self._DELAY_NUDGE_MESSAGES[step][nudge_count]
+                    if '{date}' in template and not date:
+                        # Never render a missing date as the literal word "None"
+                        # to a customer. Skip until the stored date is available.
+                        logger.warning(
+                            "Delay nudge skipped for lead %s: %s template needs a date "
+                            "but none is stored", lead.id, step,
+                        )
+                        continue
+                    body = template.format(date=date) if '{date}' in template else template
+                    message = _greet(hi, body)
                 # The visit is free ONCE, at the start. A nudge is never the
                 # place to say it again — see strip_repeat_free_visit.
                 message  = dequalify_free_visit(lead, message)
@@ -927,6 +990,13 @@ class Command(BaseCommand):
             try:
                 notes = lead.internal_notes or ''
                 nudge_count, last_nudge_at = self._read_parked_nudge_state(notes)
+                # A reply resets the count (owner rule, 2026-09-21): a nudge
+                # stamped before their latest message belongs to the previous
+                # silence. This loop used to STOP for good once they replied
+                # after a nudge; now the new silence gets its own cycle.
+                if (last_nudge_at and lead.last_inbound_at
+                        and lead.last_inbound_at > last_nudge_at):
+                    nudge_count, last_nudge_at = 0, None
 
                 # Read off THIS LEAD's schedule, bounded by the copy we have.
                 # See the delay loop: "at least four" was the wrong shape once
@@ -952,9 +1022,9 @@ class Command(BaseCommand):
                 if not paid_sends_allowed() and not lead.messaging_is_free:
                     continue
 
-                # The customer replied after our last nudge → they re-engaged;
-                # let the live conversation take over and stop nudging.
-                if last_nudge_at and lead.last_inbound_at and lead.last_inbound_at > last_nudge_at:
+                # The handoff was this silence's last touch: stop until they
+                # reply (owner rule, 2026-09-21).
+                if handoff_sent_since_last_reply(lead):
                     continue
 
                 # Absolute offset into the window from the lead's last message,
@@ -972,10 +1042,16 @@ class Command(BaseCommand):
                     if since_last < self._min_gap_hours(lead, now):
                         continue
 
+                # A parked lead gave a delay signal (a soft brush-off), so the
+                # SECOND nudge is the plumber handoff, as in the delay loop.
                 name = lead.customer_name or ''
                 hi   = f'Hi {name}' if name else 'Hi there'
-                body = self._PARKED_NUDGE_MESSAGES[nudge_count]
-                message = f'{hi}, {body}'
+                message = ''
+                if nudge_count + 1 == self.HANDOFF_ATTEMPT:
+                    from bot.plumber_link import handoff_message
+                    message = handoff_message(lead, delayed=True)
+                if not message:
+                    message = _greet(hi, self._PARKED_NUDGE_MESSAGES[nudge_count])
                 message = dequalify_free_visit(lead, message)
 
                 if dry_run:
@@ -1724,26 +1800,21 @@ class Command(BaseCommand):
         resort, so the first touch still gets the owner's script and only the
         second hands over.
         HOW: '' (so the owner's script goes instead) when this is not the
-        second attempt, a field is missing ('other' is not a service type),
-        the link already went out (the delay flow sends it too), or the tenant
-        has no plumber number. Pinned by "plumber link: ghosted" in TEST 0.
+        second attempt, a field is missing ('other' is not a service type), or
+        the tenant has no plumber number. It goes out on the second follow-up
+        of EVERY silence, even to a lead who has had the link before (owner
+        rule, 2026-09-21: a reply resets the count, and the cycle is contextual
+        touch then handoff); `_is_ready_for_followup` then stops the run until
+        they reply. Pinned by "plumber link: ghosted" in TEST 0.
         """
         if attempt != self.HANDOFF_ATTEMPT:
             return ''
         from bot.lead_handoff import service_label
-        from bot.plumber_link import LINK_SENT_TAG, quote_offer
+        from bot.plumber_link import handoff_message
         if not (service_label(lead) and (lead.project_description or '').strip()
                 and (lead.customer_area or '').strip()):
             return ''
-        if LINK_SENT_TAG in (lead.internal_notes or ''):
-            return ''
-        offer = quote_offer(lead)
-        if not offer:
-            return ''
-        name = (lead.customer_name or '').strip()
-        hi = f'Hi {name}' if name else 'Hi there'
-        return (f"{hi}, if a visit doesn't suit right now, there's another way "
-                f"to get your price.\n\n{offer}")
+        return handoff_message(lead, delayed=False)
 
     # ─── Timing ───────────────────────────────────────────────────────────────
 
@@ -1771,6 +1842,12 @@ class Command(BaseCommand):
         why_not = not_a_lead_reason(lead)
         if why_not:
             return False, why_not
+        # The plumber handoff is the last automatic touch of a silence (owner
+        # rule, 2026-09-21). The follow-ups that used to come after it (a
+        # booking question at 12:11 right after the link) stop until the lead
+        # replies, which resets the count and starts a new cycle.
+        if handoff_sent_since_last_reply(lead):
+            return False, 'handed off to the plumber, waiting for their reply'
 
         due_at = self._scheduled_due_at(lead)
         if due_at is None:
@@ -2010,6 +2087,10 @@ class Command(BaseCommand):
         if not lead.is_lead_active or lead.status != 'pending':
             return None
         if lead.followup_stage == 'completed':
+            return None
+        # Handed off: nothing more is due until they reply (the cron's own
+        # rule in _is_ready_for_followup), so the UI must not show a next send.
+        if handoff_sent_since_last_reply(lead):
             return None
         max_fu = max_followups_for(lead)
         if (lead.followup_count or 0) >= max_fu:

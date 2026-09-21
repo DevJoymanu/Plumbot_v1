@@ -875,6 +875,23 @@ class Appointment(models.Model):
             update_fields = kwargs.get('update_fields')
             if update_fields is not None and 'booked_at' not in update_fields:
                 kwargs['update_fields'] = list(update_fields) + ['booked_at']
+        # The net under every path that writes the job description (the
+        # extractor, raw-message fallbacks, the webhook's early capture, the
+        # dashboard): chat is never stored as the job. "Ok\nNow you are
+        # talking" was saved as lead 1217's description (barmak, 2026-09-20)
+        # an hour after they had described the real job, and a filled field
+        # means the flow never asks again. Only acts when this save writes the
+        # field, so a save of other columns never touches the in-memory value.
+        # Pinned by DescriptionNetTests; the rule is bot/job_text.py.
+        update_fields = kwargs.get('update_fields')
+        if (self.project_description
+                and (update_fields is None or 'project_description' in update_fields)):
+            from bot.job_text import describes_a_job
+            if not describes_a_job(self.project_description):
+                logging.getLogger(__name__).info(
+                    "Not storing chat as the job description for apt %s: %r",
+                    self.pk, self.project_description[:60])
+                self.project_description = None
         super().save(*args, **kwargs)
 
     # NEW: Job scheduling methods

@@ -41,6 +41,7 @@ import logging
 from bot.pricing_copy import (build_structured_pricing, build_prompt_pricing_guide,
                               facebook_package_facts)
 from bot import copy_catalog
+from bot import job_text
 logger = logging.getLogger(__name__)
 
 
@@ -2887,9 +2888,12 @@ class ResponseMixin:
             # `description_captured` is True, so the bot never asks what the job
             # is and `lead_handoff.job_phrase` reads it back to them as "your Ok
             # thank you". A message made entirely of words that carry no content
-            # is an acknowledgement, whatever its length.
-            tokens = re.findall(r"[a-z']+", msg_lower)
-            if tokens and all(t in self._CONTENTLESS_WORDS for t in tokens):
+            # is an acknowledgement, whatever its length. The same test is the
+            # net in Appointment.save (bot/job_text.describes_a_job), so a
+            # path that skips this gate still cannot store chat as the job.
+            # "Ok / Now you are talking" (barmak 1217, 2026-09-20) got through
+            # here because "talking" was not a chat word.
+            if not job_text.describes_a_job(msg):
                 return False
 
             return len(msg.split()) >= 3
@@ -2914,53 +2918,30 @@ class ResponseMixin:
             'quote', 'price', 'cost', 'how much', 'mahara',
         )
 
-        _AREA_NON_ANSWERS = {
-            'hi', 'hello', 'hey', 'ok', 'okay', 'alright', 'cool', 'sharp',
-            'thanks', 'thank', 'noted', 'yes', 'no', 'yep', 'nope', 'sure',
-            'hongu', 'kwete', 'ndatenda', 'maita', 'basa',
-        }
+        # The vocabulary lives in bot/job_text.py, one copy shared with the
+        # job-description test and the Appointment.save net (see there). The
+        # area resolver keeps reading it through these names, unchanged.
+        _AREA_NON_ANSWERS = job_text.NON_ANSWERS
 
         # Time talk. A lead answering the area question with an AVAILABILITY
         # answer ("whenever suits you") is the shape that would otherwise be
         # filed as a suburb, because it carries no job word and no chat word.
-        _AREA_TEMPORAL_WORDS = {
-            'whenever', 'anytime', 'any', 'time', 'day', 'today', 'tomorrow',
-            'tonight', 'morning', 'afternoon', 'evening', 'week', 'weekend',
-            'month', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
-            'saturday', 'sunday', 'asap', 'soon', 'later', 'now', 'am', 'pm',
-            'mangwana', 'nhasi', 'manheru', 'mangwanani', 'svondo', 'muvhuro',
-            'chipiri', 'chitatu', 'china', 'chishanu', 'mugovera', 'nguva',
-            'chero',
-        }
+        _AREA_TEMPORAL_WORDS = job_text.TEMPORAL_WORDS
 
         # Ordinary chat words. A place name has to contribute at least ONE word
         # that is not one of these — that is what separates "Bluffhill" from
         # "whenever suits you", without a suburb gazetteer we would have to keep
         # up to date.
-        _AREA_COMMON_WORDS = {
-            'a', 'an', 'the', 'and', 'but', 'or', 'of', 'to', 'for', 'in', 'at',
-            'on', 'is', 'are', 'was', 'were', 'be', 'been', 'do', 'does',
-            'did', 'can', 'could', 'will', 'would', 'should', 'have', 'has',
-            'had', 'i', 'im', 'me', 'my', 'we', 'us', 'our', 'you', 'your',
-            'it', 'its', 'they', 'them', 'their', 'he', 'she', 'this', 'that',
-            'there', 'here', 'what', 'when', 'where', 'who', 'why', 'how',
-            'suits', 'suit', 'works', 'work', 'fine', 'good', 'great', 'nice',
-            'please', 'just', 'still', 'want', 'need', 'like', 'think', 'know',
-            'get', 'got', 'going', 'go', 'come', 'send', 'call', 'text',
-            'message', 'then', 'maybe', 'also', 'much', 'many', 'some', 'side',
-            'not', 'dont', 'ill', 'lets', 'let', 'choose', 'chose',
-            'pick', 'decide', 'up', 'down', 'over', 'out', 'anything',
-            'whatever', 'mind', 'sarudzai', 'imi', 'zvakanaka',
-            'really', 'very', 'quite', 'so', 'well', 'else',
-        }
+        _AREA_COMMON_WORDS = job_text.COMMON_WORDS
 
         # The three sets above are the area resolver's layered guards, but the
         # vocabulary is not area-specific: these are simply the words that carry
         # no content. `_looks_like_project_description_reply` needs the same
         # judgement, so the union is named neutrally and shared rather than
         # retyped into a second drifting copy.
-        _CONTENTLESS_WORDS = (_AREA_NON_ANSWERS | _AREA_COMMON_WORDS
-                              | _AREA_TEMPORAL_WORDS)
+        # ...plus the reaction words ("now you are talking"), which only the
+        # job test reads: job_text.CONTENTLESS_WORDS.
+        _CONTENTLESS_WORDS = job_text.CONTENTLESS_WORDS
 
         # "I'm in Bluffhill", "based in Mt Pleasant", "ndiri kuChitungwiza".
         _AREA_LEAD_IN = re.compile(

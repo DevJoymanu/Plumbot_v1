@@ -11355,6 +11355,24 @@ for _real in ('I want a new shower', 'replace the bath',
     results.log("still a description (%s)" % _real[:28],
                 _desc_self._looks_like_project_description_reply(_real) is True)
 
+# -- Chat is never the job (bot/job_text.describes_a_job) ---------------------
+# "Ok\nNow you are talking", two taps reacting to our price breakdown, was
+# stored as lead 1217's job (barmak, 2026-09-20) an hour after they described
+# the real one, and quoted back in the plumber-link message. "talking" was not
+# a chat word, so the three-word fallback took it. One rule now, read by this
+# gate, the Appointment.save net (DescriptionNetTests) and plumber_link.
+from bot.job_text import describes_a_job as _job
+for _chat in ('Ok\nNow you are talking', "Ok thank ,I will let you", 'Now you\'re talking',
+              'Sounds good', 'That is perfect thank you', 'How much', 'ok ok',
+              'Ehe zvakanaka', 'Wow thats affordable', ''):
+    results.log("job text: chat is not a job (%r)" % _chat[:28],
+                _job(_chat) is False
+                and _desc_self._looks_like_project_description_reply(_chat) is False)
+for _real in ('Full re-tile and new fittings', 'the one in the corner', 'tub',
+              'Kuita install copper pipes, 2 showers', 'same as the other bathroom',
+              'geyser not heating', 'shower cubicle', 'Toilet, Ruwa'):
+    results.log("job text: a real job still counts (%r)" % _real[:28], _job(_real) is True)
+
 
 # ── The bot advances the sale unless the lead CLEARLY says otherwise ────────
 # `close_pleasantry` ENDS a turn, and the owner sign-offs it was lifted from all
@@ -13114,8 +13132,48 @@ try:
                 _hb_cmd._handoff_touch(_hb_lead(customer_area=''), 2) == ''
                 and _hb_cmd._handoff_touch(_hb_lead(project_description=''), 2) == ''
                 and _hb_cmd._handoff_touch(_hb_lead(project_type='other'), 2) == '')
-    results.log("plumber link: ghosted, never sent twice (the delay flow sends it too)",
-                _hb_cmd._handoff_touch(_hb_lead(internal_notes=_pl.LINK_SENT_TAG), 2) == '')
+    # Owner rule, 2026-09-21: the second follow-up of EVERY silence is the
+    # handoff, even for a lead who has had the link before (this case used to
+    # pin "never sent twice"). The stop after it is pinned just below.
+    results.log("plumber link: ghosted, the handoff repeats in a new silence",
+                _link in _hb_cmd._handoff_touch(_hb_lead(internal_notes=_pl.LINK_SENT_TAG), 2))
+
+    # -- The handoff is the last touch of a silence, and a reply resets it -----
+    from bot.management.commands.send_followups import (
+        handoff_sent_since_last_reply as _hb_sent, _greet as _hb_greet)
+    from datetime import datetime as _hb_dt, timezone as _hb_utc
+    _reply_at = _hb_dt(2026, 9, 20, 17, 0, tzinfo=_hb_utc.utc)
+    _after = _hb_dt(2026, 9, 21, 8, 6, tzinfo=_hb_utc.utc).isoformat()
+    _before = _hb_dt(2026, 9, 20, 9, 0, tzinfo=_hb_utc.utc).isoformat()
+    def _hb_hist(stamp, prefix='[DELAY NUDGE 2] ', body='Hi there ' + _link):
+        return _hb_lead(last_customer_response=_reply_at, last_inbound_at=_reply_at,
+                        conversation_history=[{'role': 'assistant', 'content': prefix + body,
+                                               'timestamp': stamp}])
+    results.log("plumber link: a handoff since their reply stops every loop",
+                _hb_sent(_hb_hist(_after)) and _hb_sent(_hb_hist(_after, '[AUTO FOLLOW-UP] '))
+                and _hb_sent(_hb_hist(_after, '[PARKED NUDGE 2] ')))
+    results.log("plumber link: their reply resets it (a handoff before it does not stop)",
+                not _hb_sent(_hb_hist(_before)))
+    results.log("plumber link: a link in a conversational reply is not a handoff touch",
+                not _hb_sent(_hb_hist(_after, prefix='')))
+    _delayed = _pl.handoff_message(_hb_lead(), delayed=True)
+    results.log("plumber link: the delay group's handoff says no rush, then the link",
+                _delayed.startswith('Hi Rudo, no rush at all on the timing.')
+                and _delayed.endswith(_link) and '?' not in _delayed.split('https://')[0],
+                got=_delayed[:120])
+    results.log("plumber link: no plumber number means the ordinary nudge goes instead",
+                _pl.handoff_message(_hb_lead(plumber=''), delayed=True) == '')
+    results.log("plumber link: a stray reply saved as the job is not put in their mouth",
+                'Now you are talking' not in _pl.lead_voice_message(
+                    _hb_lead(project_description='Ok\nNow you are talking')))
+    results.log("plumber link: only the first line of a joined description is used",
+                'Toilet, Ruwa.' in _pl.lead_voice_message(
+                    _hb_lead(project_description='toilet, Ruwa\nHow much'))
+                and 'How much' not in _pl.lead_voice_message(
+                    _hb_lead(project_description='toilet, Ruwa\nHow much')))
+    results.log("followups: a nudge body joins the greeting as one sentence",
+                _hb_greet('Hi there', 'Happy to hold the quote.') == 'Hi there, happy to hold the quote.'
+                and _hb_greet('Hi there', "I'll wait.") == "Hi there, I'll wait.")
 
     # -- Rule 1: the job-date ladder --------------------------------------------
     results.log("job ladder: the date is said the owner's way",
