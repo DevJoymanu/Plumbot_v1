@@ -53,6 +53,16 @@ OPENER_HELLO = "Hi, what needs doing, and is it one {room} or a few?"
 OPENER_INFO_SN = "Mhoro, hongu. Chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
 OPENER_HELLO_SN = "Mhoro, chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
 
+# ── Voice notes (owner, 2026-09-22) ──────────────────────────────────────────
+# We cannot play a voice note, so the reply asks them to type it and, when we
+# were waiting on an answer, names it so the chat is never a dead end ("We
+# were just asking which area you're in."). VOICE_NOTE_CONTEXT is filled with
+# a topic from whatsapp_webhook._voice_note_topic; VOICE_NOTE_ASKED quotes our
+# last question when no topic fits. One question mark in all.
+VOICE_NOTE_ASK = "We can't play voice notes on this line. Could you type it out?"
+VOICE_NOTE_CONTEXT = "We were just asking {topic}."
+VOICE_NOTE_ASKED = 'We had just asked: "{question}"'
+
 # ── Qualification: asks the flow makes ──────────────────────────────────────
 
 # Asked straight after a booking lands. Every path that books ends on this.

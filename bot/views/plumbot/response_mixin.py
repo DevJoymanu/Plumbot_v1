@@ -4033,7 +4033,7 @@ class ResponseMixin:
                 pass
 
         def _build_combined_price_reply(self, message: str, language: str = "english",
-                                        labour_breakdown=None) -> str:
+                                        labour_breakdown=None, with_followup: bool = True) -> str:
             """
             Approximate all-in prices for a MULTI-ITEM price ask ("how much tab
             and shower") — lists every named item's rough price, not just one.
@@ -4105,6 +4105,12 @@ class ResponseMixin:
                 if is_shona else
                 copy_catalog.STARTING_PRICES_DISCLAIMER
             )
+            # The price-guide sequence (bot/price_guide.py) asks its own
+            # question after the PDF, so it takes the prices and the
+            # disclaimer only: one question, at the end of the sequence.
+            if not with_followup:
+                self._capture_named_products_as_description(message)
+                return "\n\n".join([body, disclaimer])
             # Forward question off the CURRENT scope/state — skips stages already
             # asked or answered, rotates wording. Computed before we record the
             # description so the scope stage can still confirm intent if needed.

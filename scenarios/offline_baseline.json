@@ -251,10 +251,10 @@
     "0|expect|what needs doing": true,
     "1|reject|US$": true,
     "2|reject|what area are you in": true,
+    "3|expect|US$": true,
     "3|expect|online first": true,
     "3|expect|price guide": true,
     "3|expect|quick look": true,
-    "3|reject|US$": true,
     "4|expect|handles our quotes": true,
     "4|expect|wa.me": true
   },

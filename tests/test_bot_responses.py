@@ -8020,9 +8020,21 @@ try:
         results.log("sent photo: an enriched description still resolves",
                     _hit is not None and _hit.title == 'Borehole',
                     got=getattr(_hit, 'title', None))
-        _StubModel.objects.rows = [_Row('Shower'), _Row('Shower')]
-        results.log("sent photo: two identical titles resolve to nothing",
+        # Two photos under one title at DIFFERENT prices cannot tell us which
+        # one they meant, so nothing resolves (guessing a price is worse).
+        _StubModel.objects.rows = [_Row('Shower', 'US$305'), _Row('Shower', 'US$450')]
+        results.log("sent photo: two identical titles at different prices resolve to nothing",
                     _wwh._quoted_portfolio_item(object(), 'Shower') is None)
+        # The same work at the same price does not need telling apart (lead
+        # 1161, 2026-09-22: two "Freestanding tub · Shower cubicle" photos, and
+        # the general path priced a built-in tub instead).
+        _StubModel.objects.rows = [_Row('Freestanding tub · Shower cubicle', 'US$720\nUS$305', 'a'),
+                                   _Row('Freestanding tub · Shower cubicle', 'US$720\nUS$305', 'b')]
+        _hit = _wwh._quoted_portfolio_item(
+            object(), 'Freestanding tub · Shower cubicle - Built in bath and a walk in shower')
+        results.log("sent photo: identical titles at the same price resolve to that price",
+                    _hit is not None and _hit.price_line == 'US$720\nUS$305',
+                    got=getattr(_hit, 'item_id', None))
     finally:
         if _real_models is not None:
             _sys_v.modules['bot.models'] = _real_models
@@ -13272,8 +13284,13 @@ try:
         get_project_type_display=lambda: 'Bathroom Renovation')
     results.log("price guide: a general price ask with the three fields gets it",
                 _pgd.applies('I need prices first', _pg_lead(), _pg_bot))
-    results.log("price guide: a named item keeps its own price",
-                not _pgd.applies('how much is a tub?', _pg_lead(), _pg_bot))
+    # Every price question from a lead with the three fields gets the full
+    # sequence (owner, 2026-09-22), a named item included; it used to keep its
+    # own price block and skip the guide.
+    results.log("price guide: a named item gets the sequence too",
+                _pgd.applies('how much is a tub?', _pg_lead(), _pg_bot))
+    results.log("price guide: a photo ask the keyword check misses still qualifies",
+                _pgd.applies('And this one how mucu', _pg_lead(), _pg_bot, price_asked=True))
     results.log("price guide: not before the three fields are in",
                 not _pgd.applies('I need prices first', _pg_lead(customer_area=''), _pg_bot))
     results.log("price guide: never to a lead who has booked",

@@ -984,8 +984,77 @@ def _send_reply_then_contact_card(sender, reply, delay_seconds, message_id=None,
         print(f"⚠️ Contact card to {sender} failed: {exc}")
 
 
+def _price_guide_prices(plumbot, appointment, message_body, quoted_text=None):
+    """The approximate prices that open the price-guide sequence, or None.
+
+    WHAT: (1) the highlighted photo's own price lines, every item in the
+    shot, from the tenant's figures (price_line_for_item); (2) the items named
+    in this message, else the job they described earlier (owner, 2026-09-22:
+    a general "I need prices first" from a lead who said "new tub and tiles"
+    prices the tub, then the PDF, then the question; it was PDF only until
+    then), through the multi-item builder without its closing question;
+    (3) None when nothing on file can be priced, and the sequence is the PDF
+    and the question.
+    WHY (owner, 2026-09-22): a lead with the three fields who asks a price gets
+    the price first, then the guide and the online-or-visit question. A photo
+    of OURS that carries no price (a borehole) gets None, never prices borrowed
+    from the rest of the conversation: wrong prices for the wrong job is worse
+    than none (the same rule as _quoted_portfolio_price_reply).
+    """
+    if quoted_text:
+        item = _quoted_portfolio_item(getattr(appointment, 'tenant', None), quoted_text)
+        if item is not None:
+            try:
+                from bot.media_library import price_line_for_item
+                line = price_line_for_item(getattr(appointment, 'tenant', None), item)
+            except Exception:
+                line = (getattr(item, 'price_line', '') or '').strip()
+            if not line:
+                return None
+            return f"For that photo:\n{line}\n\n{copy_catalog.STARTING_PRICES_DISCLAIMER}"
+    try:
+        if (plumbot._product_families_in(message_body)
+                or plumbot._context_product_families(message_body)):
+            return plumbot._build_combined_price_reply(
+                message_body, language='english', with_followup=False)
+    except Exception as exc:
+        print(f"⚠️ Price-guide prices failed: {exc}")
+    return None
+
+
+def _start_price_guide(sender, appointment, plumbot, message_body, message_id,
+                       tenant, quoted_text=None):
+    """Log the first message and start the price-guide sequence in its thread.
+
+    Shared by STEP 1c (a price asked on a highlighted photo) and STEP 1d (any
+    other price ask) for a lead with the three fields, so both run the same
+    sequence: prices, then the guide line and PDF unless already sent, then
+    the online-or-visit question (see _send_price_guide).
+    """
+    from .price_guide import intro_line
+    prices = _price_guide_prices(plumbot, appointment, message_body, quoted_text)
+    intro_text = copy_catalog.PRICE_GUIDE_INTRO if prices else intro_line(appointment)
+    intro = finalise_outbound(intro_text, appointment, message_body, check=False)
+    question = finalise_outbound(copy_catalog.PRICE_CHOICE_ASK, appointment,
+                                 message_body, check=False)
+    if prices:
+        prices = finalise_outbound(prices, appointment, message_body, check=False)
+    print(f"📄 Price guide for a price ask ({'with' if prices else 'no'} prices): "
+          f"'{message_body[:60]}'")
+    appointment.add_conversation_message("assistant", prices or intro)
+    appointment.last_outbound_at = timezone.now()
+    appointment.last_contacted_at = appointment.last_outbound_at
+    appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+    threading.Thread(
+        target=_send_price_guide,
+        args=(sender, intro, question, get_random_delay(sender=sender), message_id),
+        kwargs={'tenant': tenant, 'appointment_pk': appointment.pk, 'prices': prices},
+        daemon=True,
+    ).start()
+
+
 def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
-                      tenant=None, appointment_pk=None):
+                      tenant=None, appointment_pk=None, prices=None):
     """The price-guide reply in its three parts, in order: the line, the PDF,
     then the choice question (bot/price_guide.py).
 
@@ -998,20 +1067,32 @@ def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
     The PDF sender records its own WAMID; the texts are stamped by
     `delayed_response`. Failures are logged, never raised.
     """
-    delayed_response(sender, intro, delay_seconds, message_id, None, tenant)
+    # With prices (owner, 2026-09-22: every price question from a lead with
+    # the three fields), the prices go FIRST, as their own message, and the
+    # guide line and PDF follow only when the PDF is not already in the chat.
+    # Without prices it is the original order: the guide line, the PDF, the
+    # question. The caller logged `first` already.
+    first = prices or intro
+    delayed_response(sender, first, delay_seconds, message_id, None, tenant)
     try:
         appt = Appointment.objects.filter(pk=appointment_pk).first()
         if appt is None:
             return
         history = appt.conversation_history or []
         if not any(isinstance(m, dict) and m.get('role') == 'assistant'
-                   and m.get('content') == intro and m.get('sent_at')
+                   and m.get('content') == first and m.get('sent_at')
                    for m in history[-6:]):
-            print(f"📄 Price guide held for {sender}: its intro was not sent")
+            print(f"📄 Price guide held for {sender}: its first message was not sent")
             return
         from .out_of_scope_handler import send_lead_magnet_on_whatsapp
-        from .price_guide import CHOICE_TAG
-        send_lead_magnet_on_whatsapp(appt)
+        from .price_guide import CHOICE_TAG, pdf_already_sent
+        if not pdf_already_sent(appt):
+            if prices:
+                appt.add_conversation_message("assistant", intro)
+                time.sleep(random.randint(2, 4))
+                delayed_response(sender, intro, 0, None, None, tenant)
+                appt.refresh_from_db()
+            send_lead_magnet_on_whatsapp(appt)
         appt.refresh_from_db()
         appt.add_conversation_message("assistant", question)
         time.sleep(random.randint(2, 4))
@@ -2073,6 +2154,17 @@ def _quoted_portfolio_item(tenant, quoted_text):
         return matches[0]
     if matches and len(matches[0].title) > len(matches[1].title):
         return matches[0]   # an unambiguous longest-title win
+    # Several photos share the title, but when they are the same work at the
+    # same price (same title, same price line) it does not matter which one
+    # they meant: the answer is the same. Barmak has two "Freestanding tub ·
+    # Shower cubicle" photos; lead 1161 highlighted one and asked "this one how
+    # much", this returned None, and the general pricing path read "Built in
+    # bath" out of the photo's description and priced a built-in tub
+    # (2026-09-22). Different prices under one title still fall through.
+    top = [m for m in matches if len(m.title) == len(matches[0].title)]
+    lines = {(m.title.strip().lower(), (m.price_line or '').strip()) for m in top}
+    if top and len(lines) == 1:
+        return top[0]
     return None
 
 
@@ -3057,17 +3149,92 @@ def handle_unsupported_media(sender, media_type, tenant=None):
         response_msg = (
             f"We can't open that one — could you send a text or a photo instead?"
         )
-        # (fixed: `delay` was previously never assigned here, so this reply
-        # silently failed with a swallowed NameError for every sticker/contact)
+        # The lead is looked up here. This used `appointment` without ever
+        # assigning it, so EVERY sticker, contact card and GIF raised a
+        # NameError that the except below swallowed, and the lead got no reply
+        # at all (found 2026-09-22; the earlier `delay` fix hit the same wall).
+        # A sender with no lead yet still gets the reply; the chain accepts None.
+        appointment = _lead_for_sender(sender, tenant)
         delay = get_random_delay(sender=sender)
-        threading.Thread(
-            target=delayed_response,
-            args=(sender, finalise_outbound(response_msg, appointment, None), delay),
-            kwargs={'tenant': tenant},
-            daemon=True
-        ).start()
+        _send_media_notice(sender, response_msg, appointment, delay, tenant)
     except Exception as e:
         print(f"? Error handling unsupported media: {str(e)}")
+
+
+# What our last question was about, as the tail of the voice-note reply.
+# First match wins, most specific first. English wording of OUR questions,
+# which is all this ever reads.
+_VOICE_NOTE_TOPICS = (
+    (r"online first|quick look at the space", "whether you'd rather have a quick look at the space or a quote online"),
+    (r"\bemail\b", "for your email address"),
+    (r"\bname\b.*\bbooking\b|what name", "what name to put on the booking"),
+    (r"\b(area|suburb|whereabouts|where are you)\b", "which area you're in"),
+    (r"\b(what time|which day|what day|tomorrow|morning or afternoon|works better|when would)\b",
+     "what day and time suit you"),
+    (r"\b(bathroom or (?:a )?kitchen|kitchen or (?:a )?bathroom)\b", "whether it's the bathroom or the kitchen"),
+    (r"\b(what needs doing|what do you need|what are you looking to get|tell me a bit more|one room or a few|one bathroom or a few)\b",
+     "what needs doing"),
+    (r"\b(when were you hoping|roughly when|when are you thinking)\b", "roughly when you'd like it done"),
+    (r"\binvest\b", "whether those prices work for you"),
+)
+
+
+def _voice_note_topic(appointment):
+    """The tail of the voice-note reply: what we were waiting on, or ''.
+
+    WHAT: reads our last message; when it asked something, returns
+    "We were just asking which area you're in." (a known topic) or quotes the
+    question itself; '' when our last message asked nothing.
+    WHY (owner, 2026-09-22): "we can't play voice notes" on its own is a dead
+    end; naming the open question tells the lead what to type. Deterministic,
+    no model call: it reads our own wording, which the code wrote.
+    """
+    import re as _re
+    last = ''
+    for entry in reversed(getattr(appointment, 'conversation_history', None) or []):
+        if isinstance(entry, dict) and entry.get('role') == 'assistant':
+            content = str(entry.get('content') or '').strip()
+            if content and not content.startswith('['):
+                last = content
+                break
+    if '?' not in last:
+        return ''
+    question = next((s.strip() for s in reversed(_re.split(r'(?<=[.!?])\s+|\n+', last))
+                     if s.strip().endswith('?')), '')
+    if not question:
+        return ''
+    for pattern, topic in _VOICE_NOTE_TOPICS:
+        if _re.search(pattern, question, _re.IGNORECASE):
+            return copy_catalog.VOICE_NOTE_CONTEXT.format(topic=topic)
+    return copy_catalog.VOICE_NOTE_ASKED.format(question=question)
+
+
+def _lead_for_sender(sender, tenant=None):
+    """This sender's lead on this tenant's channel, or None when there is none."""
+    leads = Appointment.objects.filter(phone_number=f"whatsapp:+{sender}")
+    if tenant is not None:
+        leads = leads.for_tenant(tenant)
+    return leads.first()
+
+
+def _send_media_notice(sender, message, appointment, delay, tenant=None):
+    """Send a "we can't open that" notice through the outbound chain.
+
+    Recorded in the lead's transcript before sending, so the dashboard shows
+    what went out and `delayed_response` can stamp its `sent_at` (every reply
+    is recorded as sent; see the outbound-chain rule in CLAUDE.md). A sender
+    with no lead yet has no transcript, and the notice still goes.
+    """
+    # visit_note=False: the chain's visit-price step reads any day-and-time
+    # wording as an availability ask and swapped "We were just asking what day
+    # and time suit you" for the whole site-visit pitch. check=False: fixed
+    # copy plus a topic read off our own question, nothing for the model
+    # reader to correct. Every deterministic rule still runs.
+    text = finalise_outbound(message, appointment, None, check=False, visit_note=False)
+    if appointment is not None:
+        appointment.add_conversation_message("assistant", text)
+    threading.Thread(target=delayed_response, args=(sender, text, delay),
+                     kwargs={'tenant': tenant}, daemon=True).start()
 
 
 def handle_audio_message(sender, audio_data, tenant=None):
@@ -3077,18 +3244,14 @@ def handle_audio_message(sender, audio_data, tenant=None):
             return
         print(f"?? Audio message from {sender}")
 
-        phone_number = f"whatsapp:+{sender}"
-        try:
-            leads = Appointment.objects.filter(phone_number=phone_number)
-            if tenant is not None:
-                leads = leads.for_tenant(tenant)
-            appointment = leads.get()
-        except Appointment.DoesNotExist:
-            response_msg = (
-                "Voice notes we can't read unfortunately — just type it out and we'll get you sorted"
-            )
-            delay = get_random_delay(sender=sender)
-            threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
+        # No lead yet: the notice still goes. This branch used `appointment`
+        # before it was ever assigned (the lookup had just failed), so a
+        # first-contact voice note raised, the except swallowed it, and the
+        # sender heard nothing (found 2026-09-22).
+        appointment = _lead_for_sender(sender, tenant)
+        if appointment is None:
+            _send_media_notice(sender, copy_catalog.VOICE_NOTE_ASK, None,
+                               get_random_delay(sender=sender), tenant)
             return
 
         if appointment.plan_status == 'pending_upload':
@@ -3097,12 +3260,15 @@ def handle_audio_message(sender, audio_data, tenant=None):
                 "Send those when you're ready, or type \"done\" if you're finished."
             )
         else:
-            response_msg = (
-                "Voice notes we can't read — just type it out and we'll carry on from where we were"
-            )
+            # Contextual, not a fixed line (owner, 2026-09-22): ask them to
+            # type it and name what we were waiting on, so the chat is never a
+            # dead end. "Voice notes we can't read, just type it out and we'll
+            # carry on from where we were" named nothing.
+            topic = _voice_note_topic(appointment)
+            response_msg = copy_catalog.VOICE_NOTE_ASK + (f" {topic}" if topic else "")
 
-        delay = get_random_delay(sender=sender)
-        threading.Thread(target=delayed_response, args=(sender, finalise_outbound(response_msg, appointment, None), delay), kwargs={'tenant': tenant}, daemon=True).start()
+        _send_media_notice(sender, response_msg, appointment,
+                           get_random_delay(sender=sender), tenant)
 
     except Exception as e:
         print(f"? Error handling audio: {str(e)}")
@@ -4760,6 +4926,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # overwrite it (prod, barmak, 2026-08-28 — the quoted-photo price was
         # composed and then replaced with pipe-repair rates).
         if quoted_text and _explicitly_requests_price(message_body):
+            # A lead with the three fields gets the full price-guide sequence
+            # instead (owner, 2026-09-22): this photo's prices, the guide PDF
+            # unless already sent, then the online-or-visit question. English
+            # only, like STEP 1d below.
+            from .price_guide import applies as _pg_applies_q
+            if (detect_language_simple(message_body) != 'shona'
+                    and _pg_applies_q(message_body, appointment, plumbot, price_asked=True)):
+                _start_price_guide(sender, appointment, plumbot, message_body,
+                                   message_id, tenant, quoted_text=quoted_text)
+                return
             _quoted_reply = _quoted_portfolio_price_reply(
                 plumbot, appointment, quoted_text, message_body)
             if _quoted_reply is not None:
@@ -4776,35 +4952,24 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 ).start()
                 return
 
-        # -- STEP 1d: A general price question from a lead with the job known --
-        # Owner, 2026-09-21: once service, description and area are in, a
-        # GENERAL price question ("I need prices first") gets the price guide
-        # PDF and then "a quick look at the space, or a quote online first?",
-        # not a price block. Before STEP 2, because STEP 2 answers a
-        # classifier-labelled general ask (combined_pricing) with the overview.
-        # After STEP 1b, so a delay or exit signal still wins. A named item
-        # ("how much is a tub?") keeps its price (price_guide.applies). English
+        # -- STEP 1d: Any price question from a lead with the job known --------
+        # Owner, 2026-09-21, widened 2026-09-22: once service, description and
+        # area are in, EVERY price question gets the price-guide sequence: the
+        # approximate prices (the items named, else the job described), the
+        # guide PDF unless already sent, then "a quick look at the space, or a
+        # quote online first?". A named item ("how much is a tub?") used to keep
+        # its own price block and skip the guide. Before STEP 2, because STEP 2
+        # answers a classifier-labelled general ask (combined_pricing) with the
+        # overview. After STEP 1b, so a delay or exit signal still wins. A
+        # highlighted photo is handled the same way in STEP 1c above. English
         # only: a Shona lead keeps the Shona pricing reply below. Pinned by
         # "price guide" in TEST 0, PriceGuideTests and
         # scenarios/price_guide_after_three_fields.txt.
-        from .price_guide import applies as _price_guide_applies, intro_line as _pg_intro
+        from .price_guide import applies as _price_guide_applies
         if (detect_language_simple(message_body) != 'shona'
                 and _price_guide_applies(message_body, appointment, plumbot)):
-            _intro = finalise_outbound(_pg_intro(appointment), appointment,
-                                       message_body, check=False)
-            _question = finalise_outbound(copy_catalog.PRICE_CHOICE_ASK, appointment,
-                                          message_body, check=False)
-            print(f"📄 Price guide for a general price ask: '{message_body[:60]}'")
-            appointment.add_conversation_message("assistant", _intro)
-            appointment.last_outbound_at = timezone.now()
-            appointment.last_contacted_at = appointment.last_outbound_at
-            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
-            threading.Thread(
-                target=_send_price_guide,
-                args=(sender, _intro, _question, get_random_delay(sender=sender), message_id),
-                kwargs={'tenant': tenant, 'appointment_pk': appointment.pk},
-                daemon=True,
-            ).start()
+            _start_price_guide(sender, appointment, plumbot, message_body,
+                               message_id, tenant)
             return
 
         # -- STEP 2: Service-specific pricing inquiry ---------------------------

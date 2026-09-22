@@ -4,14 +4,16 @@ bot/price_guide.py
 A general price question from a lead who has told us the job: the price guide
 PDF, then "a quick look at the space, or a quote online first?".
 
-WHAT (owner, 2026-09-21): once a lead has given the three fields (service
-type, description, area), a GENERAL price question ("I need prices first",
-"how much?", "what are your prices?") gets the portfolio / price-guide PDF on
-WhatsApp instead of a price block, then one choice question. "Online" sends
-the plumber handoff (his WhatsApp, their details already typed in); "a look"
-gets the booking question. A price question that names one item ("how much is
-a tub?") still gets that item's price, and a lead who has not given the three
-fields yet keeps the ordinary pricing reply.
+WHAT (owner, 2026-09-21, widened 2026-09-22): once a lead has given the three
+fields (service type, description, area), EVERY price question gets, in
+order: the approximate prices (the highlighted photo's own prices, else the
+items named in the message, else the job they described), the portfolio /
+price-guide PDF, then one choice question. A lead who already has the PDF
+gets the prices and the question. A GENERAL ask ("I need prices first")
+prices the job they described (owner, 2026-09-22; it was PDF only before),
+and is PDF and question only when nothing on file can be priced. "Online" sends the plumber handoff (his WhatsApp, their
+details already typed in); "a look" gets the booking question. A lead who has
+not given the three fields yet keeps the ordinary pricing reply.
 
 WHY: the lead magnet carries the whole price picture and the past work, which
 a chat price block cannot, and the choice turns "prices first" into a next
@@ -49,30 +51,34 @@ def three_fields(appointment) -> bool:
                 and str(getattr(appointment, 'customer_area', '') or '').strip())
 
 
-def applies(message, appointment, plumbot) -> bool:
-    """Is this a GENERAL price question from a lead with the three fields?
+def applies(message, appointment, plumbot, price_asked=None) -> bool:
+    """Is this a price question from a lead with the three fields?
 
-    General: it asks for a price (the shared `_asks_price_figure`) and names
-    no single product (`_keyword_product_intent`), so "how much is a tub?"
-    keeps its item price. A lead who has already booked is not sent a price
-    guide: they have committed (never re-pitch a committed lead).
+    EVERY price question counts (owner, 2026-09-22): a general one, one naming
+    an item ("how much is a tub?") and one on a highlighted photo ("this one
+    how much") all get the full sequence: the prices, the price guide PDF,
+    then the online-or-visit question. It used to exclude a named item, which
+    kept that item's price block and skipped the guide. `price_asked` lets a
+    caller that has already decided it is a price ask (the quoted-photo step,
+    where "how mucu" defeats the keyword check) say so. A lead who has already
+    booked is not sent a price guide: they have committed (never re-pitch a
+    committed lead).
     """
     if getattr(appointment, 'status', '') == 'confirmed':
         return False
     if not three_fields(appointment):
         return False
-    try:
-        if not plumbot._asks_price_figure(message):
-            return False
-    except Exception:
-        return False
-    try:
-        from .whatsapp_webhook import _keyword_product_intent
-        if _keyword_product_intent(message, plumbot.tenant_cfg):
-            return False
-    except Exception:
-        pass
-    return True
+    if price_asked is None:
+        try:
+            price_asked = plumbot._asks_price_figure(message)
+        except Exception:
+            price_asked = False
+    return bool(price_asked)
+
+
+def pdf_already_sent(appointment) -> bool:
+    """The portfolio PDF is already in this chat (it is never sent twice)."""
+    return '[LEAD_MAGNET_WA_SENT]' in (getattr(appointment, 'internal_notes', '') or '')
 
 
 def read_choice(message) -> str:
@@ -93,6 +99,6 @@ def intro_line(appointment) -> str:
     """The line before the PDF, or the "already sent" line when it is in the
     chat already (the PDF is never sent twice by this flow)."""
     from . import copy_catalog
-    if '[LEAD_MAGNET_WA_SENT]' in (getattr(appointment, 'internal_notes', '') or ''):
+    if pdf_already_sent(appointment):
         return copy_catalog.PRICE_GUIDE_ALREADY_SENT
     return copy_catalog.PRICE_GUIDE_INTRO

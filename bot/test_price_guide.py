@@ -71,7 +71,10 @@ class PriceGuideTests(_scenarios.OfflineScenarioSuite):
         pdf.assert_called_once()
         self.assertIn('price guide', first.lower())
         self.assertIn('quick look at the space, or a quote online first', first)
-        self.assertNotIn('US$', first)
+        # The job they described ("whole bathroom, new tub and tiles") is
+        # priced first (owner, 2026-09-22; a general ask was PDF only before).
+        self.assertIn('US$', first)
+        self.assertLess(first.index('US$'), first.lower().index('price guide'))
 
         second = self._send(sender, 'online please', tenant)
         self.assertIn('https://wa.me/', second)
@@ -91,14 +94,32 @@ class PriceGuideTests(_scenarios.OfflineScenarioSuite):
         self.assertRegex(reply.lower(),
                          r'what works better|work for us|\d(am|pm)|book you a time')
 
-    def test_a_named_item_keeps_its_own_price(self):
+    def test_a_named_item_gets_its_price_then_the_guide_then_the_question(self):
+        """Owner, 2026-09-22: every price question from a lead with the three
+        fields, a named item included, gets the price, the PDF and the question."""
         sender = '999000070003'
         tenant = self._lead(sender)
         with patch('bot.out_of_scope_handler.send_lead_magnet_on_whatsapp',
                    side_effect=self._mark_pdf_sent) as pdf:
             reply = self._send(sender, 'how much is a shower cubicle?', tenant)
+        pdf.assert_called_once()
+        self.assertIn('US$', reply)
+        self.assertIn('price guide', reply.lower())
+        self.assertIn('quick look at the space, or a quote online first', reply)
+        # The price comes first, the question last.
+        self.assertLess(reply.index('US$'), reply.index('price guide'))
+        self.assertTrue(reply.rstrip().endswith('online first?'), reply)
+
+    def test_a_lead_who_has_the_pdf_gets_the_price_and_the_question(self):
+        sender = '999000070005'
+        tenant = self._lead(sender, internal_notes='[LEAD_MAGNET_WA_SENT]')
+        with patch('bot.out_of_scope_handler.send_lead_magnet_on_whatsapp',
+                   side_effect=self._mark_pdf_sent) as pdf:
+            reply = self._send(sender, 'how much is a shower cubicle?', tenant)
         pdf.assert_not_called()
-        self.assertNotIn('quote online first', reply)
+        self.assertIn('US$', reply)
+        self.assertNotIn("Here's our price guide", reply)
+        self.assertIn('quote online first', reply)
 
     def test_without_the_three_fields_it_is_the_ordinary_price_reply(self):
         sender = '999000070004'
