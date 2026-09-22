@@ -953,6 +953,13 @@ def _send_confirmation(apt, report, now, dry_run, emit, stats):
         report.save(update_fields=['sequence', 'next_action_at'])
         return
 
+    # Customer email waits for EMAIL_WINDOWS (12:30-13:30, 18:00-19:30 SAST,
+    # owner rule 2026-09-22). next_action_at is left as it is, so the next
+    # tick inside a window sends it. Pinned by EmailWindowTests.
+    from bot.plan_quote import in_email_window
+    if not in_email_window(now):
+        return
+
     from bot.customer_emails import send_post_visit_confirmation_email
     if dry_run:
         emit('[dry-run] confirmation for {} (apt {})'.format(report.expected_date, apt.pk))
@@ -980,6 +987,12 @@ def _send_ask(apt, report, now, dry_run, emit, stats):
     """Case B: asks 1, 2 and 3, then cold and back to the plumber."""
     if report.ask_count >= MAX_ASKS:
         _mark_cold(apt, report, now, dry_run, emit, stats)
+        return
+
+    # Held for EMAIL_WINDOWS like the confirmation above; after the cold
+    # check, because going cold emails the plumber, not the lead.
+    from bot.plan_quote import in_email_window
+    if not in_email_window(now):
         return
 
     ask_number = report.ask_count + 1

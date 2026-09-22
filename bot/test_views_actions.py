@@ -70,6 +70,16 @@ def make_lead(suffix, **kwargs):
     return Appointment.objects.create(**defaults)
 
 
+def open_email_window(test):
+    """Hold EMAIL_WINDOWS open for a test that exercises a customer email
+    send rather than its sending hour: the gate would otherwise make the test
+    pass or fail by the clock. The hours themselves are EmailWindowTests'."""
+    from unittest.mock import patch as _patch
+    p = _patch('bot.plan_quote.in_email_window', return_value=True)
+    p.start()
+    test.addCleanup(p.stop)
+
+
 class StaffClientTestCase(TestCase):
     """Logged-in staff client, shared by every test class below. Staff needs
     an explicit homebase membership since the admin/homebase separation —
@@ -6100,6 +6110,7 @@ class PostVisitSchedulerTests(TestCase):
     """The cron: the fallback email, Cases A / B / C, and the guards."""
 
     def setUp(self):
+        open_email_window(self)
         self.lead = make_lead(
             8300, customer_name='Tendai', status='confirmed',
             customer_email='tendai@example.com',
@@ -6526,6 +6537,7 @@ class QuoteArmedChaseRunsTests(TestCase):
     their finished site visit, and a quote-armed lead may not have one."""
 
     def setUp(self):
+        open_email_window(self)
         self.lead = make_lead(
             8380, customer_name='Chased Chipo', customer_email='chipo@example.com',
             appointment_type='site_visit')
@@ -6715,6 +6727,7 @@ class QuoteSendChannelTests(StaffClientTestCase):
 
     def setUp(self):
         super().setUp()
+        open_email_window(self)
         self.lead = make_lead(8600, customer_name='Farai', status='confirmed',
                               customer_email='farai@example.com',
                               scheduled_datetime=timezone.now() - timedelta(hours=3))
@@ -7973,6 +7986,9 @@ class PostVisitBacklogGuardTests(TestCase):
     a job date that can be weeks out, and Case B's third ask lands about eleven
     days after the visit.
     """
+
+    def setUp(self):
+        open_email_window(self)
 
     def _visit(self, suffix, *, days_ago):
         # Four hours back on top of the days: the default duration is two hours,
@@ -12233,3 +12249,98 @@ class MaterialsListPriceBookTests(TestCase):
         for tenant in (self.homebase, self.barmak):
             priced = self._priced(tenant)
             self.assertIn('22mm copper tees (cap)', priced['unpriced'])
+
+
+class EmailWindowTests(TestCase):
+    """Automated customer email goes out only 12:30-13:30 and 18:00-19:30 SAST
+    (owner rule, 2026-09-22): the dated check-back in send_reminders used to
+    fire on the first tick of the day, and leads got it at 00:01."""
+
+    def _at(self, hh, mm, day=None):
+        import pytz
+        from datetime import datetime as _dt
+        sast = pytz.timezone('Africa/Johannesburg')
+        d = day or timezone.now().astimezone(sast).date()
+        return sast.localize(_dt(d.year, d.month, d.day, hh, mm))
+
+    def test_the_two_windows_and_their_edges(self):
+        from bot.plan_quote import in_email_window
+        for hh, mm in ((12, 30), (13, 29), (18, 0), (19, 29)):
+            self.assertTrue(in_email_window(self._at(hh, mm)), (hh, mm))
+        for hh, mm in ((0, 1), (8, 30), (12, 29), (13, 30), (17, 59), (19, 30), (23, 0)):
+            self.assertFalse(in_email_window(self._at(hh, mm)), (hh, mm))
+
+    def _run_reminders_at(self, when):
+        from bot.management.commands import send_reminders as mod
+        with patch('django.utils.timezone.now', return_value=when), \
+             patch.object(mod, 'may_send_proactively', return_value=False), \
+             patch('bot.customer_emails._send', return_value=True) as send:
+            call_command('send_reminders', stdout=StringIO())
+        return send
+
+    def test_the_dated_checkback_email_waits_for_the_window(self):
+        at_midnight = self._at(0, 1)
+        today = at_midnight.date().isoformat()
+        lead = make_lead(7301, customer_email='lead@example.com',
+                         internal_notes=f'[FOLLOW_UP_DATE] {today}')
+        self._run_reminders_at(at_midnight).assert_not_called()
+        lead.refresh_from_db()
+        self.assertNotIn('[FOLLOW_UP_SENT]', lead.internal_notes)
+        self._run_reminders_at(self._at(12, 35)).assert_called_once()
+        lead.refresh_from_db()
+        self.assertIn(f'[FOLLOW_UP_SENT] {today}', lead.internal_notes)
+
+    def test_the_delay_reactivation_email_waits_for_the_window(self):
+        lead = make_lead(7302, customer_email='lead@example.com', is_delayed=True,
+                         is_lead_active=True,
+                         delay_followup_due_at=timezone.now() - timedelta(hours=1))
+        from bot.management.commands.send_followups import Command
+        cmd = Command(stdout=StringIO())
+        with patch('bot.plan_quote.in_email_window', return_value=False), \
+             patch('bot.customer_emails.send_delay_followup_email') as email:
+            cmd._process_delayed_reactivations(timezone.now(), False)
+        email.assert_not_called()
+        lead.refresh_from_db()
+        self.assertTrue(lead.is_delayed)
+        # And inside the window the same lead is sent, so the hold above is
+        # the gate and not some other filter.
+        with patch('bot.plan_quote.in_email_window', return_value=True),              patch('bot.customer_emails.send_delay_followup_email') as email,              patch.object(Command, '_delay_wa_allowed', return_value=(False, 'test')):
+            cmd._process_delayed_reactivations(timezone.now(), False)
+        email.assert_called_once()
+
+
+class FollowUpDateCheckbackTests(TestCase):
+    """The dated check-back reads the lead's CURRENT agreed date. barmak 1005
+    moved from 20 Sep to 22 Dec; the old line still matched on 20 Sep, and the
+    one bare [FOLLOW_UP_SENT] stamp would then have blocked December."""
+
+    def _due(self, notes, today):
+        from datetime import date as _d
+        from bot.management.commands.send_reminders import _followup_date_due
+        return _followup_date_due(notes, _d.fromisoformat(today))
+
+    def test_a_superseded_date_is_not_sent(self):
+        notes = '[FOLLOW_UP_DATE] 2026-09-20\n[FOLLOW_UP_DATE] 2026-12-22'
+        self.assertFalse(self._due(notes, '2026-09-20'))
+        self.assertTrue(self._due(notes, '2026-12-22'))
+
+    def test_a_date_moved_earlier_is_the_current_one(self):
+        notes = '[FOLLOW_UP_DATE] 2026-12-22\n[FOLLOW_UP_DATE] 2026-10-15'
+        self.assertTrue(self._due(notes, '2026-10-15'))
+
+    def test_the_sent_stamp_is_per_date(self):
+        notes = ('[FOLLOW_UP_DATE] 2026-09-20\n[FOLLOW_UP_DATE] 2026-12-22\n'
+                 '[FOLLOW_UP_SENT] 2026-12-22')
+        self.assertFalse(self._due(notes, '2026-12-22'))
+
+    def test_the_legacy_bare_stamp_covers_only_old_dates(self):
+        old = '[FOLLOW_UP_DATE] 2026-09-20\n[FOLLOW_UP_SENT]'
+        self.assertFalse(self._due(old, '2026-09-20'))
+        moved = '[FOLLOW_UP_DATE] 2026-09-20\n[FOLLOW_UP_SENT]\n[FOLLOW_UP_DATE] 2026-12-22'
+        self.assertTrue(self._due(moved, '2026-12-22'))
+
+    def test_a_missed_date_is_caught_up_for_three_days_only(self):
+        notes = '[FOLLOW_UP_DATE] 2026-10-01'
+        self.assertTrue(self._due(notes, '2026-10-04'))
+        self.assertFalse(self._due(notes, '2026-10-05'))
+        self.assertFalse(self._due(notes, '2026-09-30'))

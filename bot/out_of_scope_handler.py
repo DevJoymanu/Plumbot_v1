@@ -3238,6 +3238,104 @@ def _plumber_offer_once(appointment) -> str:
     return f"\n\n{offer}"
 
 
+def _portfolio_on_whatsapp_ack(appointment) -> str:
+    """What goes with the portfolio when a lead turns down email in the delay flow.
+
+    WHAT (owner, 2026-09-22), as separate WhatsApp messages in one turn:
+      1. "That's fine, we've sent the portfolio here." (the PDF went out just
+         before this reply, in _deliver_pdf_and_schedule_checkin);
+      2. the plumber handoff (plumber_link.portfolio_handoff): who handles our
+         quotes, what the pre-filled link opens and why it is long, the link,
+         the number;
+      3. ONLY for a job-date lead with no email: "Would it be okay if we
+         called you on <job - 2>, just to see if you've got the help you
+         need?" (copy_catalog.LADDER_CALL_ASK).
+    WHY the call is asked, and only there: with no email and a WhatsApp window
+    that will be shut by then, the ladder's check-ins cannot reach them, so the
+    plumber's call at job - 2 is the next contact; the owner's rule is never to
+    call without permission (a paid template was declined). A lead with an
+    email is followed up by email instead, so the call is not mentioned.
+    HOW: MESSAGE_SPLIT_MARKER between the parts, so each part keeps its own
+    single question and the question comes last. The handoff goes once per
+    lead (LINK_SENT_TAG); the ask writes the `delay_call_ok` pending step read
+    by _handle_call_permission_answer. The call day is
+    job_date_ladder.step_day(job, STEP_CALL), the day the cron emails the
+    plumber the brief, so the ask and the call cannot drift apart.
+    Pinned by LadderCallPermissionTests and the "job ladder" ask cases in TEST 0.
+    """
+    from bot import job_date_ladder as _ladder
+    from bot.plumber_link import LINK_SENT_TAG, portfolio_handoff
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+    parts = [copy_catalog.PORTFOLIO_HERE_ACK]
+    if LINK_SENT_TAG not in (getattr(appointment, 'internal_notes', '') or ''):
+        try:
+            handoff = portfolio_handoff(appointment)
+        except Exception:
+            logger.exception("Portfolio handoff failed — apt %s",
+                             getattr(appointment, 'pk', None))
+            handoff = ''
+        if handoff:
+            _append_note_tag(appointment, LINK_SENT_TAG)
+            parts.append(handoff)
+    job_day = _ladder.job_date(appointment)
+    if job_day is not None and not (getattr(appointment, 'customer_email', '') or '').strip():
+        call_day = _ladder.spoken_date(_ladder.step_day(job_day, _ladder.STEP_CALL))
+        parts.append(copy_catalog.LADDER_CALL_ASK.format(call_day=call_day))
+        _write_pending(appointment, 'delay_call_ok', call_day)
+    return MESSAGE_SPLIT_MARKER.join(parts)
+
+
+# The lead's answer to the call-permission ask. Searched, never matched whole:
+# the debounce joins quick taps into one turn ("Ok\nThank you"), so equality
+# on the message misses real answers (batched-turns rule). Checked in order:
+# a refusal of the call ANYWHERE ("Ok but no calls please" is a no), then the
+# yes words ("No problem" is a yes), then a plain no opening the reply.
+_CALL_REFUSED_RE = re.compile(
+    r"\b(?:don'?t|do not|dont|no need to)\s+call\b"
+    r"|\bno\s+calls?\b|\brather not\b|\bprefer not\b|\bnot necessary\b"
+    r"|\b(?:text|message|whatsapp)\s+me\s+instead\b|\bmusafona\b",
+    re.IGNORECASE)
+_CALL_YES_RE = re.compile(
+    r"\b(?:yes|yeah|yep|yah|sure|ok|okay|okey|alright|fine|perfect|great|cool"
+    r"|of course|no problem|no worries|not a problem|please do|that works|go ahead"
+    r"|hongu|ehe|ndizvo|zvakanaka)\b", re.IGNORECASE)
+_CALL_NO_RE = re.compile(r"^\s*(?:no|nope|nah|kwete)\b", re.IGNORECASE)
+# Longer than this is a message with its own content, not an answer: it goes
+# to the normal flow so their words are answered (customer words win).
+_CALL_ANSWER_MAX_WORDS = 8
+
+
+def _handle_call_permission_answer(message: str, pending: dict, appointment):
+    """Read the answer to "Will it be okay if we give you a call on ...?".
+
+    WHAT: an explicit no stamps job_date_ladder.NO_CALL_TAG, so the cron sends
+    the plumber no call brief, and says we won't call; a yes stamps CALL_OK_TAG
+    and confirms the day. Either way the wait is cleared.
+    WHY: owner rule, 2026-09-22: never call without permission, and an
+    explicit no means no call is set up. No answer at all is not a no: the
+    call goes ahead.
+    HOW: deterministic and short-message only. Anything longer than
+    _CALL_ANSWER_MAX_WORDS, or neither yes nor no, clears the wait and returns
+    None so the normal flow answers what they actually said.
+    """
+    from bot import job_date_ladder as _ladder
+    _clear_pending(appointment)
+    text = (message or '').strip()
+    if not text or len(text.split()) > _CALL_ANSWER_MAX_WORDS:
+        return None
+    call_day = pending.get('original') or 'the day'
+    if _CALL_REFUSED_RE.search(text):
+        _append_note_tag(appointment, _ladder.NO_CALL_TAG)
+        return copy_catalog.LADDER_CALL_NO
+    if _CALL_YES_RE.search(text):
+        _append_note_tag(appointment, _ladder.CALL_OK_TAG)
+        return copy_catalog.LADDER_CALL_YES.format(call_day=call_day)
+    if _CALL_NO_RE.search(text):
+        _append_note_tag(appointment, _ladder.NO_CALL_TAG)
+        return copy_catalog.LADDER_CALL_NO
+    return None
+
+
 def _ladder_delay_reply(appointment, job_day, checkback, friendly_date,
                         is_shona=False) -> str:
     """The delay reply for a job date more than a week out (brief, Rule 1).
@@ -3666,9 +3764,12 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
         # for ad/72h leads). Keep the reply light — don't narrate the send or the
         # check-in date; we'll follow up about the portfolio ourselves.
         # The plumber's link rides with the portfolio (brief: "send the
-        # portfolio and the plumber link together, up front").
+        # portfolio and the plumber link together, up front"). A ladder lead
+        # with no email is the one exception to "don't narrate the check-in":
+        # they are told we will call two days before their date
+        # (_portfolio_on_whatsapp_ack, owner 2026-09-22).
         if _deliver_pdf_and_schedule_checkin(appointment, iso_date):
-            return copy_catalog.PORTFOLIO_SENT_ACK + _plumber_offer_once(appointment)
+            return _portfolio_on_whatsapp_ack(appointment)
         # The send failed. "Have a look" would point them at nothing — the same
         # rule the reschedule path follows: never tell a customer something
         # happened when it did not. The plumber is alerted either way.
@@ -3687,7 +3788,7 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
                         "on WhatsApp instead of re-asking (apt=%s)",
                         getattr(appointment, 'id', None))
             _deliver_pdf_and_schedule_checkin(appointment, iso_date)
-            return copy_catalog.PORTFOLIO_SENT_ACK + _plumber_offer_once(appointment)
+            return _portfolio_on_whatsapp_ack(appointment)
         _write_pending(appointment, 'delay_email', iso_date or '')
         return _delivery_choice_question(iso_date)
 
@@ -3951,6 +4052,10 @@ def handle_out_of_scope(
         if pending_cat == "delay_email":
             logger.info("Delay flow step 4 — email answer: '%s'", message[:60])
             return _handle_delay_email_answer(message, pending, appointment)
+
+        if pending_cat == "delay_call_ok":
+            logger.info("Delay flow — call permission answer: '%s'", message[:60])
+            return _handle_call_permission_answer(message, pending, appointment)
 
         logger.info(
             "Resolving pending clarification: category=%s original='%s' answer='%s'",

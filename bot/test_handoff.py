@@ -10,6 +10,7 @@ mocked; the delay flow's date reader is patched so no model is called.
 """
 
 from datetime import date, datetime, timedelta
+from io import StringIO
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -18,6 +19,7 @@ from django.utils import timezone
 from bot import job_date_ladder as ladder
 from bot.models import Appointment
 from bot.plumber_link import LINK_SENT_TAG
+from bot.test_views_actions import open_email_window
 
 PLUMBER_WA = 'wa.me/263774819901'
 
@@ -145,7 +147,11 @@ class DelayFlowLadderTests(OfflineTestCase):
         with patch('bot.out_of_scope_handler._classify_email_step_reply',
                    return_value='whatsapp'):
             reply = _handle_delay_email_answer('just send it here', _read_pending(lead), lead)
+        # The handoff goes with the portfolio: the pre-filled link AND the
+        # number, then (no email on this lead) the call question last.
         self.assertIn(PLUMBER_WA, reply)
+        self.assertIn('+' + PLUMBER_WA.split('wa.me/')[1], reply)
+        self.assertTrue(reply.endswith("you've got the help you need?"))
 
     def test_a_new_date_in_answer_to_the_permission_question_moves_the_ladder(self):
         """'No, make it in two months' answers the date question. It used to
@@ -479,7 +485,7 @@ class TwoFollowupsAndSilenceTests(OfflineTestCase):
         self.assertGreater(max_followups_for(missing_area), 2)
 
     @patch('bot.customer_emails._send', return_value=True)
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     def test_no_job_date_touch_after_a_handoff_but_the_plumber_is_still_told(self, plumber, send):
         from bot.management.commands.send_followups import Command, SA_TIMEZONE
         job = date(2030, 3, 20)
@@ -622,6 +628,7 @@ class JobLadderCronTests(OfflineTestCase):
 
     def setUp(self):
         super().setUp()
+        open_email_window(self)
         from bot.management.commands.send_followups import Command, SA_TIMEZONE
         self.cmd = Command()
         self.tz = SA_TIMEZONE
@@ -644,7 +651,7 @@ class JobLadderCronTests(OfflineTestCase):
         send.assert_not_called()
         self.assertEqual(ladder.step(self.lead), ladder.STEP_FIRST)
 
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     @patch('bot.customer_emails._send', return_value=True)
     def test_minus_seven_then_minus_three_then_the_plumber_call(self, send, plumber):
         self._tick(13)
@@ -662,16 +669,16 @@ class JobLadderCronTests(OfflineTestCase):
 
         self._tick(18)
         plumber.assert_called_once()
-        subject, body = plumber.call_args[0][:2]
-        self.assertTrue(subject.startswith('[Call]'))
-        self.assertIn('B2.', body)                   # no quote on this lead
+        subject, body = plumber.call_args[0][1:3]    # (recipients, subject, text)
+        self.assertTrue(subject.startswith('Please call today: '))
+        self.assertIn('(no quote sent yet)', body)   # no quote on this lead
         self.assertEqual(ladder.step(self.lead), ladder.STEP_DONE)
         self.assertFalse(self.lead.is_delayed)
 
         self._tick(19)                               # finished: nothing more
         plumber.assert_called_once()
 
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     @patch('bot.customer_emails._send', return_value=True)
     def test_a_reply_after_the_first_touch_cancels_the_rest(self, send, plumber):
         self._tick(13)
@@ -691,7 +698,7 @@ class JobLadderCronTests(OfflineTestCase):
         send.assert_not_called()
         self.assertIsNone(ladder.job_date(self.lead))
 
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     def test_no_email_and_a_shut_window_still_reaches_the_plumber_call(self, plumber):
         """With no channel to the lead the touches cannot go, and the call is
         the only reach left, so the steps still advance."""
@@ -704,7 +711,7 @@ class JobLadderCronTests(OfflineTestCase):
             self._tick(18)
         plumber.assert_called_once()
 
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     @patch('bot.customer_emails._send', return_value=True)
     def test_a_cron_back_from_an_outage_fires_only_the_latest_step(self, send, plumber):
         self._tick(18)
@@ -719,3 +726,199 @@ class JobLadderCronTests(OfflineTestCase):
         self.lead.save(update_fields=['delay_followup_due_at'])
         self.cmd._process_delayed_reactivations(timezone.now(), False)
         followup.assert_not_called()
+
+
+class LadderEmailCopyTests(OfflineTestCase):
+    """The job-date ladder emails carry the owner's copy (2026-09-22): what
+    the lead told us about their date, a free online quote, and a Get quote
+    button above WhatsApp and Call."""
+
+    def _lead(self, **kw):
+        kw.setdefault('customer_name', 'Jane')
+        kw.setdefault('project_description', 'Full re-tile of the main bathroom')
+        lead = Appointment.objects.create(phone_number='whatsapp:+15550007400', **kw)
+        ladder.arm(lead, date(2026, 10, 21))
+        return lead
+
+    def test_first_email_says_back_their_date_and_offers_a_free_quote(self):
+        subject, html = ladder.touch_email(self._lead(), ladder.STEP_FIRST)
+        self.assertEqual(subject, 'Ahead of the 21st of October')
+        self.assertIn("you mentioned you&#x27;d be going ahead with the", html)
+        self.assertIn('around the 21st of October', html)
+        self.assertIn('free quote', html)
+        self.assertIn('Hi Jane', html)
+
+    def test_get_quote_button_sits_above_whatsapp_and_call(self):
+        lead = self._lead()
+        with patch.object(Appointment, 'plumber_contact', return_value='+263771111111'):
+            _, html = ladder.touch_email(lead, ladder.STEP_FIRST)
+        self.assertIn('>Get quote</a>', html)
+        self.assertIn('wa.me/263771111111', html)
+        self.assertLess(html.index('Get quote'), html.index('Call us'))
+
+    def test_second_email_asks_if_the_timing_moved(self):
+        _, html = ladder.touch_email(self._lead(), ladder.STEP_SECOND)
+        self.assertIn('or has the timing moved?', html)
+        self.assertIn('free quote', html)
+
+    def test_the_copy_has_no_dash_emoji_or_plumber(self):
+        from bot.copy_catalog import LADDER_EMAIL_FIRST, LADDER_EMAIL_SECOND
+        for text in (LADDER_EMAIL_FIRST, LADDER_EMAIL_SECOND):
+            self.assertNotIn(' - ', text)
+            self.assertNotIn('\u2014', text)
+            self.assertNotIn('the plumber', text.lower())
+
+
+class LadderCallBriefTests(OfflineTestCase):
+    """The job - 2 call email is the owner's call-email layout (2026-09-22):
+    script first, only true facts in the intro, the visit priced by the lead's
+    own tenant, a real Log the call link, and the 24-hour reminder's prefix."""
+
+    def _lead(self, **kw):
+        kw.setdefault('customer_name', 'Rudo Moyo')
+        kw.setdefault('project_description', 'Full re-tile and new fittings')
+        lead = Appointment.objects.create(phone_number='whatsapp:+263770007401', **kw)
+        ladder.arm(lead, timezone.localdate() + timedelta(days=2))
+        return lead
+
+    def test_a_lead_we_could_not_reach_is_described_truthfully(self):
+        subject, text, html = ladder.call_brief(self._lead())
+        self.assertTrue(subject.startswith('Please call today: Rudo Moyo'))
+        self.assertIn('no email on file', text)
+        self.assertIn('your call is the first contact since then', text)
+        self.assertNotIn('check-ins', text)
+        self.assertLess(text.index('SCRIPT'), text.index('LEAD DETAILS'))
+        self.assertIn('Log the call', html)
+        self.assertNotIn('#log-the-call', html)
+
+    def test_sent_touches_are_counted_from_the_transcript(self):
+        lead = self._lead(customer_email='rudo@example.com')
+        lead.add_conversation_message('assistant', f'{ladder.TRANSCRIPT_MARKER} (email) Ahead of')
+        _, text, _ = ladder.call_brief(lead)
+        self.assertIn('We checked in once since by email', text)
+
+    def test_a_tenant_that_charges_a_call_out_is_never_promised_a_free_visit(self):
+        from unittest.mock import MagicMock
+        cfg = MagicMock(currency='US$', consultation_fee=10)
+        cfg.visit_is_free.return_value = False
+        cfg.visit_fee_waived_on_job.return_value = True
+        with patch('bot.tenant_config.get_config', return_value=cfg), \
+             patch.object(ladder, 'quote_given', return_value=False):
+            offer = ladder._visit_offer(self._lead())
+        self.assertNotIn('free', offer)
+        self.assertIn('The call-out is US$10', offer)
+        self.assertIn('taken off if you go ahead', offer)
+
+    def test_it_goes_to_the_plumber_as_a_call_alert(self):
+        lead = self._lead()
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as send:
+            self.assertTrue(ladder.send_call_brief(lead))
+        kwargs = send.call_args.kwargs
+        self.assertEqual(kwargs['to_role'], 'plumber')
+        self.assertEqual(kwargs['category'], 'plumber_alert')
+        self.assertIn('Log the call', kwargs['html_message'])
+
+
+class LadderCallPermissionTests(OfflineTestCase):
+    """Option A (owner, 2026-09-22): a job-date lead with no email takes the
+    portfolio on WhatsApp and is ASKED, in one to two lines, whether we may
+    call two days before their date; an explicit no means the plumber gets no
+    call brief, and no answer means the call goes ahead."""
+
+    def _lead(self, **kw):
+        lead = Appointment.objects.create(
+            phone_number='whatsapp:+263770007402', customer_name='Rudo',
+            project_description='Full re-tile and new fittings', **kw)
+        ladder.arm(lead, date(2026, 10, 21))
+        return lead
+
+    def _ask(self, lead):
+        from bot.out_of_scope_handler import _portfolio_on_whatsapp_ack
+        with patch.object(Appointment, 'plumber_contact', return_value='+263771111111'):
+            return _portfolio_on_whatsapp_ack(lead)
+
+    def _answer(self, lead, text):
+        from bot.out_of_scope_handler import _read_pending, _handle_call_permission_answer
+        return _handle_call_permission_answer(text, _read_pending(lead), lead)
+
+    def test_the_reply_is_ack_then_handoff_then_the_call_question(self):
+        from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+        parts = self._ask(self._lead()).split(MESSAGE_SPLIT_MARKER)
+        self.assertEqual(parts[0], "That's fine, we've sent the portfolio here.")
+        self.assertIn('wa.me/263771111111?text=', parts[1])
+        self.assertIn('which is why', parts[1])
+        # The offer leads: a free online quote first, no visit (owner, 2026-09-22).
+        self.assertTrue(parts[1].startswith('You can get a free online quote first.'))
+        self.assertTrue(parts[1].rstrip().endswith('+263771111111'))
+        self.assertEqual(parts[2], "Would it be okay if we called you on the 19th of "
+                                   "October, just to see if you've got the help you need?")
+        # Short lines: no line of copy (the link aside) runs past ~110 characters,
+        # about two lines on a phone (the owner's call question is 102).
+        for line in '\n'.join(parts).splitlines():
+            if 'wa.me' not in line:
+                self.assertLessEqual(len(line), 110, line)
+
+    def test_a_lead_with_an_email_gets_the_handoff_but_no_call_question(self):
+        reply = self._ask(self._lead(customer_email='rudo@example.com'))
+        self.assertIn('+263771111111', reply)
+        self.assertNotIn('called you', reply)
+
+    def test_a_yes_confirms_the_day(self):
+        lead = self._lead()
+        self._ask(lead)
+        self.assertEqual(self._answer(lead, 'Yes sure'),
+                         "Perfect, we'll give you a call on the 19th of October.")
+        self.assertIn(ladder.CALL_OK_TAG, lead.internal_notes)
+
+    def test_an_explicit_no_stops_the_plumber_call(self):
+        lead = self._lead()
+        self._ask(lead)
+        self.assertIn("we won't call", self._answer(lead, 'Ok but no calls please'))
+        self.assertIn(ladder.NO_CALL_TAG, lead.internal_notes)
+        from bot.management.commands.send_followups import Command
+        with patch.object(ladder, 'send_call_brief') as brief:
+            Command(stdout=StringIO())._ladder_call(
+                lead, ladder.job_date(lead), date(2026, 10, 19), False, ladder)
+        brief.assert_not_called()
+        self.assertEqual(ladder.step(lead), ladder.STEP_DONE)
+
+    def test_something_else_is_answered_by_the_normal_flow(self):
+        lead = self._lead()
+        self._ask(lead)
+        self.assertIsNone(self._answer(lead, 'How much is a new toilet?'))
+        self.assertNotIn(ladder.NO_CALL_TAG, lead.internal_notes)
+        from bot.out_of_scope_handler import _read_pending
+        self.assertIsNone(_read_pending(lead))
+
+    def test_the_brief_says_whether_they_agreed(self):
+        lead = self._lead()
+        self._ask(lead)
+        _, silent, _ = ladder.call_brief(lead)
+        self.assertIn('they did not answer, so the call goes ahead', silent)
+        self.assertIn('If they already got a quote from you on WhatsApp', silent)
+        self._answer(lead, 'ok')
+        _, agreed, _ = ladder.call_brief(lead)
+        self.assertIn('They said yes when we asked', agreed)
+
+    def test_get_quote_always_carries_the_lead_details(self):
+        from bot.customer_emails import _get_quote_button
+        lead = self._lead()
+        with patch.object(Appointment, 'plumber_contact', return_value='+263771111111'),              patch('bot.plumber_link._tenant_short_link',
+                   return_value='https://wa.me/message/ABC123'):
+            html = _get_quote_button(lead)
+        self.assertIn('wa.me/263771111111?text=', html)
+        self.assertNotIn('wa.me/message/', html)
+
+    def test_the_whole_reply_survives_the_outbound_chain(self):
+        """finalise_outbound runs on every send (one question per part, the
+        free-visit and dash passes, speak-as-we); the link, the number and the
+        call question must all come out the other side."""
+        from bot.whatsapp_webhook import finalise_outbound
+        lead = self._lead()
+        reply = self._ask(lead)
+        with patch.object(Appointment, 'plumber_contact', return_value='+263771111111'):
+            out = finalise_outbound(reply, lead, 'no thanks, just send it here', check=False)
+        self.assertIn('wa.me/263771111111?text=', out)
+        self.assertIn('+263771111111', out)
+        self.assertIn("Would it be okay if we called you on the 19th of October", out)

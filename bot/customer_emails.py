@@ -173,6 +173,40 @@ def _contact_buttons(apt):
     return ''.join(parts)
 
 
+def _get_quote_button(apt):
+    """A "Get quote" button for the free ONLINE quote, or '' with nowhere to send it.
+
+    WHY: the owner wanted one CTA on the job-date ladder emails to be the
+    quote itself, not only Call or WhatsApp (2026-09-22).
+    HOW: always the per-lead link (plumber_link.long_quote_link): the
+    plumber's own WhatsApp number with the lead's details already typed in
+    (owner, 2026-09-22). Not quote_link: that prefers the plumber's WhatsApp
+    Business short link, whose message is fixed and carries no lead details,
+    and length does not matter behind a button. A tenant with no plumber
+    number falls back to its own WhatsApp line carrying the same pre-fill;
+    neither means no button, never
+    another tenant's number. Outlined like _contact_buttons, and for the same
+    reason: filled buttons route mail to Gmail Promotions.
+    """
+    from html import escape as _esc
+    from urllib.parse import quote as _q
+    from bot import plumber_link
+    from bot.copy_catalog import LADDER_GET_QUOTE_BUTTON
+    link = plumber_link.long_quote_link(apt)
+    if not link:
+        wa = _wa_number(apt)
+        if not wa:
+            return ''
+        link = f'https://wa.me/{wa}?text={_q(plumber_link.lead_voice_message(apt), safe="")}'
+    return (
+        '<p style="margin:16px 0 0;line-height:1;">'
+        f'<a href="{_esc(link, quote=True)}" style="display:inline-block;'
+        f'border:1.5px solid #1a56db;color:#1a56db;text-decoration:none;'
+        f'padding:9px 16px;border-radius:4px;font-size:14px;font-weight:bold;">'
+        f'{LADDER_GET_QUOTE_BUTTON}</a></p>'
+    )
+
+
 def _wa_nudge(apt):
     """WhatsApp nudge — used instead of "reply to this email" copy."""
     wa = _wa_number(apt)

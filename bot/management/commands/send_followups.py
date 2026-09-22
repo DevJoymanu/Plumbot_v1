@@ -85,6 +85,28 @@ CONTACT_WINDOWS = [
     (8, 3, 20, 33),
 ]
 
+# When an automated customer EMAIL may go out (SAST, half-open like
+# CONTACT_WINDOWS): 12:30-13:30 and 18:00-19:30, owner rule 2026-09-22.
+# WHY: the date-matched check-back in send_reminders fired on the first
+# 5-minute tick of the day, so leads got "Following Up" emails at 00:01.
+# Emails are read in a lunch break or the evening, so they wait for one.
+# Read through plan_quote.in_email_window by every proactive email path
+# (delay reactivation and last check, the job-ladder touch, the dated
+# check-back, post-visit asks). NOT gated: a reply to the lead's own email,
+# a portfolio they just asked for, and appointment-time reminders, because
+# holding those makes them wrong. Pinned by EmailWindowTests.
+EMAIL_WINDOWS = [
+    (12, 30, 13, 30),
+    (18, 0, 19, 30),
+]
+
+
+def in_email_window(when=None):
+    """plan_quote.in_email_window, imported at call time: plan_quote reads
+    this module's constants, so a top-level import would be circular."""
+    from bot.plan_quote import in_email_window as _in_email_window
+    return _in_email_window(when)
+
 # ─── How many follow-ups ──────────────────────────────────────────────────────
 # Four touches per run, for every lead. What a lead's window changes is where
 # those four SIT (see followup_offsets_for), never how many there are. The delay
@@ -1413,6 +1435,18 @@ class Command(BaseCommand):
                 # preview, so what it prints is what goes out.
                 message = dequalify_free_visit(lead, message)
 
+                # A lead with an email gets this touch with an email leg (touch
+                # 1 WhatsApp + email, touch 2 email only), and customer email
+                # waits for EMAIL_WINDOWS. The whole touch waits, not just the
+                # email, so the two legs still land together; nothing is
+                # stamped, so the next tick inside the window sends it. The
+                # WhatsApp-only check-ins above are not held.
+                if (has_email and not (is_access_checkin or is_pdf_checkin)
+                        and not in_email_window()):
+                    self.stdout.write(
+                        f'  ⏸  Lead {lead.id} held for the next email window')
+                    continue
+
                 if dry_run:
                     label = ('access check-in' if is_access_checkin
                              else 'portfolio check-in' if is_pdf_checkin
@@ -1680,6 +1714,13 @@ class Command(BaseCommand):
         is the only way left to reach them."""
         from bot.post_visit import lead_is_suppressed
 
+        # An emailed touch waits for EMAIL_WINDOWS. Return BEFORE advance(),
+        # so the step stays due and the next tick inside the window sends it.
+        if getattr(lead, 'customer_email', None) and not in_email_window():
+            self.stdout.write(
+                f'  ⏸  Job ladder touch for lead {lead.id} held for the next email window')
+            return
+
         if dry_run:
             self.stdout.write(self.style.SUCCESS(
                 f'🧪 Would send job-ladder touch {at + 1} to lead {lead.id}'))
@@ -1736,7 +1777,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(
                 f'🧪 Would send the plumber a call brief for lead {lead.id}'))
             return
-        if job_day >= today:
+        # The lead said no to a call (their answer to the permission ask in the
+        # delay flow): no brief goes to the plumber, and the ladder finishes as
+        # if the call were done. No answer is not a no. LadderCallPermissionTests.
+        if ladder.NO_CALL_TAG in (lead.internal_notes or ''):
+            self.stdout.write(f'  Lead {lead.id} asked not to be called: no call brief')
+        elif job_day >= today:
             ok = ladder.send_call_brief(lead)
             self.stdout.write(self.style.SUCCESS(
                 f'📞 Call brief for lead {lead.id} '

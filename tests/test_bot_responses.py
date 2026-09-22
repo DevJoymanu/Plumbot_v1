@@ -13540,20 +13540,57 @@ try:
     # none has, and never both (the plumber does not choose).
     from unittest import mock as _hb_mock
     with _hb_mock.patch.object(_jl, 'quote_given', return_value=True):
-        _subj, _b1 = _jl.call_brief(_armed)
+        _subj, _b1, _h1 = _jl.call_brief(_armed)
     with _hb_mock.patch.object(_jl, 'quote_given', return_value=False):
-        _subj2, _b2 = _jl.call_brief(_armed)
+        _subj2, _b2, _h2 = _jl.call_brief(_armed)
     results.log("job ladder: the call brief carries the lead's full details",
                 all(x in _b1 for x in ('Rudo', 'bathroom renovation', 'Borrowdale',
                                        'Full re-tile', 'Wednesday 21 October 2026',
                                        '+263770000001')), got=_b1[:300])
     results.log("job ladder: quote given routes the call to B1 only",
-                'B1.' in _b1 and 'B2.' not in _b1 and 'quote we sent you is still good' in _b1)
+                '(we have sent them a quote)' in _b1 and '(no quote sent yet)' not in _b1
+                and 'quote we sent you is still good' in _b1)
     results.log("job ladder: no quote routes the call to B2 only",
-                'B2.' in _b2 and 'B1.' not in _b2 and 'free quote there and then' in _b2)
+                '(no quote sent yet)' in _b2 and '(we have sent them a quote)' not in _b2
+                and 'free quote there and then' in _b2)
     results.log("job ladder: the call opens by checking where they stand, not pitching",
                 'did you end up going with someone else' in _b1.lower()
-                and _subj.startswith('[Call]'), got=_subj)
+                and _subj.startswith('Please call today: '), got=_subj)
+    # The intro states only what happened: no check-in reached a lead with no
+    # email and a shut window, so it must not say they ignored two.
+    results.log("job ladder: the call brief never claims check-ins that were not sent",
+                'have not answered our two check-ins' not in _b1
+                and ('checked in' not in _b1.split('SCRIPT')[0]
+                     or _jl._checkins_sent(_armed, _jl.job_date(_armed)) > 0), got=_b1[:400])
+    results.log("job ladder: the call brief is script first, details last",
+                _b1.index('SCRIPT') < _b1.index('LEAD DETAILS'))
+    # Owner, 2026-09-22: a lead who turns down email gets, with the portfolio,
+    # the ack, the plumber handoff (who, what the pre-filled link opens and why
+    # it is long, the link, the number), and ONLY a job-date lead with no
+    # email is then ASKED whether we may call two days before. Short lines.
+    from bot import out_of_scope_handler as _oos_a
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _msm
+    _noemail = _hb_lead(internal_notes='[JOB_DATE] 2026-10-21\n[JOB_LADDER] 0')
+    _noemail.save = lambda **k: None
+    _parts_a = _oos_a._portfolio_on_whatsapp_ack(_noemail).split(_msm)
+    results.log("job ladder: no email = ack, handoff with link and number, then the call ASK",
+                len(_parts_a) == 3
+                and _parts_a[0] == "That's fine, we've sent the portfolio here."
+                and 'wa.me/263774819901?text=' in _parts_a[1]
+                and 'which is why' in _parts_a[1]
+                and _parts_a[1].rstrip().endswith('+263774819901')
+                and _parts_a[2] == ("Would it be okay if we called you on the 19th of October, "
+                                    "just to see if you've got the help you need?"),
+                got=_parts_a)
+    results.log("job ladder: a plain no to the call is a no, 'no problem' is a yes",
+                bool(_oos_a._CALL_REFUSED_RE.search('Ok but no calls please'))
+                and bool(_oos_a._CALL_YES_RE.search('No problem'))
+                and not _oos_a._CALL_REFUSED_RE.search('No problem'))
+    _mailed = _hb_lead(internal_notes='[JOB_DATE] 2026-10-21', customer_email='rudo@example.com')
+    _mailed.save = lambda **k: None
+    _ack_b = _oos_a._portfolio_on_whatsapp_ack(_mailed)
+    results.log("job ladder: the call is only mentioned when there is no email",
+                'called you' not in _ack_b and '+263774819901' in _ack_b, got=_ack_b)
 except Exception as e:
     import traceback as _tb
     results.log("handoff brief (plumber link + job ladder)", False,

@@ -70,7 +70,7 @@ class Command(BaseCommand):
                       ladder.touch_message(lead, ladder.STEP_SECOND))
         for quoted in ((True,) if opts['quoted'] else (True, False)):
             with patch.object(ladder, 'quote_given', return_value=quoted):
-                subject, body = ladder.call_brief(lead)
+                subject, body, _html = ladder.call_brief(lead)
             self._section(f'Plumber call brief at job - 2 (quote sent: {quoted})',
                           f'Subject: {subject}\n\n{body}')
 

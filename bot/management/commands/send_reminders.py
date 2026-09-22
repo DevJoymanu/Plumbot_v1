@@ -68,6 +68,52 @@ SEP = "────────────────"
 # TIME HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# How many days after an agreed check-back date it may still go out. The send
+# waits for a sending hour now, so a date whose windows were all missed (a
+# cron outage) is sent the next day rather than lost; a few days, not more,
+# so a stale promise is never kept weeks late.
+FOLLOW_UP_CATCHUP_DAYS = 3
+
+# A bare "[FOLLOW_UP_SENT]" line predates the per-date stamp and was written
+# once per lead whatever the date. It is read as covering only dates up to
+# the day the per-date stamp shipped, so a later agreed date still goes out
+# (barmak 1005: sent for 20 Sep under the old stamp, now agreed 22 Dec).
+_LEGACY_FOLLOW_UP_SENT_UNTIL = "2026-09-22"
+
+
+def _current_followup_date(notes: str):
+    """The lead's current agreed check-back date (ISO string), or None.
+
+    WHY the LAST line rather than max(): notes are appended in order, so the
+    newest [FOLLOW_UP_DATE] is the date the lead most recently agreed, even
+    when they moved it EARLIER. Earlier lines are superseded promises.
+    """
+    import re as _re
+    found = _re.findall(r"\[FOLLOW_UP_DATE\] (\d{4}-\d{2}-\d{2})", notes or "")
+    return found[-1] if found else None
+
+
+def _followup_date_due(notes: str, today) -> bool:
+    """Is the dated check-back due to send now?
+
+    Due when the CURRENT date (not any superseded one) is today or within
+    FOLLOW_UP_CATCHUP_DAYS before it, and no [FOLLOW_UP_SENT] stamp covers
+    that date: a per-date stamp, or the legacy bare stamp for dates up to
+    _LEGACY_FOLLOW_UP_SENT_UNTIL. Pinned by FollowUpDateCheckbackTests.
+    """
+    import re as _re
+    current = _current_followup_date(notes)
+    if not current:
+        return False
+    earliest = (today - timedelta(days=FOLLOW_UP_CATCHUP_DAYS)).isoformat()
+    if not (earliest <= current <= today.isoformat()):
+        return False
+    if f"[FOLLOW_UP_SENT] {current}" in (notes or ""):
+        return False
+    legacy = _re.search(r"^\[FOLLOW_UP_SENT\]\s*$", notes or "", _re.MULTILINE)
+    return not (legacy and current <= _LEGACY_FOLLOW_UP_SENT_UNTIL)
+
+
 def _in_window(now_local, target_hour: int, target_minute: int = 0) -> bool:
     """Return True if now_local is within ±WINDOW_MINUTES of target_hour:target_minute."""
     target = now_local.replace(
@@ -802,13 +848,22 @@ class Command(BaseCommand):
 
         followup_sent = followup_skipped = followup_failed = 0
 
-        delayed_leads = list(
-            Appointment.objects.real().filter(
-                internal_notes__contains=f"[FOLLOW_UP_DATE] {today.isoformat()}",
-            ).exclude(
-                internal_notes__contains="[FOLLOW_UP_SENT]"
-            )
-        )
+        # Due = the lead's CURRENT check-back date (the last [FOLLOW_UP_DATE]
+        # written, see _current_followup_date) is today or up to
+        # FOLLOW_UP_CATCHUP_DAYS back, and it has not been sent for THAT date.
+        # Before: any line matching today was due, so a lead who moved their
+        # date from 20 Sep to 22 Dec got the 20 Sep email anyway (barmak 1005),
+        # and the single bare [FOLLOW_UP_SENT] stamp then blocked the real
+        # December check-back. The catch-up days exist because the send now
+        # waits for a window, and a cron outage across one must not lose it.
+        date_q = Q()
+        for back in range(FOLLOW_UP_CATCHUP_DAYS + 1):
+            date_q |= Q(internal_notes__contains=(
+                f"[FOLLOW_UP_DATE] {(today - timedelta(days=back)).isoformat()}"))
+        delayed_leads = [
+            a for a in Appointment.objects.real().filter(date_q)
+            if _followup_date_due(a.internal_notes or "", today)
+        ]
         self.stdout.write(f"  Leads due for follow-up today: {len(delayed_leads)}\n")
 
         _WA_FOLLOWUP_NAMED = (
@@ -840,9 +895,11 @@ class Command(BaseCommand):
             svc      = _service(apt)
 
             def _mark_followup_sent(a):
+                # Stamped per DATE, so a later agreed date is still sent.
                 notes = a.internal_notes or ""
-                if "[FOLLOW_UP_SENT]" not in notes:
-                    a.internal_notes = f"{notes}\n[FOLLOW_UP_SENT]".strip()
+                stamp = f"[FOLLOW_UP_SENT] {_current_followup_date(notes)}"
+                if stamp not in notes:
+                    a.internal_notes = f"{notes}\n{stamp}".strip()
                     a.save(update_fields=["internal_notes"])
 
             wa_msg = (
@@ -854,6 +911,20 @@ class Command(BaseCommand):
             # what makes the check-in read as a sales push.
             wa_msg = dequalify_free_visit(apt, wa_msg)
             window = may_send_proactively(apt)
+
+            # Held until a sending hour: WhatsApp inside CONTACT_WINDOWS,
+            # email inside EMAIL_WINDOWS (12:30-13:30, 18:00-19:30). This
+            # block used to fire on the first tick of the date, 00:01 SAST.
+            # Nothing is stamped when held, so a later tick sends it.
+            from bot.plan_quote import in_contact_window, in_email_window
+            if window and not in_contact_window(now_utc):
+                self.stdout.write(f"    HOLD  Follow-up [WA] → {label} until contact hours")
+                followup_skipped += 1
+                continue
+            if not window and email and not in_email_window(now_utc):
+                self.stdout.write(f"    HOLD  Follow-up [EMAIL] → {label} until the next email window")
+                followup_skipped += 1
+                continue
 
             if window:
                 ok = _send_wa(phone, wa_msg, dry_run=dry_run)

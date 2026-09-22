@@ -288,3 +288,82 @@ WHENEVER_YOURE_READY = (
     "No problem at all! Whenever you're ready, just drop us a message "
     "and we'll pick up right where we left off."
 )
+
+# The job-date ladder's EMAILS (owner, 2026-09-22), one per touch. The lead
+# named a date more than a week out; the first email goes 7 days before it and
+# the second 3 days before. Both say back what the lead told us (they would be
+# going ahead around that date), sound like we care rather than chase, and
+# offer a free quote: the ONLINE quote from photos, measurements or a plan,
+# which is free for every tenant (see PLUMBER_QUOTE_OFFER), never the visit,
+# which some tenants charge for. Paragraphs split on a blank line; {hi} is
+# "Hi Jane" or "Hi there", {job} their job after "the", {when} the date in
+# the owner's form ("the 14th of October"). The WhatsApp touches are
+# job_date_ladder.touch_message and are not these. Built by
+# job_date_ladder.touch_email, with LADDER_GET_QUOTE_BUTTON first.
+LADDER_EMAIL_FIRST = (
+    "{hi},\n\n"
+    "When we last spoke, you mentioned you'd be going ahead with the {job} "
+    "around {when}. That's a week away now, so we wanted to check in and make "
+    "sure you have everything you need before then.\n\n"
+    "We know a project like this takes some planning, so there's no pressure "
+    "at all. If it would help to have a clear price in hand first, you're "
+    "welcome to get a free quote from us. Just send a few photos, measurements "
+    "or a plan of the space and we'll put it together for you.\n\n"
+    "Tap Get quote below whenever you're ready, or reach us on WhatsApp or by "
+    "phone. We're happy to help either way."
+)
+LADDER_EMAIL_SECOND = (
+    "{hi},\n\n"
+    "You mentioned you'd be going ahead with the {job} around {when}, and "
+    "that's only a few days away now, so we wanted to see how your plans are "
+    "coming along.\n\n"
+    "If the timing has moved, that's completely fine. Just let us know and "
+    "we'll work around you. And if you'd still like a price before then, "
+    "you're welcome to get a free quote from us from a few photos, "
+    "measurements or a plan of the space.\n\n"
+    "Are you still keen to go ahead around then, or has the timing moved?"
+)
+LADDER_GET_QUOTE_BUTTON = "Get quote"
+
+# A lead who says no to email in the delay flow takes the portfolio on
+# WhatsApp with the plumber handoff beside it (owner, 2026-09-22): the ack,
+# then who handles quotes, what the link opens and why it is long, the link,
+# the number, and, ONLY for a job-date lead with no email, the call question.
+# Short lines on purpose (owner: "keep the lines short"); each is one idea.
+# Built by plumber_link.portfolio_handoff and
+# out_of_scope_handler._portfolio_on_whatsapp_ack.
+PORTFOLIO_HERE_ACK = "That's fine, we've sent the portfolio here."
+# The offer, on Hormozi's value equation (owner, 2026-09-22: "they can get a
+# free online quote first"): the outcome (an itemised price), certainty (they
+# know the cost before committing), no delay and no effort (nobody comes out,
+# a few photos is enough). No time promise and no "fixed": those are one
+# tenant's to make, and the copy fence would reject an invented one.
+PORTFOLIO_HANDOFF_FREE_FIRST = "You can get a free online quote first. No one needs to come out."
+PORTFOLIO_HANDOFF_WHO = (
+    "Send {who} a few photos, measurements or a plan, and you'll get an "
+    "itemised price as a PDF."
+)
+PORTFOLIO_HANDOFF_WHO_NAMELESS = (
+    "Send a few photos, measurements or a plan to the number below, and you'll "
+    "get an itemised price as a PDF."
+)
+PORTFOLIO_HANDOFF_CERTAINTY = (
+    "That way you know exactly what it costs before you commit to anything."
+)
+PORTFOLIO_LINK_LONG = (
+    "This link opens {whose} WhatsApp with your details typed in, which is why "
+    "it's long."
+)
+PORTFOLIO_LINK_DETAILS = "This link opens {whose} WhatsApp with your details typed in."
+PORTFOLIO_LINK_READY = "This link opens {whose} WhatsApp with a message ready to send."
+# The call is ASKED, never announced (owner: no call without permission), and
+# only to a job-date lead with no email; {call_day} is job - 2. The answer is
+# read by out_of_scope_handler._handle_call_permission_answer.
+LADDER_CALL_ASK = (
+    "Would it be okay if we called you on {call_day}, just to see if you've got "
+    "the help you need?"
+)
+# Their answer. A yes confirms the day; a no is respected (no call is set up
+# for the plumber) and leaves the door open.
+LADDER_CALL_YES = "Perfect, we'll give you a call on {call_day}."
+LADDER_CALL_NO = "No problem, we won't call. Just message us here whenever you're ready."

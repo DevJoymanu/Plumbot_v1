@@ -55,8 +55,17 @@ TRANSCRIPT_MARKER = '[JOB DATE FOLLOW-UP]'
 _JOB_DATE_RE = re.compile(r'\[JOB_DATE\]\s*(\d{4}-\d{2}-\d{2})')
 _STEP_RE = re.compile(r'\[JOB_LADDER\]\s*(\d)')
 _FIRST_SENT_RE = re.compile(r'\[JOB_LADDER_T1\]\s*(\S+)')
+# The lead's answer to "Will it be okay if we give you a call on ...?"
+# (owner, 2026-09-22: never call without permission). CALL_OK is a yes, for
+# the brief; NO_CALL is an explicit no, and the cron then sends the plumber NO
+# call brief. No answer means the call goes ahead. CALL_OK belongs to one job
+# date and is cleared on a re-arm; NO_CALL is not, because a lead who said
+# "don't call me" did not take that back by naming a new date.
+CALL_OK_TAG = '[JOB_CALL_OK]'
+NO_CALL_TAG = '[JOB_NO_CALL]'
+
 # Every ladder tag line, for a clean re-arm.
-_ALL_TAGS_RE = re.compile(r'^\[JOB_(?:DATE|LADDER|LADDER_T1)\][^\n]*\n?', re.MULTILINE)
+_ALL_TAGS_RE = re.compile(r'^\[JOB_(?:DATE|LADDER|LADDER_T1|CALL_OK)\][^\n]*\n?', re.MULTILINE)
 
 
 # ── Dates ────────────────────────────────────────────────────────────────────
@@ -248,21 +257,31 @@ def touch_message(appointment, at_step: int) -> str:
 def touch_email(appointment, at_step: int):
     """(subject, html) for a touch sent by email.
 
-    Same words as the WhatsApp copy, so a lead who reads both channels reads
-    one message. Signed by the business, with the existing call and WhatsApp
-    buttons. Speaks as WE at source: customer email is outside speak_as_we.
+    WHAT: the owner's email copy (copy_catalog LADDER_EMAIL_FIRST / _SECOND,
+    2026-09-22): it says back that the lead told us they would be going ahead
+    around their date, sounds considerate rather than chasing, and offers the
+    free online quote, with a Get quote button above the WhatsApp and Call
+    buttons. WHY it no longer mirrors touch_message: the owner asked for this
+    wording in the email; the WhatsApp touch keeps its own short copy.
+    Speaks as WE at source, because customer email is outside speak_as_we.
+    Pinned by LadderEmailCopyTests.
     """
     from html import escape
+    from .copy_catalog import LADDER_EMAIL_FIRST, LADDER_EMAIL_SECOND
     from .customer_emails import (_business_name, _contact_buttons,
-                                  _from_name, _wrap)
-    text = touch_message(appointment, at_step)
+                                  _from_name, _get_quote_button, _wrap)
+    name = (getattr(appointment, 'customer_name', '') or '').strip()
     day = job_date(appointment)
-    when = spoken_date(day) if day else 'your job'
+    when = spoken_date(day) if day else 'the date you mentioned'
+    template = LADDER_EMAIL_FIRST if at_step == STEP_FIRST else LADDER_EMAIL_SECOND
+    text = template.format(hi=f'Hi {name}' if name else 'Hi there',
+                           job=_job_words(appointment), when=when)
     subject = (f'Ahead of {when}' if at_step == STEP_FIRST
                else f'{when[:1].upper()}{when[1:]} is coming up')
     paragraphs = ''.join(f'<p>{escape(p)}</p>' for p in text.split('\n\n'))
     body = (
         paragraphs
+        + _get_quote_button(appointment)
         + _contact_buttons(appointment)
         + f'<p>{escape(_from_name(appointment))}<br>'
           f'{escape(_business_name(appointment))}</p>'
@@ -291,123 +310,209 @@ def quote_given(appointment) -> bool:
         return False
 
 
-def _two_days(appointment):
-    """Two real working days for the script's "[day] or [day]", or ('', '')."""
+def _checkins_sent(appointment, job_day) -> int:
+    """How many ladder touches actually reached the lead for this job date.
+
+    Read from the transcript (TRANSCRIPT_MARKER is written only when a touch
+    went out), not from the ladder step, which advances even when no channel
+    could carry the touch. That difference is the whole point: a lead with no
+    email and a shut WhatsApp window got NO check-ins, and the call brief must
+    not tell the plumber they ignored two.
+    """
+    since = (job_day - timedelta(days=FIRST_TOUCH_DAYS + 1)).isoformat()
+    return sum(
+        1 for turn in (getattr(appointment, 'conversation_history', None) or [])
+        if turn.get('role') == 'assistant'
+        and str(turn.get('content', '')).startswith(TRANSCRIPT_MARKER)
+        and str(turn.get('timestamp', ''))[:10] >= since
+    )
+
+
+def _visit_offer(appointment) -> str:
+    """The visit half of the no-quote branch, priced by the lead's OWN tenant.
+
+    "Free" only when the tenant's visit is free (TenantConfig.visit_is_free);
+    a tenant that charges a call-out has the fee said, and the waiver when it
+    has one. Barmak charges US$10, so the old "free quote there and then"
+    promised Barmak's leads something the plumber would then charge for.
+    """
     try:
         from .tenant_config import get_config
-        from .visit_slots import next_two_slots
-        slots = next_two_slots(get_config(getattr(appointment, 'tenant', None)))
+        cfg = get_config(getattr(appointment, 'tenant', None))
     except Exception:
-        slots = []
-    days = [s.date.strftime('%A') for s in slots]
-    if len(days) == 2:
-        return days[0], days[1]
-    return ('', '')
+        cfg = None
+    if cfg is None or cfg.visit_is_free():
+        return 'take a look, and give you a free quote there and then'
+    fee = f'{cfg.currency}{cfg.consultation_fee}'
+    waived = (", and that's taken off if you go ahead with us"
+              if cfg.visit_fee_waived_on_job() else '')
+    return (f'take a look, and give you an exact quote there and then. '
+            f'The call-out is {fee}{waived}')
 
 
-def call_brief(appointment):
-    """(subject, text) for the plumber: who to phone, and the script.
+def call_brief(appointment, now=None):
+    """(subject, text, html) for the plumber: the job-date call, script first.
 
-    Internal copy to the plumber, so it names him and his company in the
-    opener (the we-voice rule covers customer copy only). The script is the
-    owner's from the brief, filled in; only the branch the system already
-    knows applies (B1 quote given, B2 no quote) is included, so the plumber
-    does not have to check or choose anything.
+    WHAT: the owner's call-email layout (call_brief.build_call_email, the one
+    approved for Barmak lead 1162 on 2026-09-22): one intro line, the script
+    with the opening in a box, each branch as "If ...", the Log the call
+    button, the lead's details last. The subject starts with
+    CALL_SUBJECT_PREFIX, so the 24-hour reminder (call_brief.send_due_reminders)
+    covers it too.
+    WHY: the owner wants a script the plumber reads out with no thinking and
+    no fact checking (2026-09-22). So the intro states only what the system
+    KNOWS happened (when they gave the date, how many check-ins actually went
+    out, per _checkins_sent), only the branch the system already knows
+    applies is included (quote sent or not), and the visit is priced by the
+    lead's own tenant (_visit_offer). The script's lines are the owner's from
+    the handoff brief; the day choice reads "Would X or Y suit you better?"
+    so the reminder can move it forward.
+    Internal copy to the plumber: naming him and the company is allowed
+    outside customer copy. Pinned by the "job ladder" call-brief cases in
+    TEST 0 and LadderCallBriefTests.
     """
-    from .utils import business_name_for
+    from django.utils import timezone as _tz
+    from .call_brief import (CALL_SUBJECT_PREFIX, _next_two_working_days,
+                             build_call_email)
     from .lead_handoff import service_label
+    from .phone_quote import ensure_request, form_url
+    from .utils import business_name_for
 
+    now = now or _tz.now()
     name = (getattr(appointment, 'customer_name', '') or '').strip()
     first = name.split()[0] if name else 'there'
     service = service_label(appointment).lower() or 'plumbing work'
-    area = getattr(appointment, 'customer_area', '') or 'not given'
-    description = (getattr(appointment, 'project_description', '') or '').strip() or 'not given'
+    area = getattr(appointment, 'customer_area', '') or ''
+    description = ' '.join((getattr(appointment, 'project_description', '') or '').split())
     day = job_date(appointment)
     named = day.strftime('%A %d %B %Y') if day else 'not given'
+    when = spoken_date(day) if day else 'the date you mentioned'
     phone = ''.join(c for c in str(getattr(appointment, 'phone_number', '') or '') if c.isdigit())
-    email = (getattr(appointment, 'customer_email', '') or '').strip() or 'not given'
+    email = (getattr(appointment, 'customer_email', '') or '').strip()
     try:
-        plumber = appointment.plumber_display_name()
+        plumber = (appointment.plumber_display_name() or '').strip()
     except Exception:
         plumber = ''
     plumber = '' if plumber == 'the plumber' else plumber
+    plumber_first = plumber.split()[0] if plumber else ''
     company = business_name_for(appointment, default='')
-    d1, d2 = _two_days(appointment)
-    days = f'{d1} or {d2}' if d1 else '[day] or [day]'
-    when = spoken_date(day) if day else 'the date you mentioned'
+    d1, d2 = _next_two_working_days(appointment, now)
     quoted = quote_given(appointment)
 
-    subject = f'[Call] Phone {name or "+" + phone} today, their job date is {named}'
+    # What happened, from records only, so nothing in it needs checking.
+    told = getattr(appointment, 'delay_signal_detected_at', None)
+    told_on = f' on {_tz.localtime(told).strftime("%A %d %B")}' if told else ''
+    sent = _checkins_sent(appointment, day) if day else 0
+    if sent:
+        times = 'once' if sent == 1 else f'{sent} times'
+        channel = 'by email' if email else 'on WhatsApp'
+        history = f'We checked in {times} since {channel} and have not heard back.'
+    elif email:
+        # An email on file but no touch sent (held after a handoff, or by the
+        # touch cap): say only that we have not been in touch.
+        history = 'We have not been in touch with them since.'
+    else:
+        history = ('We have had no way to reach them since: there is no email on file '
+                   'and their WhatsApp has been quiet too long for us to message them, '
+                   'so your call is the first contact since then.')
+    # A no-email lead was ASKED whether we may call today (Option A, owner
+    # 2026-09-22): the brief says whether they said yes or did not answer (an
+    # explicit no never reaches here, the cron sends no brief). They were also
+    # given the plumber's number, so they may have had the quote from him on
+    # his own WhatsApp, where we cannot see it: the script has a branch for it.
+    from .plumber_link import LINK_SENT_TAG
+    notes = getattr(appointment, 'internal_notes', '') or ''
+    told_call = ''
+    if not email and CALL_OK_TAG in notes:
+        told_call = ' They said yes when we asked if we could call them today.'
+    elif not email and LINK_SENT_TAG in notes:
+        told_call = (' We asked if we could call them today and they did not answer, '
+                     'so the call goes ahead.')
+    if not email and LINK_SENT_TAG in notes:
+        told_call += (' They also have your number for a quote: if they messaged you, '
+                      'have that chat open when you call.')
+    intro = (f'Hi {plumber_first or "there"}, please call {name or "this lead"} today and '
+             f'read the script below. They told us{told_on} they would be going ahead '
+             f'with the {service} around {named}, two days from now. {history}'
+             f'{told_call} Keep it a friendly check-in, not a pitch.')
 
-    lines = [
-        f'Please phone {name or "this lead"} today. They named {named} for the '
-        f'{service} and have not answered our two check-ins, so a call is the '
-        'right touch two days out. Keep it a friendly check-in, not a pitch.',
-        '',
-        f'Name: {name or "not given"}',
-        f'Service: {service}',
-        f'Area: {area}',
-        f'Job: {description}',
-        f'Date named: {named}',
-        f'Phone: +{phone}' if phone else 'Phone: not given',
-        f'Email: {email}',
-        f'Quote: {"already sent (branch B1)" if quoted else "none yet (branch B2)"}',
-        '',
-        'OPENER',
-        f'"Hi {first}, it\'s {plumber or "[your name]"}'
-        + (f' from {company}' if company else '')
-        + f'. You were looking at getting the {service} done around {when}. '
-        'Did you end up going with someone else, or are you still keen to get '
-        'it sorted?"',
-        '',
-        'A. Went with someone else, or no longer needed',
-        '"No worries at all. If it doesn\'t work out, you\'ve got my number."',
-        'Then leave them alone.',
-        '',
+    opening = (f"Hi {first}, it's {plumber_first or 'us'}"
+               + (f' from {company}' if company else '')
+               + f'. You were looking at getting the {service} done around {when}. '
+               'Did you end up going with someone else, or are you still keen to get '
+               'it sorted?')
+    branches = [
+        ("If they went with someone else, or no longer need it", [
+            '"No worries at all. If it doesn\'t work out, you\'ve got my number."',
+            'Then leave them alone.']),
     ]
     if quoted:
-        lines += [
-            'B1. Still want it done (the quote has been sent)',
-            f'"Perfect, the quote we sent you is still good, so let\'s get you '
-            f'booked in. Does {days} work better?"',
-            '',
-            'If they hesitate, give them room to say it is the price:',
-            '"Can I ask, was the price about what you expected, or was it a bit '
-            'much? Either way\'s fine, I just want to help you get it sorted."',
-            '',
-            'If it is the price, talk it through rather than cutting the number:',
-            '- Split into stages: "we can do it in two parts so you don\'t pay '
-            'it all at once."',
-            '- Change what\'s included: "tell me what you really need and what '
-            'can wait, and I can bring the price down."',
-            '- Ask their number: "what were you hoping to pay? Let me see what '
-            'I can do."',
+        branches += [
+            ("If they still want it done (we have sent them a quote)", [
+                f'"Perfect, the quote we sent you is still good, so let\'s get you '
+                f'booked in. Would {d1} or {d2} suit you better?"',
+                'If they can\'t find it: "No problem, I\'ll send it to you again now."']),
+            ("If they hesitate", [
+                '"Can I ask, was the price about what you expected, or was it a bit '
+                'much? Either way\'s fine, I just want to help you get it sorted."']),
+            ("If it is the price", [
+                'Talk it through rather than cutting the number.',
+                'Split it: "we can do it in two parts so you don\'t pay it all at once."',
+                'Trim it: "tell me what you really need and what can wait, and I can '
+                'bring the price down."',
+                'Ask: "what were you hoping to pay? Let me see what I can do."']),
         ]
     else:
-        lines += [
-            'B2. Still want it done (no quote yet)',
-            '"Perfect, easiest thing is I pop round, take a look, and give you a '
-            f'free quote there and then, and we can sort a date. Does {days} '
-            'work for you?"',
-            '',
-            'If they are not keen on the visit, quote over the phone instead:',
-            '"That\'s okay. If you have measurements, or a few photos, or a plan, '
-            'just send those over with what you need done and I\'ll give you a '
-            'price over the phone."',
+        branches += [
+            ("If they still want it done (no quote sent yet)", [
+                f'"Perfect, easiest thing is I pop round, {_visit_offer(appointment)}. '
+                f'Would {d1} or {d2} suit you better?"',
+                'If they pick a day: "Morning or afternoon?"']),
+            ("If they already got a quote from you on WhatsApp", [
+                '"Great, did you get a chance to go over the quote? I can send it again '
+                f'if that helps. Would {d1} or {d2} suit you better to get started?"']),
+            ("Only if they're not keen on a visit", [
+                '"That\'s okay. If you have measurements, or a few photos, or a plan, '
+                'just send those over with what you need done and I\'ll give you a '
+                'price over the phone."']),
         ]
-    lines += [
-        '',
-        'Order: find out if they have gone elsewhere or still want it. Only '
-        'once they say they are still keen, lean towards a date.',
+    branches += [
+        ("If the timing has moved", [
+            '"No problem at all. Roughly when are you thinking now?" Note the new date.']),
+        ("If there's no answer", ['Try once more later today, then leave it.']),
     ]
-    return subject, '\n'.join(lines)
+    details = [
+        ('Call', f'{name or "Name not given"}, +{phone}' if phone else (name or 'not given')),
+        ('Job', description or service),
+        ('Area', area or 'not given'),
+        ('Date they named', named),
+        ('Quote', 'already sent' if quoted else 'none sent yet'),
+        ('Email', email or 'not given'),
+    ]
+    # The Log the call form needs a saved lead; preview_handoff renders an
+    # unsaved one, so it gets a placeholder rather than a crash or a row.
+    url = (form_url(ensure_request(appointment))
+           if getattr(appointment, 'pk', None) else '#log-the-call')
+    text, html = build_call_email(intro, opening, branches, details, url)
+    subject = f'{CALL_SUBJECT_PREFIX}{name or "+" + phone}, {service} around {named}'
+    return subject, text, html
 
 
 def send_call_brief(appointment, dry_run=False) -> bool:
-    """Email the plumber the call brief through the normal plumber channel."""
-    from .plumber_notifications import send_plumber_notification_email
-    subject, text = call_brief(appointment)
-    return bool(send_plumber_notification_email(
-        subject, text, dry_run=dry_run,
-        tenant=getattr(appointment, 'tenant', None), appointment=appointment,
-    ))
+    """Email the plumber the call brief, to the tenant's notification list.
+
+    Sent the way the other call emails are (shared_contact.send_brief): the
+    tenant's recipients with the operator's hidden copy, category
+    plumber_alert, so it sits with them and gets their 24-hour reminder.
+    """
+    from .plumber_notifications import (send_email_to_recipients,
+                                        split_notification_recipients)
+    subject, text, html = call_brief(appointment)
+    if dry_run:
+        return True
+    tenant = getattr(appointment, 'tenant', None)
+    to, hidden = split_notification_recipients(tenant)
+    return bool(send_email_to_recipients(
+        to, subject, text, html_message=html, tenant=tenant,
+        appointment=appointment, bcc=hidden,
+        category='plumber_alert', to_role='plumber'))

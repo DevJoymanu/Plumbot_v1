@@ -116,6 +116,26 @@ def in_contact_window(when):
                for oh, om, ch, cm in CONTACT_WINDOWS)
 
 
+def in_email_window(when=None):
+    """May an automated customer email go out at this moment?
+
+    Reads `send_followups.EMAIL_WINDOWS` (12:30-13:30 and 18:00-19:30 SAST,
+    owner rule 2026-09-22) for the same reason in_contact_window reads
+    CONTACT_WINDOWS: one definition the owner moves. A caller that gets False
+    sends nothing and stamps nothing, so its 5-minute cron retries inside the
+    next window. `when` defaults to now.
+    """
+    from django.utils import timezone as _tz
+    from bot.management.commands.send_followups import EMAIL_WINDOWS, SA_TIMEZONE
+
+    if not EMAIL_WINDOWS:
+        return True
+    local = (when or _tz.now()).astimezone(SA_TIMEZONE)
+    mins = local.hour * 60 + local.minute
+    return any((oh * 60 + om) <= mins < (ch * 60 + cm)
+               for oh, om, ch, cm in EMAIL_WINDOWS)
+
+
 def projected_emails(appointment):
     """Every email the PLAN path will send or has sent for this lead.
 
