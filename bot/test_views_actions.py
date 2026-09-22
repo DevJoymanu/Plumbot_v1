@@ -4559,6 +4559,60 @@ class InboundEmailIntakeTests(TestCase):
             call_command('process_inbound_emails', stdout=out, **opts)
         return out.getvalue(), send, seen
 
+    # ── The spam folder (owner, 2026-09-21) ──────────────────────────────────
+    # info@barmakplumbing.co.zw is a Cloudflare forward to the tenant's Gmail,
+    # and Gmail filed the forwarded customer replies as spam, which the poller
+    # never opened. It now reads the spam folder too, answers a known lead
+    # from it, and moves that mail to INBOX; spam from anyone else is untouched.
+
+    def _run_spam(self, raw):
+        import email as _email
+        from unittest.mock import MagicMock
+        from bot.management.commands import process_inbound_emails as mod
+        imap = MagicMock()
+        imap.uid.return_value = ('OK', [])
+        msg = _email.message_from_bytes(raw)
+        with patch.object(mod, '_EMAIL_FROM', 'team@example.com'), \
+             patch.object(mod, '_IMAP_PASS', 'secret'), \
+             patch.object(mod, '_connect', return_value=imap), \
+             patch.object(mod, '_spam_folder', return_value='[Gmail]/Spam'), \
+             patch.object(mod, '_fetch_unseen_headers',
+                          side_effect=lambda i, folder='INBOX':
+                              [(b'9', msg)] if folder == '[Gmail]/Spam' else []), \
+             patch.object(mod, '_fetch_message', return_value=msg), \
+             patch.object(mod, '_classify_intent',
+                          return_value={'intent': 'other', 'date': None}), \
+             patch.object(mod, '_generate_plumbot_email_reply', return_value='Happy to help.'), \
+             patch.object(mod, '_send_reply', return_value=True) as send:
+            call_command('process_inbound_emails', stdout=StringIO())
+        moved = [c for c in imap.uid.call_args_list if c.args[:1] == ('MOVE',)]
+        return send, moved
+
+    def test_a_known_lead_in_spam_is_answered_and_moved_to_the_inbox(self):
+        self._lead()
+        send, moved = self._run_spam(self._raw())
+        send.assert_called_once()
+        self.assertEqual([c.args for c in moved], [('MOVE', b'9', 'INBOX')])
+
+    def test_a_stranger_in_spam_is_left_where_it_is(self):
+        send, moved = self._run_spam(self._raw(sender='stranger@example.com'))
+        send.assert_not_called()
+        self.assertEqual(moved, [])
+
+    def test_the_spam_folder_is_found_by_its_junk_flag(self):
+        from unittest.mock import MagicMock
+        from bot.management.commands.process_inbound_emails import _spam_folder
+        imap = MagicMock()
+        imap.list.return_value = ('OK', [
+            b'(\\HasNoChildren) "/" "INBOX"',
+            b'(\\HasNoChildren \\Junk) "/" "[Gmail]/Spam"',
+        ])
+        self.assertEqual(_spam_folder(imap), '[Gmail]/Spam')
+        imap.list.return_value = ('OK', [b'(\\HasNoChildren) "." "INBOX.Junk"'])
+        self.assertEqual(_spam_folder(imap), 'INBOX.Junk')
+        imap.list.return_value = ('OK', [b'(\\HasNoChildren) "/" "INBOX"'])
+        self.assertIsNone(_spam_folder(imap))
+
     # ── The one rule ────────────────────────────────────────────────────────
 
     def test_a_known_whatsapp_lead_emailing_in_is_answered(self):

@@ -92,16 +92,83 @@ def _connect():
         return None
 
 
-def _fetch_unseen_headers(imap):
+# Common names for the spam folder when the server does not flag it \Junk.
+_SPAM_FOLDER_NAMES = ("[Gmail]/Spam", "Spam", "Junk", "Junk E-mail", "INBOX.Spam", "INBOX.Junk")
+
+# How far back the spam folder is read. A known lead's email that sat in spam
+# for weeks must not get a bot reply out of the blue now; a few days covers a
+# reply that was filed there since the last poll or an outage.
+_SPAM_LOOKBACK_DAYS = 3
+
+
+def _spam_folder(imap):
+    """The mailbox's spam folder name, or None.
+
+    WHY: a customer replying to info@barmakplumbing.co.zw reaches us through
+    Cloudflare Email Routing, which FORWARDS it to the tenant's Gmail, and
+    Gmail files forwarded mail as spam often enough that replies went
+    unanswered (owner, 2026-09-21): the poller only ever opened INBOX.
+    HOW: the folder the server flags \\Junk (RFC 6154; Gmail flags
+    [Gmail]/Spam), else the first of the common names that exists.
+    """
+    try:
+        status, rows = imap.list()
+    except Exception as exc:
+        logger.warning("IMAP LIST failed (%s); not reading the spam folder", exc)
+        return None
+    if status != "OK":
+        return None
+    names = []
+    for raw in rows or []:
+        line = raw.decode(errors="replace") if isinstance(raw, bytes) else str(raw)
+        found = re.match(r'\((?P<flags>[^)]*)\)\s+(?:"[^"]*"|NIL)\s+"?(?P<name>.*?)"?$', line)
+        if not found:
+            continue
+        if "\\junk" in found.group("flags").lower():
+            return found.group("name")
+        names.append(found.group("name"))
+    for candidate in _SPAM_FOLDER_NAMES:
+        if candidate in names:
+            return candidate
+    return None
+
+
+def _mark_handled(imap, uid, folder):
+    """Mark an answered email read, and bring it out of spam.
+
+    An email we answered came from a known lead, so it is not spam: moving it
+    to INBOX puts it where the operator reads their mail and teaches the
+    provider (Gmail learns from a move out of Spam). Only mail the bot handled
+    is moved; spam from strangers is left exactly where it is.
+    """
+    _mark_seen(imap, uid)
+    if folder and folder != "INBOX":
+        try:
+            imap.uid("MOVE", uid, "INBOX")
+        except Exception:
+            logger.warning("Could not move uid %s out of %s", uid, folder, exc_info=True)
+
+
+def _fetch_unseen_headers(imap, folder="INBOX"):
     """Return list of (uid_bytes, header-only message) for all UNSEEN emails.
 
     Headers only, and PEEKed on purpose. A plain RFC822 fetch sets \Seen as a
     side effect, so merely glancing at the mailbox marked the operator's own
     unread mail as read; and the body is only worth downloading for the mail we
     are actually going to answer.
+
+    `folder` other than INBOX is the spam folder, read only for the last
+    _SPAM_LOOKBACK_DAYS. The caller must process these uids with that folder
+    still selected: IMAP uids are per folder.
     """
-    imap.select("INBOX")
-    status, data = imap.uid("search", None, "UNSEEN")
+    status, _ = imap.select(f'"{folder}"')
+    if status != "OK":
+        return []
+    criteria = ["UNSEEN"]
+    if folder != "INBOX":
+        since = (timezone.now() - timedelta(days=_SPAM_LOOKBACK_DAYS)).strftime("%d-%b-%Y")
+        criteria += ["SINCE", since]
+    status, data = imap.uid("search", None, *criteria)
     if status != "OK" or not data[0]:
         return []
     results = []
@@ -833,14 +900,47 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("  Failed to connect to IMAP server."))
             return
 
-        emails = _fetch_unseen_headers(imap)
-        self.stdout.write(f"  Unseen emails found: {len(emails)}\n")
-
         processed = skipped = errors = 0
 
         def out(msg):
             self.stdout.write(msg)
 
+        # INBOX, then the spam folder (see _spam_folder: forwarded customer
+        # replies land there). Each folder is fetched and processed while it
+        # is the selected one, because IMAP uids only mean something inside
+        # their own folder.
+        folders = ["INBOX"]
+        spam = _spam_folder(imap)
+        if spam:
+            folders.append(spam)
+        for folder in folders:
+            emails = _fetch_unseen_headers(imap, folder)
+            self.stdout.write(f"  Unseen emails found in {folder}: {len(emails)}\n")
+            counts = self._process_folder(imap, folder, emails, dry_run, out)
+            processed += counts[0]
+            skipped += counts[1]
+            errors += counts[2]
+
+        try:
+            imap.logout()
+        except Exception:
+            pass
+
+        self.stdout.write(
+            f"\n{'=' * 60}\n"
+            f"  DONE  processed={processed}  skipped={skipped}  errors={errors}\n"
+            f"{'=' * 60}\n"
+        )
+
+    def _process_folder(self, imap, folder, emails, dry_run, out):
+        """Answer the unseen emails of one folder; (processed, skipped, errors).
+
+        The per-email body that used to run over INBOX alone, unchanged except
+        that answered mail is marked through _mark_handled, which also moves
+        it out of spam.
+        """
+        from bot.models import Appointment
+        processed = skipped = errors = 0
         for uid, head in emails:
             try:
                 subject = _decode_header_value(head.get("Subject", ""))
@@ -1010,7 +1110,8 @@ class Command(BaseCommand):
                     # makes the system feel automated and undoes the warmth.
                     if _ack_already_replied(apt):
                         out("    Acknowledgement (suppressed — already replied once in this thread)")
-                        _mark_seen(imap, uid)
+                        if not dry_run:
+                            _mark_handled(imap, uid, folder)
                         processed += 1
                         continue
 
@@ -1026,7 +1127,10 @@ class Command(BaseCommand):
                         _send_reply(apt, subject, html_body)
                         _set_ack_replied(apt)
 
-                    _mark_seen(imap, uid)
+                    # Out of spam too (_mark_handled). Held back on a dry run,
+                    # which must not change the mailbox.
+                    if not dry_run:
+                        _mark_handled(imap, uid, folder)
                     processed += 1
                     continue
 
@@ -1048,7 +1152,7 @@ class Command(BaseCommand):
                     _send_reply(apt, subject, html_body)
 
                 if not dry_run:
-                    _mark_seen(imap, uid)
+                    _mark_handled(imap, uid, folder)
                 processed += 1
 
             except Exception as e:
@@ -1056,13 +1160,4 @@ class Command(BaseCommand):
                 out(self.style.ERROR(f"    ERROR processing email: {e}"))
                 errors += 1
 
-        try:
-            imap.logout()
-        except Exception:
-            pass
-
-        self.stdout.write(
-            f"\n{'=' * 60}\n"
-            f"  DONE  processed={processed}  skipped={skipped}  errors={errors}\n"
-            f"{'=' * 60}\n"
-        )
+        return processed, skipped, errors
