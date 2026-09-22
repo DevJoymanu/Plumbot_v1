@@ -130,3 +130,19 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Scheduled follow-ups → sent={res['sent']}  failed={res['failed']}"
         ))
+
+        # The 24-hour reminder for an unlogged "please call this lead" email
+        # (bot/call_brief.py). Here, in the command and NOT in
+        # dispatch_due_scheduled_followups, because that function also runs
+        # from send_followups on its own cron: two crons ticking the same
+        # minute could each send the reminder before either logged it. Its
+        # own try, so a failure here never hides the follow-ups above.
+        try:
+            from bot.call_brief import send_due_reminders
+            cres = send_due_reminders(dry_run=dry_run, log=lambda m: self.stdout.write(m))
+            if any(cres.values()):
+                self.stdout.write(
+                    f"Call reminders → sent={cres['sent']} skipped={cres['skipped']} "
+                    f"failed={cres['failed']}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Call reminders failed: %s', exc)

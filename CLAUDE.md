@@ -9,6 +9,7 @@ Plumbot is a WhatsApp-based appointment scheduling and sales chatbot for Homebas
 - DeepSeek API integration — intent classification and response generation
 
 ## Coding Rules
+- **Never change an established owner rule without asking the owner first (owner, 2026-09-22).** This covers the non-negotiables below, the rules in `docs/current-state/`, and any behaviour the owner set in conversation. If a new request seems to contradict a rule already in place, say which rule it contradicts and ask, even when the request looks explicit. The owner may be refining the rule rather than replacing it; the price-ask case was one ("a price question IS the hesitation signal", so offering online there is not a contradiction of "lead with the visit"). Only change the rule once the owner has confirmed. Then record the new rule and its reason in the doc for that area, in the same commit.
 - Never introduce new dependencies unless explicitly asked
 - Reuse existing infrastructure and patterns already in the codebase
 - Always preserve WAMID deduplication logic — never remove it
