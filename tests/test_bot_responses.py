@@ -9476,6 +9476,23 @@ for _label, _appt, _msg, _want in (
 results.log("opener: ad_room reads the welcome message too",
             _ad_room(_ty_op.SimpleNamespace(ctwa_referral={
                 'welcome_message': {'text': 'Looking to renovate your bathroom?'}})) == 'bathroom')
+# A contact card (owner, 2026-09-22): "call my husband" with a card briefs the
+# plumber at once; a card alone is asked about. bot/shared_contact.py.
+from bot import shared_contact as _sc0
+for _txt, _want in (('Please call my husband', True), ('contact them', True),
+                    ('he will explain', True), ('Mufonerei', True),
+                    ('Thanks', False), ('How much is a tub?', False)):
+    results.log(f"contact card: instruction read ({_txt!r})",
+                _sc0.asks_us_to_contact(_txt) is _want)
+results.log("contact card: the card becomes a turn the batch can carry",
+            _sc0.marker_text([{'name': {'formatted_name': 'Tendai Moyo'},
+                               'phones': [{'phone': '+263 77 123 4567'}]}])
+            == '[Sent contact] Tendai Moyo +263 77 123 4567')
+results.log("contact card: the webhook routes cards to the contact handler",
+            'handle_contacts_message(sender' in open(
+                __import__('bot.whatsapp_webhook', fromlist=['x']).__file__,
+                encoding='utf-8').read())
+
 results.log("opener: the model's rule carries the ad-aware opener",
             'one bathroom or a few?' in _bcor(appointment=_bath_ad, message=_more_info))
 

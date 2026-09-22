@@ -49,8 +49,10 @@ REMIND_BEFORE = timedelta(hours=72)
 _WENT_OUT = ('sent', 'delivered', 'opened')
 _DAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 # The two-day close in the script ("Would Wednesday or Thursday suit you
-# better?"). By the reminder those days are a day stale, so they move on.
-_DAY_PAIR = re.compile(r'(Would )(%s) or (%s)( suit you better\?)' % ('|'.join(_DAYS), '|'.join(_DAYS)))
+# better?", or "... suit you better for us to come and have a quick look?").
+# By the reminder those days are a day stale, so they move on. No "?" in the
+# pattern: the contact-card script carries on after "better".
+_DAY_PAIR = re.compile(r'(Would )(%s) or (%s)( suit you better)' % ('|'.join(_DAYS), '|'.join(_DAYS)))
 
 
 def _next_two_working_days(appointment, now):
@@ -120,6 +122,51 @@ def build_reminder(call_email, appointment, now=None):
     subject = call_email.subject[len(CALL_SUBJECT_PREFIX):] if call_email.subject.startswith(
         CALL_SUBJECT_PREFIX) else call_email.subject
     return REMINDER_SUBJECT_PREFIX + subject, shift(text), shift(html)
+
+
+def build_call_email(intro, opening, branches, details, button_url):
+    """(text, html) for a "please call this lead" email, in the owner's layout.
+
+    WHAT: the layout the owner approved for Barmak lead 1162 (2026-09-22):
+    one intro line to the plumber; the script FIRST, its opening line in a
+    box; each branch as a bold "If …:" line with what to say under it; the
+    "Log the call" button; the lead details LAST.
+    WHY: the plumber reads the script out and nothing else, so it leads, and
+    every detail the lead gave is worked into the script by the caller
+    (plumber-call-brief-format). One builder, so every call email has the
+    first-paragraph intro and "Would X or Y suit you better?" shape that
+    build_reminder rewrites for the 24-hour reminder.
+    HOW: `branches` is [(title, [lines])], `details` is [(label, value)].
+    """
+    from html import escape
+    p = 'margin:0 0 12px;font:15px/1.5 Arial,sans-serif;color:#1a1a1a;'
+    h = ('margin:20px 0 8px;font:bold 13px Arial,sans-serif;color:#555;'
+         'text-transform:uppercase;letter-spacing:.04em;')
+    html = ['<div style="max-width:620px;margin:0 auto;padding:16px;">',
+            '<p style="%s">%s</p>' % (p, escape(intro, quote=False)),
+            '<p style="%s">Script</p>' % h,
+            '<div style="border-left:4px solid #1a73e8;background:#f3f7fe;padding:12px 16px;'
+            'margin:0 0 12px;"><p style="%smargin:0;">"%s"</p></div>'
+            % (p, escape(opening, quote=False))]
+    text = [intro, '', 'SCRIPT', '"%s"' % opening, '']
+    for title, lines in branches:
+        html.append('<p style="%smargin-bottom:4px;"><b>%s:</b></p>' % (p, escape(title, quote=False)))
+        html += ['<p style="%smargin-left:14px;">%s</p>' % (p, escape(line, quote=False))
+                 for line in lines]
+        text += [title + ':'] + ['  ' + line for line in lines] + ['']
+    html.append('<p style="%smargin-top:20px;"><b>After the call, tap below and fill in '
+                'how it went:</b></p>' % p)
+    html.append('<p style="margin:0 0 24px;"><a href="%s" style="display:inline-block;'
+                'background:#1a73e8;color:#fff;text-decoration:none;font:bold 15px Arial,'
+                'sans-serif;padding:12px 22px;border-radius:6px;">Log the call</a></p>'
+                % escape(button_url))
+    html.append('<p style="%s">Lead details</p>' % h)
+    html += ['<p style="%smargin-bottom:6px;"><b>%s:</b> %s</p>'
+             % (p, escape(k, quote=False), escape(v, quote=False)) for k, v in details]
+    html.append('</div>')
+    text += ['After the call, fill in how it went: ' + button_url, '', 'LEAD DETAILS']
+    text += ['%s: %s' % kv for kv in details]
+    return '\n'.join(text), '<meta charset="utf-8">' + ''.join(html)
 
 
 def _nothing_left_to_chase(appointment, sent_at):

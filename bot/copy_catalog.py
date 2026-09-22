@@ -53,6 +53,15 @@ OPENER_HELLO = "Hi, what needs doing, and is it one {room} or a few?"
 OPENER_INFO_SN = "Mhoro, hongu. Chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
 OPENER_HELLO_SN = "Mhoro, chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
 
+# ── A contact card from the lead (owner, 2026-09-22) ─────────────────────────
+# They sent a card AND told us to contact that person: the plumber is emailed
+# a call script at once and the lead hears CONTACT_WILL_CALL. A card with no
+# instruction gets CONTACT_ASK; a yes to it gets CONTACT_WILL_CALL, a no gets
+# CONTACT_KEPT. {name} is the card's first name. bot/shared_contact.py.
+CONTACT_WILL_CALL = "Thanks, we'll give {name} a call."
+CONTACT_ASK = "Thanks for {name}'s number. Should we give them a call about the job?"
+CONTACT_KEPT = "No problem, we've kept {name}'s number on file."
+
 # ── Voice notes (owner, 2026-09-22) ──────────────────────────────────────────
 # We cannot play a voice note, so the reply asks them to type it and, when we
 # were waiting on an answer, names it so the chat is never a dead end ("We

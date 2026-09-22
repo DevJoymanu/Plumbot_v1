@@ -2857,7 +2857,8 @@ def process_message_change(value):
                 handle_location_message(sender, message.get('location', {}), tenant=tenant)
 
             elif message_type == 'contacts':
-                handle_unsupported_media(sender, 'contacts', tenant=tenant)
+                handle_contacts_message(sender, message.get('contacts') or [],
+                                        message_id=message_id, tenant=tenant)
 
             else:
                 print(f"⚠️ Unknown message type from {sender}: '{message_type}'")
@@ -3207,6 +3208,36 @@ def _voice_note_topic(appointment):
         if _re.search(pattern, question, _re.IGNORECASE):
             return copy_catalog.VOICE_NOTE_CONTEXT.format(topic=topic)
     return copy_catalog.VOICE_NOTE_ASKED.format(question=question)
+
+
+def handle_contacts_message(sender, contacts, message_id=None, tenant=None):
+    """A contact card from the lead (bot/shared_contact.py).
+
+    Recorded as the lead's own turn ("[Sent contact] Tendai Moyo +263…") and
+    queued through the SAME batching window as text, so a "call my husband"
+    sent alongside it is read in the same turn, whichever arrived first. A
+    card with no number falls back to the plain "we can't open that" notice.
+    It used to go straight to that notice, which crashed silently, so a shared
+    contact got no reply at all.
+    """
+    from .shared_contact import marker_text
+    try:
+        if is_chatbot_paused_for_sender(sender, tenant=tenant):
+            print(f"Chatbot paused for whatsapp:+{sender}; skipping contact card.")
+            return
+        body = marker_text(contacts)
+        if not body:
+            handle_unsupported_media(sender, 'contacts', tenant=tenant)
+            return
+        appointment, _ = Appointment.objects.get_or_create_lead(
+            f"whatsapp:+{sender}", tenant=tenant)
+        appointment.add_conversation_message("user", body, message_id=message_id)
+        appointment.mark_customer_response()
+        _record_lead_reply_latency(sender, appointment)
+        print(f"📇 Contact card from {sender}: {body[:80]}")
+        _enqueue_for_response(sender, body, message_id, None, tenant=tenant)
+    except Exception as e:
+        print(f"? Error handling contact card: {str(e)}")
 
 
 def _lead_for_sender(sender, tenant=None):
@@ -3805,6 +3836,33 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             threading.Thread(
                 target=delayed_response,
                 args=(sender, _stop_reply, get_random_delay(sender=sender)),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
+        # ── A contact card, or the answer about one (bot/shared_contact.py) ──
+        # After the hard stop, before every classifier: the card turn is our
+        # own marker line, not language, and a "call my husband" sent with it
+        # is an instruction the rest of the pipeline has no step for. A card
+        # plus an instruction emails the plumber a call script now; a card
+        # alone asks what to do with it; our ask's answer is read on the next
+        # turn. Anything else carries on through the normal steps.
+        try:
+            from .shared_contact import handle_turn as _contact_turn
+            _contact_reply = _contact_turn(appointment, message_body)
+        except Exception as _contact_exc:
+            print(f"⚠️ Contact-card step failed: {_contact_exc}")
+            _contact_reply = None
+        if _contact_reply:
+            _contact_reply = finalise_outbound(_contact_reply, appointment, message_body,
+                                               check=False, visit_note=False)
+            appointment.add_conversation_message("assistant", _contact_reply)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _contact_reply, get_random_delay(sender=sender), message_id),
                 kwargs={'tenant': tenant}, daemon=True,
             ).start()
             return
