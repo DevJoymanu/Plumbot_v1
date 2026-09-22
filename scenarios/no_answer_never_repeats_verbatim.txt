@@ -4,10 +4,17 @@
 # bot loop on every non-answer, not only on a "no" (prod probe 2026-09-01,
 # reproduced on three separate conversations).
 
-> Hi there
-expect: hello
+#
+# The second turn names a job ("fix a leak"). It used to be a bare "I need a
+# plumber", which only reached the area question offline because the DeepSeek
+# stub stored its whole prompt as the description (it matched the old
+# opener's "renovations"). With a real job named, the description is captured
+# and the area question comes next, which is the question this file guards.
 
-> I need a plumber
+> Hi there
+expect: what needs doing
+
+> I need a plumber to fix a leak
 expect: what area are you in
 
 > No

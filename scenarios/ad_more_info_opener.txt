@@ -1,0 +1,18 @@
+# The ad's pre-filled "Hello! Can I get more info on this?" gets the owner's
+# opener (2026-09-22), not the bare "Hello, How may we assist you on plumbing
+# services" that a quarter of the last 40 ad leads never answered.
+#
+# One line, "sure" because they asked for info, and it asks what needs doing
+# and how many rooms. This replay has no ad data, so it takes the fallback
+# ("one room or a few"); a bathroom ad names the bathroom, pinned by the
+# "opener:" cases in TEST 0. The description they give next is the job, so the
+# next question is the area, not "bathroom or kitchen?".
+
+> Hello! Can I get more info on this?
+expect: hi, sure.
+expect: what needs doing, and is it one room or a few?
+reject: how may we assist
+
+> Two bathrooms, I want to renovate both with new tubs and showers
+expect: what area are you in
+reject: bathroom or kitchen

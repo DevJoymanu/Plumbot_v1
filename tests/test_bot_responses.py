@@ -1890,6 +1890,7 @@ class _FakeSelfCombined:
     _labour_split_seg = ResponseMixin._labour_split_seg
     _asks_about_labour = ResponseMixin._asks_about_labour
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
+    _last_assistant_was_opener = ResponseMixin._last_assistant_was_opener
     _build_combined_price_reply = ResponseMixin._build_combined_price_reply
     _tub_type_in_message = ResponseMixin._tub_type_in_message
     def __init__(self, appointment=None):
@@ -3558,6 +3559,7 @@ class _FakeSelfCapture:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _product_families_in = ResponseMixin._product_families_in
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
+    _last_assistant_was_opener = ResponseMixin._last_assistant_was_opener
     def __init__(self, appt):
         self.appointment = appt
 try:
@@ -3587,6 +3589,7 @@ class _FakeSelfPriceCapture:
     _PRODUCT_FAMILY_PATTERNS = ResponseMixin._PRODUCT_FAMILY_PATTERNS
     _product_families_in = ResponseMixin._product_families_in
     _capture_named_products_as_description = ResponseMixin._capture_named_products_as_description
+    _last_assistant_was_opener = ResponseMixin._last_assistant_was_opener
     handle_service_inquiry = ResponseMixin.handle_service_inquiry
     def __init__(self, appt):
         self.appointment = appt
@@ -7432,9 +7435,11 @@ try:
     results.log("cold opener: a genuine first-contact greeting still short-circuits",
                 '_is_greeting_or_opener(message)' in _sq2
                 and 'get_next_question_to_ask() == "service_type"' in _sq2)
+    # One opener everywhere: the constant, the model's rule and the greeting
+    # short-circuit, which used to hardcode the bare greeting on its own.
     results.log("cold opener: the opener text is one shared constant",
-                _CO.startswith('Hello,') and 'How may we assist' in _CO
-                and 'How may we assist' in _COR)
+                'How may we assist' not in _CO and _CO in _COR
+                and '_cold_opener_reply(message)' in _sq2)
 except Exception as e:
     results.log("cold opener: first contact only", False, got=str(e))
 
@@ -7463,7 +7468,7 @@ try:
     _cold.appointment.conversation_history = [{"role": "user", "content": "hi"}]
     results.log("greeting: genuine first contact still gets the cold opener",
                 _cold._conversation_underway() is False
-                and _cold._get_first_pass_question("service_type").startswith("Hello,"))
+                and "what needs doing" in _cold._get_first_pass_question("service_type").lower())
 
     _warm = _UnderwayBot()
     _warm.appointment.conversation_history = [
@@ -9424,17 +9429,81 @@ _opener = _bco()
 results.log(
     "cold opener: no longer the dead generic greeting",
     "How may we assist you on plumbing services" not in _opener
-    and "bathroom and kitchen plumbing" in _opener,
+    and "what needs doing" in _opener.lower(),
     got=repr(_opener),
 )
+
+# The owner's opener (2026-09-22): one line, asks what needs doing and how
+# many rooms, names the bathroom only when the ad was about bathrooms, and
+# says "sure" only to a lead who asked for info. The ad data is what WhatsApp
+# sends with an ad lead (ctwa_referral), read with no model call.
+import types as _ty_op
+from bot.views.plumbot.response_mixin import ad_room as _ad_room
+_bath_ad = _ty_op.SimpleNamespace(ctwa_referral={
+    'headline': 'chat with us',
+    'body': "Is the bathroom in your head anything like the one you've got?",
+    'welcome_message': {'text': "Hi, we're Barmak Plumbing! Are you looking to renovate your bathroom?"}})
+_catalog_ad = _ty_op.SimpleNamespace(ctwa_referral={
+    'headline': 'Our range', 'body': 'Geysers, tubs and showers supplied and fitted'})
+_kitchen_ad = _ty_op.SimpleNamespace(ctwa_referral={'body': 'Upgrade your kitchen sink'})
+_no_ad = _ty_op.SimpleNamespace(ctwa_referral=None)
+_more_info = 'Hello! Can I get more info on this?'
+for _label, _appt, _msg, _want in (
+        ('bathroom ad + info ask', _bath_ad, _more_info,
+         'Hi, sure. What needs doing, and is it one bathroom or a few?'),
+        ('catalog ad falls back to room', _catalog_ad, _more_info,
+         'Hi, sure. What needs doing, and is it one room or a few?'),
+        ('kitchen ad falls back to room', _kitchen_ad, _more_info,
+         'Hi, sure. What needs doing, and is it one room or a few?'),
+        ('no ad data falls back to room', _no_ad, _more_info,
+         'Hi, sure. What needs doing, and is it one room or a few?'),
+        ('a bare hello gets no "sure"', _bath_ad, 'hi',
+         'Hi, what needs doing, and is it one bathroom or a few?')):
+    results.log(f"opener: {_label}", _bco(appointment=_appt, message=_msg) == _want,
+                got=repr(_bco(appointment=_appt, message=_msg)))
+results.log("opener: ad_room reads the welcome message too",
+            _ad_room(_ty_op.SimpleNamespace(ctwa_referral={
+                'welcome_message': {'text': 'Looking to renovate your bathroom?'}})) == 'bathroom')
+results.log("opener: the model's rule carries the ad-aware opener",
+            'one bathroom or a few?' in _bcor(appointment=_bath_ad, message=_more_info))
+
+# After the opener, what they say is the job description: a product named in
+# the reply must not be routed as "do you have X?" ("Is a shower cubicle the
+# only thing…?"), and the description keeps their own words and room count.
+from bot.views.plumbot.response_mixin import ResponseMixin as _RMop
+
+
+class _OpenerSelf(_RMop):
+    def __init__(self, last_bot):
+        self.appointment = _ty_op.SimpleNamespace(
+            project_description='', conversation_history=[
+                {'role': 'user', 'content': _more_info},
+                {'role': 'assistant', 'content': last_bot}],
+            save=lambda **kw: None)
+
+
+for _label, _last, _want in (
+        ('English opener', 'Hi, sure. What needs doing, and is it one bathroom or a few?', True),
+        ('opener without "sure"', 'Hi, what needs doing, and is it one room or a few?', True),
+        ('Shona opener', 'Mhoro, hongu. Chii chinoda kugadziriswa, uye ibathroom imwe here kana dzakawanda?', True),
+        ('any other question', 'What area are you in?', False)):
+    results.log(f"opener: last turn read as the opener ({_label})",
+                _OpenerSelf(_last)._last_assistant_was_opener() is _want)
+_op_self = _OpenerSelf('Hi, sure. What needs doing, and is it one bathroom or a few?')
+_op_self._capture_named_products_as_description(
+    'Two bathrooms, I want to renovate both with new tubs and showers')
+results.log("opener: the reply is kept as the description, room count and all",
+            _op_self.appointment.project_description
+            == 'Two bathrooms, I want to renovate both with new tubs and showers',
+            got=repr(_op_self.appointment.project_description))
 results.log(
     "cold opener: carries NO price (price conditional rule)",
     "$" not in _opener and "US" not in _opener,
     got=repr(_opener),
 )
 results.log(
-    "cold opener: ends on one this-or-that question, not an open one",
-    _opener.rstrip().endswith("?") and _opener.count("?") == 1,
+    "cold opener: ends on one question, one line",
+    _opener.rstrip().endswith("?") and _opener.count("?") == 1 and "\n" not in _opener,
     got=repr(_opener),
 )
 results.log(
@@ -9450,7 +9519,7 @@ results.log(
 )
 results.log(
     "cold opener: the LLM rule carries the same opener text",
-    "bathroom and kitchen plumbing" in _bcor() and "$" not in _bcor(),
+    _opener in _bcor() and "$" not in _bcor(),
     got=repr(_bcor()[:180]),
 )
 

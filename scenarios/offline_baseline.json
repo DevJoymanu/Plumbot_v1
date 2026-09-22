@@ -9,6 +9,13 @@
     "3|reject|US$": true,
     "3|reject|no problem": true
   },
+  "ad_more_info_opener.txt": {
+    "0|expect|hi, sure.": true,
+    "0|expect|what needs doing, and is it one room or a few?": true,
+    "0|reject|how may we assist": true,
+    "1|expect|what area are you in": true,
+    "1|reject|bathroom or kitchen": true
+  },
   "any_time_in_their_own_words.txt": {
     "0|expect|what area are you in": false,
     "1|expect|what works better for you": false,
@@ -17,7 +24,7 @@
     "2|reject|which day suits": true
   },
   "any_time_is_an_answer.txt": {
-    "0|expect|how may we assist you on plumbing services": false,
+    "0|expect|what needs doing": true,
     "1|expect|what area are you in": true,
     "2|expect|what works better for you": false,
     "3|expect|let's say": true,
@@ -141,7 +148,7 @@
     "5|expect|free": true
   },
   "new_build_beats_oos_decline.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|wiring": false,
     "1|reject|outside what we do": true,
     "2|expect|new plumbing installation for a new building": true,
@@ -149,12 +156,12 @@
     "2|reject|outside what we do": true,
     "2|reject|what area are you in": true,
     "2|reject|you'd need a specialist": true,
-    "3|expect|tell me a bit more about the project": false,
+    "3|expect|tell me a bit more about the project": true,
     "3|reject|new plumbing installation for a new": true,
     "3|reject|wiring": true
   },
   "new_build_confirmed.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|new plumbing installation for a new building": true,
     "1|reject|US$": true,
     "1|reject|bathroom or a kitchen": true,
@@ -163,7 +170,7 @@
     "3|reject|new plumbing installation for a new": true
   },
   "new_build_midconvo.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|new plumbing installation for a new house": true,
     "1|reject|US$": true,
     "1|reject|bathroom or a kitchen": true
@@ -173,11 +180,11 @@
     "0|expect|new plumbing installation for a new house": true,
     "0|reject|US$": true,
     "0|reject|bathroom or a kitchen": true,
-    "1|expect|tell me a bit more about the project": false,
+    "1|expect|tell me a bit more about the project": true,
     "1|reject|new plumbing installation for a new": true
   },
   "new_build_rejected.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|wiring": false,
     "1|reject|outside what we do": true,
     "2|expect|new plumbing installation for a new building": true,
@@ -191,18 +198,18 @@
   },
   "new_install_flow.txt": {
     "0|expect|how may we assist you on plumbing services": false,
-    "1|expect|can you tell me a bit more about the project": false,
+    "1|expect|can you tell me a bit more about the project": true,
     "1|reject|US$": true,
     "1|reject|on-site visit": true,
     "1|reject|plumbed fresh": true,
-    "2|expect|all good, what area are you in?": false,
+    "2|expect|all good, what area are you in?": true,
     "2|reject|US$": true,
     "3|expect|quick look at the space": false,
     "3|expect|what works better for you": false,
     "3|reject|kitchen plumbing": true
   },
   "no_answer_never_repeats_verbatim.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|what area are you in": true,
     "2|reject|all good, what area are you in?": true
   },
@@ -216,15 +223,15 @@
     "1|reject|just those items": true
   },
   "no_to_detail_request.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|expect|new plumbing installation for a new house": true,
-    "2|expect|tell me a bit more about the project": false,
-    "3|expect|what area are you in": false,
+    "2|expect|tell me a bit more about the project": true,
+    "3|expect|what area are you in": true,
     "3|reject|simple fix": true,
     "3|reject|tell me a bit more about the project": true
   },
   "no_to_slot_offer.txt": {
-    "0|expect|hello": true,
+    "0|expect|what needs doing": true,
     "1|reject|US$": true,
     "2|expect|what works better for you": false,
     "3|expect|what day would suit you better": false,
@@ -241,15 +248,15 @@
     "2|reject|describe what you'd like done": true
   },
   "price_guide_after_three_fields.txt": {
-    "0|expect|how may we assist you on plumbing services": false,
+    "0|expect|what needs doing": true,
     "1|reject|US$": true,
     "2|reject|what area are you in": true,
-    "3|expect|online first": false,
-    "3|expect|price guide": false,
+    "3|expect|online first": true,
+    "3|expect|price guide": true,
     "3|expect|quick look": true,
     "3|reject|US$": true,
-    "4|expect|handles our quotes": false,
-    "4|expect|wa.me": false
+    "4|expect|handles our quotes": true,
+    "4|expect|wa.me": true
   },
   "price_tiedown_yes_not_availability.txt": {
     "0|expect|US$": true,
@@ -267,7 +274,7 @@
     "2|expect|what works better for you": true,
     "2|reject|US$": true,
     "2|reject|all-in figure": true,
-    "3|expect|new plumbing installation for a new building": false,
+    "3|expect|new plumbing installation for a new building": true,
     "3|reject|US$": true,
     "3|reject|all-in figure": true,
     "4|reject|US$": true,

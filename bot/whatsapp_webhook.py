@@ -4192,6 +4192,11 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             # description question, a product mention ("a tub and chamber") is the
             # ANSWER to it, not a new service question. Don't hijack it.
             and plumbot._get_question_retry_count('project_description') == 0
+            # The opener itself asks what needs doing, so a product named in
+            # reply to it is the job description too ("Two bathrooms, new tubs
+            # and showers" was answered "Is a shower cubicle the only thing
+            # you're looking to get sorted?"). See _last_assistant_was_opener.
+            and not plumbot._last_assistant_was_opener()
         )
         if _ai_service_q and _faq_topic is None:
             _faq_topic = 'services'
@@ -4875,8 +4880,23 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             is_project_description = plumbot._looks_like_project_description_reply(message_body)
         except Exception:
             pass
+        # A reply to the opener ("What needs doing, and is it one bathroom or a
+        # few?") IS the project description, whatever words it uses. By this
+        # step the extractor has usually stored it, so the next-question test
+        # above no longer sees a capture phase, and "I want my whole bathroom
+        # redone, new tub and tiles" was answered with tub prices nobody asked
+        # for. Gated on the deterministic figure ask (`asks_figure`: how much,
+        # price, cost, marii), not `price_requested`, whose model classifier
+        # counts "a quote" too; a quote leans to the visit anyway. A real
+        # how-much still prices. Pinned by scenarios/price_guide_after_three_fields.txt.
+        _answering_opener = False
+        try:
+            _answering_opener = plumbot._last_assistant_was_opener() and not asks_figure
+        except Exception:
+            pass
 
-        if (booking_capture_phase or is_project_description) and not price_requested:
+        if ((booking_capture_phase or is_project_description) and not price_requested) \
+                or _answering_opener:
             print("Skipping service inquiry reply - lead is describing their project (no price asked)")
         elif _is_unprompted_carryover_pricing(
             intent, message_body, price_requested, PRICING_AUTO_REPLY_INTENTS

@@ -36,6 +36,23 @@ rewritten to "once we see the space" by speak_as_we on every send) and
 EMERGENCY_OFFER (a dash at source, sent as a full stop by strip_dashes).
 """
 
+# ── First contact: the opener ────────────────────────────────────────────────
+# The owner's opener (2026-09-22), replacing "Hello, How may we assist you on
+# plumbing services", which a quarter of ad leads never answered. One line,
+# the way a person texts: no "thanks for reaching out", no list of what we
+# supply, and nothing that assumes they already have a project. It asks what
+# needs doing (the job description, from which the job TYPE is worked out)
+# and how many rooms, so a lead doing three en-suites or a new build reads it
+# as meant for them too. OPENER_INFO answers a lead who asked for info ("Can
+# I get more info on this?"), which "sure" answers; a bare "hi" gets
+# OPENER_HELLO. {room} is "bathroom" when the ad they came from is about
+# bathrooms, else "room" ("imba" in Shona): a kitchen or catalog ad, or no ad
+# data. Filled in by response_mixin.build_cold_opener. No price, one question.
+OPENER_INFO = "Hi, sure. What needs doing, and is it one {room} or a few?"
+OPENER_HELLO = "Hi, what needs doing, and is it one {room} or a few?"
+OPENER_INFO_SN = "Mhoro, hongu. Chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
+OPENER_HELLO_SN = "Mhoro, chii chinoda kugadziriswa, uye i{room} imwe here kana dzakawanda?"
+
 # ── Qualification: asks the flow makes ──────────────────────────────────────
 
 # Asked straight after a booking lands. Every path that books ends on this.

@@ -254,44 +254,93 @@ MESSAGE_SPLIT_MARKER = "\x1fSPLIT\x1f"
 # first contact — see _answer_standalone_question, which swaps in a no-greeting
 # rule once the conversation is underway.
 #
-# Kept as the FALLBACK only: a tenant with no price sheet has nothing to anchor
-# on, so they still get the bare greeting. Everyone else gets build_cold_opener,
-# which leads with two of their own real figures — see below for why.
-COLD_OPENER = "Hello,\nHow may we assist you on plumbing services"
+# Every first-contact path sends build_cold_opener: the deterministic
+# first-pass question, the greeting short-circuit in _answer_standalone_question
+# (which used to hardcode the bare greeting and was the one production sent),
+# and the rule handed to the model (build_cold_opener_rule). COLD_OPENER is the
+# no-context version of the same opener, for the few places that need a
+# constant; it is no longer "Hello, How may we assist you on plumbing
+# services", which a quarter of ad leads never answered.
+_INFO_ASK = re.compile(
+    r"\b(more\s+info|information|tell\s+me\s+more|details|interested|"
+    r"can\s+i\s+(get|have|know)|saw\s+your\s+(ad|advert)|info)\b", re.IGNORECASE)
 
-def build_cold_opener(tenant=None, is_shona: bool = False) -> str:
-    """First-contact reply: say what we do, then ask ONE specific question.
+# Words that show what an ad is about. Bathroom words make the opener name
+# bathrooms; a kitchen word or another trade item alongside them makes it a
+# catalog-style ad, which gets the general "room" opener, as does no ad data.
+_AD_BATHROOM_WORDS = re.compile(
+    r"\b(bathrooms?|baths?|bathtubs?|tubs?|showers?|toilets?|en-?suites?|vanit(y|ies)|basins?)\b",
+    re.IGNORECASE)
+_AD_OTHER_WORDS = re.compile(
+    r"\b(kitchens?|geysers?|boreholes?|pumps?|tanks?|jojo|solar|reticulation)\b",
+    re.IGNORECASE)
 
-    The bare greeting ("Hello, How may we assist you on plumbing services") was
-    the single biggest leak in the funnel: across the 50 most recent
-    conversations, 13 leads opened with a greeting, received it, and never wrote
-    again — 26% of all leads, dead on the first turn. It carries no information
-    and puts the whole burden of continuing on the customer.
 
-    It carries NO prices. A greeting is not a price question, and the Price
-    Conditional Rule is absolute: figures appear only when the customer actually
-    asks for one (_asks_price_figure). What replaces the dead greeting is
-    specificity — naming the work and closing on a this-or-that question the
-    customer can answer with two words. No emojis.
+def ad_room(appointment) -> str:
+    """'bathroom' when the ad this lead came from is about bathrooms only, else ''.
+
+    WHAT: reads the click-to-WhatsApp ad data WhatsApp sends with an ad lead's
+    first message (`ctwa_referral`: the ad's headline, its text and the
+    welcome message set in Ads Manager).
+    WHY: the opener names the room the ad showed, so a lead from a bathroom
+    ad is asked about bathrooms, with no manual setup per ad (owner,
+    2026-09-22: ads vary, and some are catalogs of different things).
+    HOW: deterministic, no model call: bathroom words and nothing from a
+    kitchen or another trade means 'bathroom'. A kitchen or catalog ad, an
+    unreadable one, and a lead with no ad data all return '', which gets the
+    general opener, so a wrong guess never names the wrong room. Pinned by the
+    "opener:" cases in TEST 0.
     """
-    if is_shona:
-        return (
-            "Mhoro,\n"
-            "Tinogadzira zvepaipi dzemubathroom nemukitchen. Kuisa zvitsva, "
-            "kuvandudza, nekugadzirisa zvakafa.\n\n"
-            "Muri kuda kuisa zvitsva here, kana kugadziridza zvamunazvo?"
-        )
-    return (
-        "Hello,\n"
-        "We handle bathroom and kitchen plumbing. Installations, renovations "
-        "and repairs.\n\n"
-        "Are you looking at a new installation, or a renovation of what you have?"
-    )
+    ref = getattr(appointment, 'ctwa_referral', None) or {}
+    if not isinstance(ref, dict):
+        return ''
+    welcome = ref.get('welcome_message') or ''
+    if isinstance(welcome, dict):
+        welcome = welcome.get('text') or ''
+    text = ' '.join(str(part or '') for part in (
+        ref.get('headline'), ref.get('body'), welcome))
+    if _AD_BATHROOM_WORDS.search(text) and not _AD_OTHER_WORDS.search(text):
+        return 'bathroom'
+    return ''
 
-_COLD_OPENER_RULE = """CRITICAL RULE — GENERIC OPENERS:
+
+def build_cold_opener(tenant=None, is_shona: bool = False, appointment=None,
+                      message: str = '') -> str:
+    """First-contact reply: one line that asks what needs doing and how many rooms.
+
+    WHAT: "Hi, sure. What needs doing, and is it one bathroom or a few?" for a
+    lead who asked for info from a bathroom ad; "…one room or a few?" for any
+    other ad or none; "Hi, what needs doing, …" when they only said hello
+    ("sure" answers a question, and there was none). The words live in
+    copy_catalog (OPENER_*).
+    WHY (owner, 2026-09-22): the bare "Hello, How may we assist you on plumbing
+    services" was sent to the ad's "Can I get more info on this?" and a
+    quarter of the last 40 leads never answered it. The opener reads like a
+    person texting, assumes no project, and asks for the job description
+    first: the job TYPE is worked out from that answer, and only asked when
+    it is unclear, so the qualification questions drop from four to three.
+    It carries NO price (a greeting is not a price question) and no emoji.
+    HOW: `ad_room(appointment)` picks the room; `message` decides the
+    greeting. `tenant` stays in the signature for the callers that pass it;
+    the opener names no business, so nothing of one tenant can reach another.
+    """
+    from bot import copy_catalog as _cc
+    room = ad_room(appointment) if appointment is not None else ''
+    asked_for_info = bool(_INFO_ASK.search(message or ''))
+    if is_shona:
+        line = _cc.OPENER_INFO_SN if asked_for_info else _cc.OPENER_HELLO_SN
+        return line.format(room=room or 'imba')
+    line = _cc.OPENER_INFO if asked_for_info else _cc.OPENER_HELLO
+    return line.format(room=room or 'room')
+
+
+COLD_OPENER = build_cold_opener()
+
+# The no-context form of the rule; build_cold_opener_rule is the one the reply
+# path uses, carrying the opener for THIS lead's ad and greeting.
+_COLD_OPENER_RULE = f"""CRITICAL RULE — GENERIC OPENERS:
         If the customer's message is a generic greeting, a vague request for more information, or an opening message with no specific question, you MUST reply with ONLY this exact text and nothing else:
-        Hello,
-        How may we assist you on plumbing services
+        {COLD_OPENER}
 
         This applies to ALL of the following (and any equivalent):
         - Greetings: hi, hello, hey, hie, good morning, good afternoon, good evening, sawubona, mhoro, makadii, masikati, mangwanani, howzit, sharp, eita
@@ -1155,14 +1204,19 @@ def strip_repeat_free_visit(reply: str, appointment, message: str = None):
     return result, result != reply
 
 
-def build_cold_opener_rule(tenant=None, is_shona: bool = False) -> str:
-    """_COLD_OPENER_RULE with THIS tenant's priced opener as the required text.
+def build_cold_opener_rule(tenant=None, is_shona: bool = False, appointment=None,
+                           message: str = '') -> str:
+    """_COLD_OPENER_RULE with THIS lead's opener as the required text.
 
     The deterministic paths already return build_cold_opener; without this the
     LLM path would still emit the bare greeting, so the same lead would get a
     different (and much weaker) first message depending on which branch ran.
+    `appointment` and `message` are passed through so the model is handed the
+    same ad-aware opener the deterministic paths send (optional, so older
+    callers keep working).
     """
-    opener = build_cold_opener(tenant, is_shona=is_shona)
+    opener = build_cold_opener(tenant, is_shona=is_shona, appointment=appointment,
+                               message=message)
     indented = "\n".join(f"        {line}" for line in opener.split("\n"))
     return (
         "CRITICAL RULE — GENERIC OPENERS:\n"
@@ -2186,6 +2240,35 @@ class ResponseMixin:
             ).lower()
             return any(sig in last for sig in self._tiedown_signatures())
 
+        def _last_assistant_was_opener(self) -> bool:
+            """True when our most recent turn was the opener ("What needs doing,
+            and is it one bathroom or a few?").
+
+            WHY: the opener asks for the job description, but the flow records
+            that first ask as the service-type question, so the paths that tell
+            "do you have X?" apart from "here is my job" by the description
+            question's retry count could not see that we had asked. A reply
+            naming products ("Two bathrooms, new tubs and showers") was then
+            answered "Is a shower cubicle the only thing you're looking to get
+            sorted?", narrowing a whole job to one item. After the opener,
+            whatever they say is the answer to it.
+            HOW: the opener's fixed wording up to the room, from copy_catalog,
+            in English and Shona, matched on our last assistant turn. Pinned by
+            scenarios/ad_more_info_opener.txt.
+            """
+            from bot import copy_catalog as _cc
+            appt = getattr(self, 'appointment', None)
+            history = (getattr(appt, 'conversation_history', None) or []) if appt else []
+            last = next(
+                (m.get('content') or '' for m in reversed(history)
+                 if m.get('role') == 'assistant'),
+                '',
+            ).lower()
+            # "what needs doing, and is it one " / "chinoda kugadziriswa, uye i"
+            marks = (_cc.OPENER_HELLO.split('{room}')[0].split(', ', 1)[1].lower(),
+                     _cc.OPENER_HELLO_SN.split('{room}')[0].split(', ', 1)[1].lower())
+            return any(mark in last for mark in marks)
+
         def _last_assistant_was_value_check(self) -> bool:
             """True when our last turn was the property-scope value-check close
             ('Anything else on the property?') — so a bare 'no'/ack this turn means
@@ -3130,16 +3213,17 @@ class ResponseMixin:
             return ''
 
         def _cold_opener_reply(self, message: str = '') -> str:
-            """The first-contact reply, priced from this lead's own tenant.
-
-            See build_cold_opener: the bare greeting killed 26% of recent leads
-            on turn one, so first contact leads with real figures instead.
+            """The first-contact reply for THIS lead: build_cold_opener with the
+            ad they came from and what they wrote, so "Can I get more info?"
+            from a bathroom ad gets "Hi, sure. What needs doing, and is it one
+            bathroom or a few?". Every first-contact path returns this.
             """
             from bot.repeated_question_detector import detect_language_simple
             text = message or self._last_customer_message()
             is_shona = detect_language_simple(text) == 'shona'
             return build_cold_opener(
-                getattr(self.appointment, 'tenant', None), is_shona=is_shona)
+                getattr(self.appointment, 'tenant', None), is_shona=is_shona,
+                appointment=self.appointment, message=text)
 
         def _rough_price_map(self) -> dict:
             """{family: 'label from US$X'} — was _FAMILY_ROUGH_PRICE."""
@@ -3932,8 +4016,18 @@ class ResponseMixin:
             named = sorted(self._product_families_in(message))
             if not named:
                 return
+            # In reply to the opener ("What needs doing, and is it one bathroom
+            # or a few?") their own words ARE the description, and they carry
+            # the room count the opener asked for: "Two bathrooms, new tubs and
+            # showers" was stored as "shower and tub", dropping the "two
+            # bathrooms" the plumber prices on. Anywhere else the product list
+            # stays, as before.
+            if self._last_assistant_was_opener():
+                description = ' '.join((message or '').split())[:200]
+            else:
+                description = " and ".join(named)
             try:
-                appt.project_description = " and ".join(named)
+                appt.project_description = description
                 appt.save(update_fields=['project_description'])
             except Exception:
                 pass
@@ -8543,9 +8637,13 @@ class ResponseMixin:
             # ── GREETING / GENERIC OPENER — short-circuit before any DeepSeek call.
             # Only for actual greetings/vague openers — a specific question (e.g.
             # "what do you specialize in?") must fall through to a real answer.
+            # The opener comes from _cold_opener_reply like every other first-
+            # contact path. This line used to hardcode "Hello, How may we
+            # assist you on plumbing services", and it was the one production
+            # sent to the ad's "Can I get more info on this?".
             if (self.get_next_question_to_ask() == "service_type"
                     and self._is_greeting_or_opener(message)):
-                return "Hello,\nHow may we assist you on plumbing services"
+                return self._cold_opener_reply(message)
 
             # ── Services overview — controlled, concise answer + sale-progress
             # question (don't free-form this; keep the offering on-brand).
@@ -8601,7 +8699,9 @@ class ResponseMixin:
                     opener_rule = build_cold_opener_rule(
                         getattr(self.appointment, 'tenant', None),
                         is_shona=detect_language_simple(
-                            message or self._last_customer_message()) == 'shona')
+                            message or self._last_customer_message()) == 'shona',
+                        appointment=self.appointment,
+                        message=message or self._last_customer_message())
 
                 prompt = f"""You are a knowledgeable WhatsApp assistant for {_biz(self)} — a professional plumbing and renovation company based in {_city(self)}, Zimbabwe.
 

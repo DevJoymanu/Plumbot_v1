@@ -8,7 +8,7 @@
 # STEP 1d (the guide) and STEP 0-b (the answer).
 
 > Hello! Can I get more info on this?
-expect: how may we assist you on plumbing services
+expect: what needs doing
 
 > I want my whole bathroom redone, new tub and tiles
 reject: US$

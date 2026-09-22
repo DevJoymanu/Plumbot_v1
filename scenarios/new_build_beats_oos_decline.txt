@@ -7,7 +7,7 @@
 # the door.
 
 > Hello! Can I get more info on this?
-expect: hello
+expect: what needs doing
 
 > Cost of wiring a new 4 bedroom house
 expect: wiring

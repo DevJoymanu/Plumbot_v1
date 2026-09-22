@@ -144,10 +144,22 @@ def _extracted(user, user_l):
 
     # The description is the customer's own sentence when it carries a job word,
     # which is what the real classifier returns (normalised, not verbatim).
+    # Read from the CUSTOMER'S MESSAGE only (the prompt's closing
+    # 'Customer message: "..."' line), never the whole prompt: scanning the
+    # prompt matched the bot's own opener ("Installations, renovations") and
+    # stored the ENTIRE prompt as the job description, so every replay that
+    # opened with the old opener sailed past the description question by
+    # accident. "redone" joins the list because the real model reads "I need
+    # my bathroom redone" as a description; the list is otherwise unchanged,
+    # so no other replay changes path.
+    said = re.search(r'Customer message:\s*"(.*)"\s*$', user or '', re.DOTALL)
+    said = said.group(1).strip() if said else (user or '').strip()
+    said_l = said.lower()
     description = None
-    if any(w in user_l for w in ('renovate', 'install', 'fix', 'repair', 'replace',
-                                 'build', 'leak', 'burst', 'blocked', 'quote for')):
-        description = user.strip()
+    if any(w in said_l for w in ('renovate', 'install', 'fix', 'repair', 'replace',
+                                 'build', 'leak', 'burst', 'blocked', 'quote for',
+                                 'redone')):
+        description = said
 
     return {"area": area, "availability": availability,
             "customer_name": name, "project_description": description}

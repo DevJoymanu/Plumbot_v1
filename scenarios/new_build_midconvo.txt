@@ -2,7 +2,7 @@
 # greeting — the lead has already been greeted.
 
 > Hello
-expect: hello
+expect: what needs doing
 
 > I want to build a new house
 expect: new plumbing installation for a new house

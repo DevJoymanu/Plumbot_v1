@@ -5,7 +5,7 @@
 # way. Open the question up instead of putting the same two slots back.
 
 > Hello
-expect: hello
+expect: what needs doing
 
 > I need my bathroom renovated
 reject: US$

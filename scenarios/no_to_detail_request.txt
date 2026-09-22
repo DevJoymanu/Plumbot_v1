@@ -5,7 +5,7 @@
 # a question and stacks two (prod probe 2026-09-01).
 
 > Hello
-expect: hello
+expect: what needs doing
 
 > New house build, need all the plumbing
 expect: new plumbing installation for a new house
