@@ -158,6 +158,14 @@
     font-family: inherit;
   }
   .fd-toolbar select:focus { border-color: transparent; box-shadow: 0 0 0 3px rgba(0, 101, 145, 0.15); }
+  /* Last automatic run of the follow-up cron; red pill when it has gone quiet. */
+  .fd-cron-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: var(--radius-pill);
+    font-family: var(--font-label); font-size: 11px; font-weight: 500;
+    color: var(--color-text-2); background: var(--color-surface-low);
+  }
+  .fd-cron-status.is-stale { color: #ba1a1a; background: rgba(186, 26, 26, 0.08); font-weight: 600; }
 
   /* ── Channel tabs (segmented pill) ── */
   .fd-tabs {
@@ -292,6 +300,11 @@
       <a href="{% url 'followup_dashboard' %}" class="fd-toolbar-btn ghost">
         <i class="fas fa-undo"></i> Reset
       </a>
+      {# When the automatic follow-up cron last ran (bot/cron_health.py); red when it has gone quiet, which is when Run Check is the only way follow-ups go out. #}
+      <span class="fd-cron-status{% if followup_cron_stale %} is-stale{% endif %}" title="The Follow_Ups cron runs every 7 minutes">
+        <i class="fas fa-{% if followup_cron_stale %}triangle-exclamation{% else %}circle-check{% endif %}"></i>
+        {% if followup_cron_last_run %}Auto follow-ups last ran {{ followup_cron_last_run|timesince }} ago{% else %}Auto follow-ups: no run recorded yet{% endif %}
+      </span>
     </div>
 
     {# ── Channel tabs ── #}

@@ -165,7 +165,46 @@ def _fences_hold(draft: str, refined: str) -> tuple:
     to a lead away until December).
     """
     from bot.copy_fence import fence_holds
-    return fence_holds(refined, draft, check_slots=False, max_growth=MAX_GROWTH)
+    ok, why_not = fence_holds(refined, draft, check_slots=False, max_growth=MAX_GROWTH)
+    if not ok:
+        return ok, why_not
+    return _priced_reply_kept(draft, refined)
+
+
+def _last_question(text: str) -> str:
+    """The draft's closing question ("…willing to invest in for a new tub?"), or ''."""
+    # Lines break sentences too: a price block's last bullet has no full stop,
+    # so without the newline split the close read as part of the list.
+    sentences = re.split(r'(?<=[.!?])\s+|\n+', (text or '').strip())
+    return next((s.strip() for s in reversed(sentences) if s.strip().endswith('?')), '')
+
+
+def _priced_reply_kept(draft: str, refined: str) -> tuple:
+    """A priced draft may be corrected, never cut down. Returns (ok, why_not).
+
+    WHY: the fence above stops a refinement ADDING a figure; nothing stopped it
+    REMOVING one. Lead 1161 highlighted our photo of a built-in bath and a
+    walk-in shower and asked "this one how much"; the draft priced both, the
+    reader decided the lead meant the tub, kept the tub's two figures, dropped
+    the shower, and replaced the owner's price close with "Want to book a
+    visit?", a yes/no close the house rules forbid (2026-09-22).
+    HOW: when the draft carries prices, every one of them must survive, and so
+    must its closing question (the price close comes from
+    _price_tiedown/_get_pricing_followup_prompt, never from the model).
+    Unpriced drafts are untouched: correcting a question the lead already
+    answered is still the reader's job. Pinned in TEST 0 ("reply check:").
+    """
+    from bot.copy_fence import figures
+    priced = figures(draft)
+    if not priced:
+        return True, ''
+    dropped = priced - figures(refined)
+    if dropped:
+        return False, 'dropped a price the draft gave: %s' % ', '.join(sorted(dropped))
+    close = _last_question(draft)
+    if close and close.lower() not in (refined or '').lower():
+        return False, 'replaced the price close'
+    return True, ''
 
 
 def verify_and_refine(reply: str, appointment, message_body=None):

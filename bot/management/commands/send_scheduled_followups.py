@@ -131,6 +131,32 @@ class Command(BaseCommand):
             f"Scheduled follow-ups → sent={res['sent']}  failed={res['failed']}"
         ))
 
+        # Is the follow-up cron (a separate Railway service) still ticking?
+        # One email to the operator if it has gone quiet inside the sending
+        # hours (bot/cron_health.py). Checked from THIS service on purpose: a
+        # dead cron cannot report its own death.
+        try:
+            from bot.cron_health import alert_if_stale
+            if not dry_run and alert_if_stale():
+                self.stdout.write('Follow-up cron is not running: operator alerted')
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Follow-up heartbeat check failed: %s', exc)
+
+        # The hourly check for a lead message that never got a reply
+        # (bot/unanswered_sweep.py): a reply prepared inside the web server
+        # dies with it on a deploy or restart. This cron ticks every 5
+        # minutes; only the first tick of each hour sweeps. Own try, like the
+        # reminders below.
+        try:
+            from bot.unanswered_sweep import answer_unanswered, is_sweep_tick
+            if is_sweep_tick():
+                ures = answer_unanswered(dry_run=dry_run, log=lambda m: self.stdout.write(m))
+                if any(ures.values()):
+                    self.stdout.write(
+                        f"Unanswered sweep → answered={ures['answered']} failed={ures['failed']}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Unanswered sweep failed: %s', exc)
+
         # The 24-hour reminder for an unlogged "please call this lead" email
         # (bot/call_brief.py). Here, in the command and NOT in
         # dispatch_due_scheduled_followups, because that function also runs

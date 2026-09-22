@@ -688,6 +688,17 @@ class Command(BaseCommand):
         force   = options['force']
 
         self.stdout.write(self.style.SUCCESS('🔍 Follow-up check starting…'))
+        # The heartbeat, first thing and outside every early return, so "it
+        # ran" is recorded even outside the sending hours: the Email_Follow_Ups
+        # cron and the Follow-ups page read it to catch a cron that silently
+        # stopped ticking (bot/cron_health.py). Only the SCHEDULED run beats
+        # (PLUMBOT_CRON is set on cron services only, never on the web
+        # service): the dashboard's "Run check" runs this same command in the
+        # web service, and a manual press must not make a dead cron look alive.
+        # Not on a dry run either.
+        if not dry_run and 'send_followups' in os.environ.get('PLUMBOT_CRON', ''):
+            from bot.cron_health import beat
+            beat()
         if dry_run:
             self.stdout.write(self.style.WARNING('🧪 DRY-RUN — no messages will be sent'))
 

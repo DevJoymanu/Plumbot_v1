@@ -12046,6 +12046,25 @@ results.log("budget ladder: the reply check may not turn the close into a budget
             _rc_fences(_TUB_TD, "Tubs are from US$160 all in. What is your budget?")[0]
             is False)
 
+# A priced draft may be corrected, never cut down (lead 1161, 2026-09-22): the
+# lead highlighted a bath-and-shower photo, the draft priced both, and the
+# reader kept only the tub's figures and closed on "Want to book a visit?".
+_RC_BOTH = ("Starting prices:\n• Tub: supply from US$150, install from US$85, US$235 in total\n"
+            "• Shower cubicle: supply from US$220, install from US$85, US$305 in total\n\n"
+            "Does that sound like something you'd be willing to invest in for a new bathroom?")
+results.log("reply check: may not drop an item the draft priced",
+            _rc_fences(_RC_BOTH, "For that one, supply from US$150 and install from "
+                                 "US$85. Exact price confirmed once we see the space. "
+                                 "Want to book a visit?")[0] is False)
+results.log("reply check: may not replace the price close",
+            _rc_fences(_RC_BOTH, _RC_BOTH.rsplit('\n\n', 1)[0]
+                       + "\n\nWant to book a visit?")[0] is False)
+results.log("reply check: may still correct a priced reply that keeps its prices and close",
+            _rc_fences(_RC_BOTH, "For the bath and shower in that photo:\n"
+                       + _RC_BOTH.split(':\n', 1)[1])[0] is True)
+results.log("reply check: an unpriced draft is not held to its close",
+            _rc_fences("What area are you in?", "Which suburb is the job in?")[0] is True)
+
 # The controller stands aside after either question, so the ladder gets the turn.
 for _lbl, _last in (('tie-down', _TUB_TD), ('ask', _ask_tub),
                     ('retired tie-down', "That sit alright with your budget?")):

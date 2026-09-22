@@ -873,7 +873,31 @@ def _record_lead_reply_latency(sender: str, appointment) -> None:
             print(f"Lead {sender} replied after {int(gap)}s")
 
 
+# Set only by the hourly unanswered sweep (bot/unanswered_sweep.py), for its
+# own cron process: that process exits when the command ends, so a reply
+# waiting out a 1-5 minute human delay in a background thread would never be
+# sent. The live web server never sets it, so its timing is unchanged.
+_immediate_replies = False
+
+
+class force_immediate_replies:
+    """`with force_immediate_replies():` makes get_random_delay return 0."""
+
+    def __enter__(self):
+        global _immediate_replies
+        self._was = _immediate_replies
+        _immediate_replies = True
+        return self
+
+    def __exit__(self, *exc):
+        global _immediate_replies
+        _immediate_replies = self._was
+        return False
+
+
 def get_random_delay(tenant=None, sender=None) -> int:
+    if _immediate_replies:
+        return 0
     # Per-tenant admin switch: off = send as soon as the reply is ready. Call
     # sites that sleep on the delay themselves must pass their tenant; the ones
     # that hand it to delayed_response are covered there (it always has the

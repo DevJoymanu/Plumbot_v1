@@ -73,6 +73,17 @@ def followup_dashboard(request):
     context['se_status_choices'] = SentEmail.Status.choices
     context['active_tab'] = request.GET.get('tab', '')
 
+    # When the automatic follow-up cron last ran, beside the Run Check button,
+    # so a cron that silently stopped ticking (a deployment that lost its
+    # schedule, 2026-09-21) is visible at a glance instead of discovered when
+    # follow-ups stop. `followup_cron_stale` turns the line red. Read from
+    # bot/cron_health.py, the same record the operator alert uses.
+    from ..cron_health import last_run, STALE_AFTER
+    from django.utils import timezone as _tz
+    _ran = last_run()
+    context['followup_cron_last_run'] = _ran
+    context['followup_cron_stale'] = _ran is None or (_tz.now() - _ran) > STALE_AFTER
+
     return render(request, 'bot/pages/followup_dashboard.html', context)
 
 
