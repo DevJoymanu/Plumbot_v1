@@ -217,8 +217,47 @@ def _extract_apt_id(subject: str, msg=None):
             m = re.search(r'<apt-(\d+)\.', val, re.IGNORECASE)
             if m:
                 return int(m.group(1))
+        apt_id = _apt_id_from_provider_message_id(msg)
+        if apt_id:
+            return apt_id
     m = _APT_TAG_RE.search(subject or "")
     return int(m.group(1)) if m else None
+
+
+def _apt_id_from_provider_message_id(msg):
+    """The appointment a reply answers, found through the SentEmail it replies to.
+
+    WHY: Brevo discards the <apt-{id}.…> Message-ID we set and stamps its own
+    (<uuid@smtp-relay.sendinblue.com>), so a customer's reply to a Brevo email
+    never carries the apt tag: barmak's portfolio replies (Aug/Sep 2026) all
+    referenced only the Brevo id. The send choke point already stores that id
+    on SentEmail.provider_message_id with the appointment, so the thread is
+    recoverable without any new field.
+    HOW: every <…> id in In-Reply-To then References (newest reference first),
+    looked up with and without angle brackets, restricted to mail we sent to a
+    CUSTOMER: a plumber replying to one of our alerts must never be answered as
+    the lead. Returns the appointment pk, or None (the caller then falls back
+    to the subject tag and to matching the sender). Pinned by
+    InboundEmailIntakeTests.test_a_reply_to_a_brevo_message_id_matches_its_lead.
+    """
+    ids = []
+    for header in ("In-Reply-To", "References"):
+        found = re.findall(r'<[^<>\s]+>', msg.get(header, "") or "")
+        ids.extend(reversed(found) if header == "References" else found)
+    if not ids:
+        return None
+    try:
+        from bot.models import SentEmail
+        for mid in ids:
+            row = (SentEmail.objects
+                   .filter(provider_message_id__in=[mid, mid.strip("<>")],
+                           to_role="customer", appointment__isnull=False)
+                   .order_by("-id").only("appointment_id").first())
+            if row:
+                return row.appointment_id
+    except Exception:
+        logger.exception("SentEmail lookup for a reply's thread failed")
+    return None
 
 
 def _get_plain_body(msg):

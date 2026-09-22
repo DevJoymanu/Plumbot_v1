@@ -4599,6 +4599,44 @@ class InboundEmailIntakeTests(TestCase):
         send.assert_not_called()
         self.assertEqual(moved, [])
 
+    # ── Brevo rewrites our Message-ID ────────────────────────────────────────
+    # A reply to a Brevo email references Brevo's own id, never <apt-…>, so
+    # the thread is found through the SentEmail row that stored that id. The
+    # sender here is NOT the lead's saved address, so only the thread can match.
+
+    def test_a_reply_to_a_brevo_message_id_matches_its_lead(self):
+        from bot.management.commands.process_inbound_emails import _extract_apt_id
+        from bot.models import SentEmail
+        import email as _email
+        lead = self._lead(customer_email='old@example.com')
+        SentEmail.objects.create(
+            appointment=lead, category='quote_followup', to_role='customer',
+            recipients=['old@example.com'], subject='Portfolio and pricing',
+            status=SentEmail.Status.SENT,
+            provider_message_id='<abc-123@smtp-relay.sendinblue.com>')
+        irt = ('In-Reply-To: <abc-123@smtp-relay.sendinblue.com>',
+               'References: <abc-123@smtp-relay.sendinblue.com>')
+        head = _email.message_from_bytes(self._raw(sender='new@example.com',
+                                                   extra_headers=irt))
+        self.assertEqual(_extract_apt_id('Re: Portfolio and pricing', head), lead.pk)
+        output, send, _ = self._run([self._raw(sender='new@example.com',
+                                               subject='Re: Portfolio and pricing',
+                                               extra_headers=irt)])
+        send.assert_called_once()
+
+    def test_a_reply_to_a_plumber_alert_is_not_matched_to_the_lead(self):
+        from bot.management.commands.process_inbound_emails import _extract_apt_id
+        from bot.models import SentEmail
+        import email as _email
+        lead = self._lead()
+        SentEmail.objects.create(
+            appointment=lead, category='plumber', to_role='plumber',
+            recipients=['plumber@example.com'], subject='New booking',
+            status=SentEmail.Status.SENT, provider_message_id='<p-1@relay>')
+        head = _email.message_from_bytes(self._raw(
+            sender='plumber@example.com', extra_headers=('In-Reply-To: <p-1@relay>',)))
+        self.assertIsNone(_extract_apt_id('Re: New booking', head))
+
     def test_the_spam_folder_is_found_by_its_junk_flag(self):
         from unittest.mock import MagicMock
         from bot.management.commands.process_inbound_emails import _spam_folder
