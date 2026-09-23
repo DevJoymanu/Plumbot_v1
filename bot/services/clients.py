@@ -122,7 +122,7 @@ def deepseek_call(
     existing except blocks and fallback logic unchanged.
     """
     from django.conf import settings
-    _model = model or getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-v4-flash')
+    _model = model or getattr(settings, 'DEEPSEEK_MODEL', 'deepseek-flash')
 
     _count_call()
 

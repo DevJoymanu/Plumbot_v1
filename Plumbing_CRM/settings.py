@@ -197,13 +197,22 @@ PLATFORM_OWNER_ACCOUNTS = [
 
 # DeepSeek API (replacing OpenAI)
 DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-# Model is env-overridable so it can be switched without a redeploy. Note:
-# DeepSeek's current API models are 'deepseek-v4-flash' (non-thinking) and
-# 'deepseek-v4-pro' (thinking); the legacy names 'deepseek-chat'/'deepseek-reasoner'
-# were deprecated 2026-07-24. If the configured model returns empty/garbled
-# completions, set DEEPSEEK_MODEL to 'deepseek-v4-flash' to fall back to a
-# known-stable model.
-DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-v4-flash')
+# Models are env-overridable so they can be switched without a redeploy.
+# DeepSeek's current names (pricing page, checked 2026-09-23) are
+# 'deepseek-flash' (V4.1 Flash, multimodal) and 'deepseek-v4-pro'. The old
+# 'deepseek-v4-flash' and 'deepseek-v4-flash-vision-exp' are retired: still
+# accepted, but served by V4.1 Flash, and a retired name can stop being
+# accepted at any time, which would take the bot AND photo reading down.
+DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-flash')
+# Photos go through the same Flash model (V4.1 Flash reads images natively).
+DEEPSEEK_VISION_MODEL = os.environ.get('DEEPSEEK_VISION_MODEL', 'deepseek-flash')
+# The UNDERSTANDING calls (the unified turn classifier and slot extraction)
+# may run on a stronger model than the reply-writing ones (owner, 2026-09-23:
+# Pro for extraction, behind a switch). Empty means "same as DEEPSEEK_MODEL",
+# so it is OFF until DEEPSEEK_EXTRACTION_MODEL=deepseek-v4-pro is set. Pro is
+# roughly 3 to 4x the price and slower, which is why it is a switch.
+DEEPSEEK_EXTRACTION_MODEL = (os.environ.get('DEEPSEEK_EXTRACTION_MODEL', '')
+                             or DEEPSEEK_MODEL)
 
 # Twilio Configuration
 # Twilio removed — WhatsApp goes through the Meta Cloud API per tenant.

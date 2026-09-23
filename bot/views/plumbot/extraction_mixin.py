@@ -283,7 +283,10 @@ class ExtractionMixin:
                 """
             
                 _extraction_client = deepseek_client
-                _extraction_model  = settings.DEEPSEEK_MODEL
+                # The understanding call: DEEPSEEK_EXTRACTION_MODEL (Pro behind
+                # a switch, owner 2026-09-23), which defaults to DEEPSEEK_MODEL.
+                _extraction_model  = getattr(settings, 'DEEPSEEK_EXTRACTION_MODEL',
+                                             settings.DEEPSEEK_MODEL)
                 response = _extraction_client.chat.completions.create(
                     model=_extraction_model,
                     messages=[

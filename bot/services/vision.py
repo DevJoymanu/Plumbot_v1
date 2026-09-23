@@ -23,7 +23,13 @@ VISION_IMAGE_MIMES = {
     'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
 }
 
-VISION_MODEL = 'deepseek-v4-flash-vision-exp'
+# From settings (DEEPSEEK_VISION_MODEL, default 'deepseek-flash'). It was the
+# hardcoded 'deepseek-v4-flash-vision-exp', a name DeepSeek has retired and
+# now serves through V4.1 Flash; read at call time so an env change needs no
+# deploy.
+def _vision_model():
+    from django.conf import settings
+    return getattr(settings, 'DEEPSEEK_VISION_MODEL', '') or 'deepseek-flash'
 
 # Images may appear only in `user` messages — an image in a system or assistant
 # message is a 400 — so the instruction rides along with the image itself.
@@ -176,7 +182,7 @@ def _describe(file_bytes, mime_type, instruction, log_label,
                     },
                 ],
             }],
-            model=VISION_MODEL,
+            model=_vision_model(),
             temperature=0,
             max_tokens=max_tokens,
             retries=2,

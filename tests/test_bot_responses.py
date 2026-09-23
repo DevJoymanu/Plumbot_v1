@@ -6568,7 +6568,7 @@ except Exception as e:
     results.log("vision: description storage and staleness", False, got=str(e))
 
 try:
-    from bot.services.vision import describe_customer_image, VISION_IMAGE_MIMES, VISION_MODEL
+    from bot.services.vision import describe_customer_image, VISION_IMAGE_MIMES, _vision_model
     results.log("vision: a PDF is refused before any API call",
                 describe_customer_image(b"%PDF-1.4", "application/pdf") is None)
     results.log("vision: empty bytes are refused before any API call",
@@ -6576,8 +6576,10 @@ try:
     results.log("vision: only DeepSeek's four image formats are accepted",
                 VISION_IMAGE_MIMES == {"image/jpeg", "image/jpg", "image/png",
                                        "image/webp", "image/gif"})
-    results.log("vision: the model id is the vision model, not flash",
-                VISION_MODEL == "deepseek-v4-flash-vision-exp")
+    # DeepSeek retired 'deepseek-v4-flash-vision-exp' (served by V4.1 Flash,
+    # which reads images natively); photos go through DEEPSEEK_VISION_MODEL.
+    results.log("vision: photos use the current Flash model, not a retired name",
+                _vision_model() == "deepseek-flash", got=_vision_model())
 
     # The vision model has NO thinking mode; the shared patch must not send it
     # one. Exercise the wrapper directly: in gate mode the DeepSeek stub has
@@ -6593,13 +6595,13 @@ try:
     _real = _clients._orig_completions_create
     try:
         _clients._orig_completions_create = _capture
-        for _m in (VISION_MODEL, "deepseek-v4-flash"):
+        for _i, _m in enumerate((_vision_model(), "deepseek-v4-pro")):
             _clients._completions_create_no_thinking(model=_m, messages=[])
             _has_thinking = "thinking" in (_seen.get("extra_body") or {})
             results.log(
-                "vision: thinking is disabled for the vision model too"
-                if "vision" in _m else
-                "vision: thinking is still disabled for the text models",
+                "vision: thinking is disabled for the photo model too"
+                if _i == 0 else
+                "vision: thinking is disabled for the Pro extraction model too",
                 _has_thinking,
                 got=f"{_m} -> {_seen.get('extra_body')}")
     finally:

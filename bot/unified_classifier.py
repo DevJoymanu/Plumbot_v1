@@ -603,6 +603,9 @@ def _call_once(messages) -> dict | None:
             # bot/services/clients.py). Headroom is cheaper than a retry.
             max_tokens=800,
             json_response=True,
+            # The understanding call runs on DEEPSEEK_EXTRACTION_MODEL: Pro
+            # behind a switch (owner, 2026-09-23), the reply model when unset.
+            model=getattr(settings, 'DEEPSEEK_EXTRACTION_MODEL', None) or None,
         )
         return json.loads(raw)
     except Exception as exc:
