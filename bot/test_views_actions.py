@@ -3732,10 +3732,15 @@ class TenantConfigTests(TestCase):
 
         self.assertEqual(cfg.flat_prices().get('basin'), 70)
 
+        # Every rough line carries its materials/labour split (owner rule,
+        # 2026-09-23: never only an all-in figure). PriceSplitRuleTests.
         legacy_rough = {
-            'shower': 'shower cubicle from US$170', 'tub': 'tub from US$160',
-            'geyser': 'geyser from US$160', 'vanity': 'vanity from US$180',
-            'toilet': 'toilet from US$70', 'chamber': 'side chamber from US$160',
+            'shower': 'shower cubicle from US$170 (supply US$130 + labour US$40)',
+            'tub': 'tub from US$160 (supply US$80 + labour US$80)',
+            'geyser': 'geyser from US$160 (supply US$80 + labour US$80)',
+            'vanity': 'vanity from US$180 (supply US$150 + labour US$30)',
+            'toilet': 'toilet from US$70 (supply US$50 + labour US$20)',
+            'chamber': 'side chamber from US$160 (supply US$130 + labour US$30)',
         }
         rough = cfg.rough_price_lines()
         for family, line in legacy_rough.items():
@@ -3778,16 +3783,16 @@ class TenantConfigTests(TestCase):
             "Starting point i standard tub paUS$80 supply + US$80 install.")
         self.assertEqual(
             sp['pipe_repair']['total_line'],
-            "Pipe repairs start from US$15–$20 for minor leaks — cost depends on the pipe size, location, and how accessible it is.")
+            "Pipe repair labour starts from US$15–$20 for minor leaks, parts extra — cost depends on the pipe size, location, and how accessible it is.")
         self.assertEqual(
             sp['toilet_repair']['total_line'],
             "Toilet repairs start from US$20 for labour + parts. A full replacement (supply and fit) starts from US$100.")
         self.assertEqual(
             sp['facebook_package']['total_line'],
-            "The Facebook package is US$800 — freestanding tub and side chamber.")
+            "The Facebook package is US$800 — freestanding tub and side chamber, materials and labour included.")
         self.assertEqual(
             sp['geyser_repair']['cheapest_line'],
-            "Minor repairs like a valve or thermostat start from US$25–$30.")
+            "Minor repairs like a valve or thermostat start from US$25–$30 labour, parts extra.")
         # Bare tenant: no sheet → no blocks → handler deflects.
         self.assertEqual(build_structured_pricing(get_config(self.acme)), {})
 
@@ -12344,3 +12349,50 @@ class FollowUpDateCheckbackTests(TestCase):
         self.assertTrue(self._due(notes, '2026-10-04'))
         self.assertFalse(self._due(notes, '2026-10-05'))
         self.assertFalse(self._due(notes, '2026-09-30'))
+
+
+class PriceSplitRuleTests(TestCase):
+    """Every price a customer reads shows materials and labour, never only an
+    all-in figure (owner rule, 2026-09-23, app-wide). A figure with a split on
+    file carries it ("(tub US$80 + install US$80)"); a repair figure says it is
+    labour, parts extra (the sales profile: parts are charged separately unless
+    marked all-in); a figure with no split on file says "materials and labour
+    included" (owner decision B.1).
+
+    Renders every price line the bot can send for the homebase seed, sentence
+    by sentence, and fails on any sentence with a figure and none of those."""
+
+    _MONEY = re.compile(r'US\$\s?\d')
+    _SPLIT = re.compile(r'supply|install|labour|mixer|materials and labour|\+', re.I)
+
+    def _offenders(self, label, text, splitter=r'(?<=[.!?;])\s+'):
+        return [f'{label}: {sent}' for sent in re.split(splitter, text or '')
+                if self._MONEY.search(sent) and not self._SPLIT.search(sent)]
+
+    def test_no_price_line_is_only_an_all_in_figure(self):
+        from bot.pricing_copy import build_structured_pricing
+        from bot.tenant_config import get_config
+        from bot.views.plumbot.response_mixin import ResponseMixin
+        cfg = get_config(Tenant.objects.get(slug='homebase'))
+        bad = []
+        for intent, block in build_structured_pricing(cfg).items():
+            for key, value in block.items():
+                for line in (value if isinstance(value, list) else [value]):
+                    bad += self._offenders(f'{intent}.{key}', line)
+
+        class _Bot(ResponseMixin):
+            def __init__(self):
+                self._tenant_cfg = cfg
+                self.appointment = None
+
+            def _last_assistant_was_tiedown(self):
+                return False
+        bot = _Bot()
+        for key, value in bot._compose_snippets().items():
+            bad += self._offenders(f'snippet {key}', value)
+        for kind in ('built_in', 'freestanding', None):
+            bad += self._offenders(f'tub reply {kind}', bot._tub_price_reply(kind, 'english'))
+        for family, line in cfg.rough_price_lines().items():
+            bad += self._offenders(f'rough {family}', line, splitter=r'\n')
+        bad += self._offenders('catalogue', cfg.catalogue_price_lines(), splitter=r'\n')
+        self.assertEqual(bad, [], '\n'.join(bad))

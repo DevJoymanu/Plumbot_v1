@@ -238,6 +238,12 @@
     "3|reject|2pm": true,
     "3|reject|9am": true
   },
+  "ordinary_tub_one_tier.txt": {
+    "0|expect|US$": true,
+    "0|expect|install": true,
+    "0|reject|free-standing": true,
+    "0|reject|freestanding": true
+  },
   "photo_with_caption_price.txt": {
     "0|reject|US$": true,
     "0|reject|describe what you'd like done": true,

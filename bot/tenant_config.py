@@ -701,8 +701,14 @@ class TenantConfig:
         }
 
     def rough_price_lines(self) -> dict:
-        """{family: 'label from US$X'} — the _FAMILY_ROUGH_PRICE shape,
-        rendered from allin (or flat) figures."""
+        """{family: 'label from US$X (supply US$A + labour US$B)'}.
+
+        Every price a customer reads shows materials and labour (owner rule,
+        2026-09-23: "never just all in"). A row with a supply/labour split
+        carries it; a row priced as one figure only says the figure includes
+        both, since there is no split on file to show (owner decision B.1).
+        Pinned by PriceSplitRuleTests.
+        """
         out = {}
         for item in self.price_items():
             if item.variant != '':
@@ -711,7 +717,14 @@ class TenantConfig:
             name = item.short_label or item.label
             if figure is None or not name:
                 continue
-            out[item.family] = f"{name} from {self.currency}{_as_int(figure)}"
+            line = f"{name} from {self.currency}{_as_int(figure)}"
+            if item.supply is not None and item.labour is not None:
+                line += (f" (supply {self.currency}{_as_int(item.supply)}"
+                         f" + labour {self.currency}{_as_int(item.labour)})")
+            else:
+                from .copy_catalog import MATERIALS_LABOUR_INCLUDED
+                line += f", {MATERIALS_LABOUR_INCLUDED}"
+            out[item.family] = line
         return out
 
     def labour_breakdown_lines(self) -> dict:
@@ -784,7 +797,11 @@ class TenantConfig:
             else:
                 figure = item.allin if item.allin is not None else item.flat
                 if figure is not None:
-                    lines.append(f"• {name}: From {self.currency}{_as_int(figure)}")
+                    # One figure, no split on file: say it covers both
+                    # (owner rule, 2026-09-23; PriceSplitRuleTests).
+                    from .copy_catalog import MATERIALS_LABOUR_INCLUDED
+                    lines.append(f"• {name}: From {self.currency}{_as_int(figure)}, "
+                                 f"{MATERIALS_LABOUR_INCLUDED}")
         return "\n".join(lines)
 
     def tub_size_blocks(self) -> dict:

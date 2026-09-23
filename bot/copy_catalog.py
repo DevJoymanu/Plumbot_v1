@@ -367,3 +367,9 @@ LADDER_CALL_ASK = (
 # for the plumber) and leaves the door open.
 LADDER_CALL_YES = "Perfect, we'll give you a call on {call_day}."
 LADDER_CALL_NO = "No problem, we won't call. Just message us here whenever you're ready."
+
+# Said after a price that has no supply/labour split on file (owner rule,
+# 2026-09-23: every price shows materials and labour, never only all-in;
+# decision B.1: a one-figure item says the figure covers both). Lower-case,
+# because it always follows a figure mid-sentence. PriceSplitRuleTests.
+MATERIALS_LABOUR_INCLUDED = "materials and labour included"

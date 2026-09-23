@@ -15,6 +15,8 @@ character-for-character (pinned by tests/pinned_structured_pricing.py).
 
 from __future__ import annotations
 
+from .copy_catalog import MATERIALS_LABOUR_INCLUDED
+
 
 def _figures(cfg):
     """Flatten the tenant's price rows into the named figures the templates
@@ -364,27 +366,27 @@ def build_structured_pricing(cfg) -> dict:
     if tub_breakdown is not None:
         out["tub_sales"] = {
             "breakdown_lines": list(tub_breakdown),
-            "total_line": f"Full freestanding setup from US${f['fs_allin']} all-in (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}). Standard built-in tubs from US${f['tub_allin']} all-in.",
+            "total_line": f"Full freestanding setup from US${f['fs_allin']} all-in (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}). Standard built-in tubs from US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
             "cheapest_line": f"Side chamber adds US${f['ch_s']} supply + US${f['ch_l']} install.",
             "sn_breakdown_lines": list(tub_sn_breakdown),
-            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']}. Standard tub kubva US${f['tub_allin']} all-in.",
+            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']} (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}). Standard tub kubva US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
             "sn_cheapest_line": f"Starting point i standard tub paUS${f['tub_s']} supply + US${f['tub_l']} install.",
         }
         out["standalone_tub"] = {
             "breakdown_lines": list(tub_breakdown),
-            "total_line": f"Full freestanding setup from US${f['fs_allin']} all-in.",
-            "cheapest_line": f"If budget is tight, the standard built-in tub starts from US${f['tub_allin']} all-in.",
+            "total_line": f"Full freestanding setup from US${f['fs_allin']} all-in (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}).",
+            "cheapest_line": f"If budget is tight, the standard built-in tub starts from US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
             "sn_breakdown_lines": list(tub_sn_breakdown),
-            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']} all-in.",
-            "sn_cheapest_line": f"Budget option i standard built-in tub kubva US${f['tub_allin']} all-in.",
+            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']} all-in (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}).",
+            "sn_cheapest_line": f"Budget option i standard built-in tub kubva US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
         }
         out["bathtub_installation"] = {
             "breakdown_lines": list(tub_breakdown),
-            "total_line": f"Full freestanding setup from US${f['fs_allin']}. Standard tub from US${f['tub_allin']} all-in.",
-            "cheapest_line": f"Standard built-in tub is the entry point at US${f['tub_allin']} all-in.",
+            "total_line": f"Full freestanding setup from US${f['fs_allin']} (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}). Standard tub from US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
+            "cheapest_line": f"Standard built-in tub is the entry point at US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
             "sn_breakdown_lines": list(tub_sn_breakdown),
-            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']}. Standard tub kubva US${f['tub_allin']} all-in.",
-            "sn_cheapest_line": f"Standard built-in tub i entry point paUS${f['tub_allin']} all-in.",
+            "sn_total_line": f"Full freestanding setup kubva US${f['fs_allin']} (tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}). Standard tub kubva US${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
+            "sn_cheapest_line": f"Standard built-in tub i entry point paUS${f['tub_allin']} all-in (tub US${f['tub_s']} + install US${f['tub_l']}).",
         }
 
     if have('gey_s', 'gey_l', 'gey_allin'):
@@ -423,7 +425,7 @@ def build_structured_pricing(cfg) -> dict:
             "total_line": f"Toilet replacement starts from US${f['to_allin']} all-in — supply and install.",
             "cheapest_line": f"If you already have the toilet, install-only from US${f['to_l']}.",
             "sn_breakdown_lines": [f"Toilet seat: Supply kubva US${f['to_s']}, Install kubva US${f['to_l']}"],
-            "sn_total_line": f"Zvingangoita US${f['to_allin']} yezvinhu zvese pa standard toilet replacement.",
+            "sn_total_line": f"Zvingangoita US${f['to_allin']} yezvinhu zvese pa standard toilet replacement (supply US${f['to_s']} + install US${f['to_l']}).",
             "sn_cheapest_line": f"Cheapest option installation chete kana muchitova ne toilet — labour inotangira paUS${f['to_l']}.",
         }
 
@@ -435,7 +437,7 @@ def build_structured_pricing(cfg) -> dict:
             "total_line": f"Wall-hung toilet installs start from US${f['wh_allin']} all-in — supply and install.",
             "cheapest_line": f"If you already have the unit, install-only from US${f['wh_l']}.",
             "sn_breakdown_lines": [f"Wall-hung toilet (chamber system): Supply kubva US${f['wh_s']}, Install kubva US${f['wh_l']}"],
-            "sn_total_line": f"Zvingangoita US${f['wh_allin']} yezvinhu zvese pa wall-hung toilet system.",
+            "sn_total_line": f"Zvingangoita US${f['wh_allin']} yezvinhu zvese pa wall-hung toilet system (supply US${f['wh_s']} + install US${f['wh_l']}).",
             "sn_cheapest_line": f"Kana muchitova ne unit, install chete kubva US${f['wh_l']}.",
         }
 
@@ -445,7 +447,7 @@ def build_structured_pricing(cfg) -> dict:
             "total_line": f"Side chambers start from US${f['ch_allin']} all-in — supply and install.",
             "cheapest_line": f"If you already have the chamber, install-only from US${f['ch_l']}.",
             "sn_breakdown_lines": [f"Side chamber: Supply kubva US${f['ch_s']}, Install kubva US${f['ch_l']}"],
-            "sn_total_line": f"Zvingangoita US${f['ch_allin']} yezvinhu zvese pa standard chamber setup.",
+            "sn_total_line": f"Zvingangoita US${f['ch_allin']} yezvinhu zvese pa standard chamber setup (supply US${f['ch_s']} + install US${f['ch_l']}).",
             "sn_cheapest_line": f"Cheapest option installation chete kana muchitova ne chamber — labour inotangira paUS${f['ch_l']}.",
         }
 
@@ -464,7 +466,8 @@ def build_structured_pricing(cfg) -> dict:
             ],
             "total_line": (
                 f"The {_fbp['label']} is US${f['fb']}"
-                + (f" — {_fbp['en']}." if _fbp['en'] else ".")),
+                + (f" — {_fbp['en']}" if _fbp['en'] else "")
+                + f", {MATERIALS_LABOUR_INCLUDED}."),
             "cheapest_line": "We'll give you the exact price once we've seen the space.",
             "sn_breakdown_lines": [
                 f"Shower cubicle: Supply kubva US${f['sh_s']}, Install kubva US${f['sh_l']}",
@@ -476,8 +479,9 @@ def build_structured_pricing(cfg) -> dict:
             ],
             "sn_total_line": (
                 f"{_fbp['label'][:1].upper() + _fbp['label'][1:]} inosvika US${f['fb']}"
-                + (f" — {_fbp['sn']}." if _fbp['sn'] else ".")),
-            "sn_cheapest_line": f"Cheapest option i basic package inotangira paUS${f['fb']} zvinhu zvekuwedzera zvisati zvaiswa.",
+                + (f" — {_fbp['sn']}" if _fbp['sn'] else "")
+                + f" ({MATERIALS_LABOUR_INCLUDED})."),
+            "sn_cheapest_line": f"Cheapest option i basic package inotangira paUS${f['fb']} ({MATERIALS_LABOUR_INCLUDED}) zvinhu zvekuwedzera zvisati zvaiswa.",
         }
 
     if have('drain_simple', 'drain_severe', 'jetting'):
@@ -485,14 +489,14 @@ def build_structured_pricing(cfg) -> dict:
             "breakdown_lines": [
                 f"Simple blockage (sink, basin, shower): Labour from US${f['drain_simple']}",
                 f"Severe blockage (main drain, sewer line): Labour from US${f['drain_severe']}",
-                f"High-pressure jetting (stubborn blockages): from US${f['jetting']}",
+                f"High-pressure jetting (stubborn blockages): labour from US${f['jetting']}",
             ],
             "total_line": f"Most drain unblocking jobs start from US${f['drain_simple']} for labour — the exact cost depends on how severe and where the blockage is.",
             "cheapest_line": f"A basic sink or basin unblocking starts from US${f['drain_simple']} labour.",
             "sn_breakdown_lines": [
                 f"Simple blockage (sink, basin, shower): Labour kubva US${f['drain_simple']}",
                 f"Severe blockage (main drain, sewer line): Labour kubva US${f['drain_severe']}",
-                f"High-pressure jetting: kubva US${f['jetting']}",
+                f"High-pressure jetting: labour kubva US${f['jetting']}",
             ],
             "sn_total_line": f"Zvingangoita US${f['drain_simple']} kubva pa labour — zvichienderana nekubinya uye nzvimbo yekubikira.",
             "sn_cheapest_line": f"Basic sink kana basin unblocking inotangira paUS${f['drain_simple']} labour.",
@@ -504,17 +508,17 @@ def build_structured_pricing(cfg) -> dict:
                 f"Minor leak repair (joint, fitting): Labour from US${f['minor_leak']}",
                 f"Burst pipe repair: Labour from US${f['burst']}",
                 f"Pipe section replacement: Labour from US${f['pipe_section']}",
-                f"Leaking tap washer/cartridge replacement: from US${f['tap']}",
+                f"Leaking tap washer/cartridge replacement: labour from US${f['tap']}, parts extra",
             ],
-            "total_line": f"Pipe repairs start from US${f['tap']}–${f['minor_leak']} for minor leaks — cost depends on the pipe size, location, and how accessible it is.",
+            "total_line": f"Pipe repair labour starts from US${f['tap']}–${f['minor_leak']} for minor leaks, parts extra — cost depends on the pipe size, location, and how accessible it is.",
             "cheapest_line": f"A leaking tap repair starts from US${f['tap']} labour.",
             "sn_breakdown_lines": [
                 f"Minor leak repair (joint, fitting): Labour kubva US${f['minor_leak']}",
                 f"Burst pipe repair: Labour kubva US${f['burst']}",
                 f"Pipe section replacement: Labour kubva US${f['pipe_section']}",
-                f"Leaking tap: kubva US${f['tap']}",
+                f"Leaking tap: labour kubva US${f['tap']}, parts extra",
             ],
-            "sn_total_line": f"Pipe repairs dzinotangira paUS${f['tap']}–${f['minor_leak']} pa minor leaks — zvichienderana ne pipe size, nzvimbo uye kuti inofashikira here.",
+            "sn_total_line": f"Pipe repair labour inotangira paUS${f['tap']}–${f['minor_leak']} pa minor leaks, parts extra — zvichienderana ne pipe size, nzvimbo uye kuti inofashikira here.",
             "sn_cheapest_line": f"Leaking tap repair inotangira paUS${f['tap']} labour.",
         }
 
@@ -527,7 +531,7 @@ def build_structured_pricing(cfg) -> dict:
                 f"Full geyser replacement: from US${f['gey_repl']} (supply + install)",
             ],
             "total_line": f"Geyser repairs start from US${f['valve']}–${f['element']} for labour + parts depending on what needs fixing. If the geyser needs replacing, full supply and install starts from US${f['gey_repl']}.",
-            "cheapest_line": f"Minor repairs like a valve or thermostat start from US${f['valve']}–${f['thermo']}.",
+            "cheapest_line": f"Minor repairs like a valve or thermostat start from US${f['valve']}–${f['thermo']} labour, parts extra.",
             "sn_breakdown_lines": [
                 f"Thermostat replacement: kubva US${f['thermo']} labour + zvikamu",
                 f"Element replacement: kubva US${f['element']} labour + zvikamu",
@@ -535,7 +539,7 @@ def build_structured_pricing(cfg) -> dict:
                 f"Full geyser replacement: kubva US${f['gey_repl']} (supply + install)",
             ],
             "sn_total_line": f"Geyser repairs dzinotangira paUS${f['valve']}–${f['element']} pa labour + zvikamu zvichienderana nezvinoda kugadzirwa.",
-            "sn_cheapest_line": f"Minor repairs dzinotangira paUS${f['valve']}–${f['thermo']}.",
+            "sn_cheapest_line": f"Minor repairs dzinotangira paUS${f['valve']}–${f['thermo']} labour, parts extra.",
         }
 
     if have('cistern', 'seat_s', 'seat_f', 'base', 'trepl_s', 'trepl_i'):

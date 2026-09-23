@@ -1,0 +1,11 @@
+# Prod #1161 (Sep 2026): "How much ordinary tub" got the built-in price AND
+# the US$720 freestanding, which tells a budget buyer he is in the wrong shop.
+# Owner rule 2026-09-23: a named tub prices ONLY that tub; "ordinary",
+# "normal", "standard", "cheap" mean the built-in; every price shows the
+# materials and labour split. No type named still shows both (TEST 0).
+
+> How much ordinary tub
+expect: US$
+expect: install
+reject: freestanding
+reject: free-standing

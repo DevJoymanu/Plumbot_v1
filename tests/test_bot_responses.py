@@ -1791,6 +1791,14 @@ TUB_TYPE_CASES = [
     ("built-in tub", "built_in"),
     ("freestanding tub", "freestanding"),
     ("how much tub", None),
+    # tub tier (owner, 2026-09-23, #1161): a plain tub IS the built-in, a
+    # named freestanding wins, and both named is neither (both are shown).
+    ("How much ordinary tub", "built_in"),
+    ("price of a normal bath", "built_in"),
+    ("cheapest tub you have", "built_in"),
+    ("a normal freestanding tub", "freestanding"),
+    ("built-in or freestanding, how much?", None),
+    ("abnormal tub", None),
 ]
 for msg, expected in TUB_TYPE_CASES:
     try:
@@ -6333,8 +6341,14 @@ try:
     _tubbot = _FakeTub(_other)
     for _kind in ('built_in', 'freestanding', None):
         _reply = _tubbot._tub_price_reply(_kind, 'english')
+        # A named tub prices only that tub; none named shows both (owner,
+        # 2026-09-23, #1161). US$27 is this tenant's built-in, US$99 its
+        # freestanding.
+        _want = {'built_in': ('US$27', 'US$99'), 'freestanding': ('US$99', 'US$27'),
+                 None: ('US$27', None)}[_kind]
         results.log(f"tenant data: tub price [{_kind}] uses the tenant's figures",
-                    'US$27' in _reply and 'US$99' in _reply,
+                    _want[0] in _reply and ('US$99' in _reply if _kind is None
+                                            else _want[1] not in _reply),
                     got=_reply.replace('\n', ' ')[:150])
         results.log(f"tenant data: tub price [{_kind}] never quotes Homebase",
                     'US$160' not in _reply and 'US$670' not in _reply,

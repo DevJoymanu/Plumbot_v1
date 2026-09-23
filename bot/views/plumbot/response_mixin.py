@@ -12,6 +12,7 @@ import pytz
 import os
 import json
 import re
+
 import tempfile
 import base64
 import logging
@@ -42,6 +43,15 @@ from bot.pricing_copy import (build_structured_pricing, build_prompt_pricing_gui
                               facebook_package_facts)
 from bot import copy_catalog
 from bot import job_text
+# Plain-tub words (owner, 2026-09-23, #1161): "How much ordinary tub"
+# was answered with the built-in AND the US$720 freestanding, which
+# tells a budget buyer he is in the wrong shop. An ordinary, normal,
+# standard or cheap tub IS the built-in. Word-bounded, so "abnormal"
+# or "standardise" never match. Read by _tub_type_in_message.
+_PLAIN_TUB_RE = re.compile(
+    r"\b(?:ordinary|normal|standard|regular|basic|plain|simple|cheap|"
+    r"cheaper|cheapest|affordable|budget)\b", re.IGNORECASE)
+
 logger = logging.getLogger(__name__)
 
 
@@ -1283,21 +1293,31 @@ class ResponseMixin:
 
 
         def _tub_type_in_message(self, message):
-            """Return 'built_in' | 'freestanding' | None based on the tub type the
-            customer actually named, so the price reply can lead with it."""
+            """Return 'built_in' | 'freestanding' | None: the tub type the
+            customer actually named, so the price reply prices THAT tub.
+
+            Both types named ("built-in or freestanding?") is None, so both
+            are shown. The plain-tub words (_PLAIN_TUB_RE) count as built-in,
+            but a named freestanding wins over them ("a normal freestanding
+            tub" is a freestanding). Pinned by the "tub tier" cases in TEST 0.
+            """
             m = (message or '').lower()
-            if any(w in m for w in (
+            built_in = any(w in m for w in (
                 'built-in', 'built in', 'builtin', 'inbuilt', 'in-built',
                 'standard tub', 'standard built', 'drop-in', 'drop in', 'alcove', 'set in',
                 # A corner tub is a built-in tub (same price, from US$160).
                 'corner tub', 'corner bath', 'corner bathtub',
-            )):
-                return 'built_in'
-            if any(w in m for w in (
+            ))
+            freestanding = any(w in m for w in (
                 'freestanding', 'free standing', 'free-standing',
                 'standalone', 'stand alone', 'stand-alone',
-            )):
+            ))
+            if built_in and freestanding:
+                return None
+            if freestanding:
                 return 'freestanding'
+            if built_in or _PLAIN_TUB_RE.search(m):
+                return 'built_in'
             return None
 
         def _budget_fit_close(self, language: str = "english") -> str:
@@ -1350,8 +1370,13 @@ class ResponseMixin:
             built_in = self._tub_line('built_in', language)
             freestanding = self._tub_line('freestanding', language)
 
+            # A named tub is the ONLY tub priced (owner, 2026-09-23, #1161):
+            # the other tier is an upsell they never asked about. With no type
+            # named, both are shown, built-in first (owner decision 4A).
             if tub_type == 'freestanding':
-                ordered = [freestanding, built_in]
+                ordered = [freestanding]
+            elif tub_type == 'built_in':
+                ordered = [built_in]
             else:
                 ordered = [built_in, freestanding]
             lines = [line for line in ordered if line]
@@ -7348,10 +7373,13 @@ class ResponseMixin:
                 snip['tub_sales'] = (
                     f"Freestanding tubs from US${f['fs_allin']} all-in (tub US${f['fs_supply']} + "
                     f"mixer US${f['fs_mixer']} + install US${f['fs_install']}). "
-                    f"Standard built-in tubs from US${f['tub_allin']} all-in.")
+                    f"Standard built-in tubs from US${f['tub_allin']} all-in "
+                    f"(tub US${f['tub_s']} + install US${f['tub_l']}).")
                 snip['bathtub_installation'] = (
-                    f"Standard built-in tub from US${f['tub_allin']} all-in; "
-                    f"freestanding setup from US${f['fs_allin']} all-in.")
+                    f"Standard built-in tub from US${f['tub_allin']} all-in "
+                    f"(tub US${f['tub_s']} + install US${f['tub_l']}); "
+                    f"freestanding setup from US${f['fs_allin']} all-in "
+                    f"(tub US${f['fs_supply']} + mixer US${f['fs_mixer']} + install US${f['fs_install']}).")
             if f['gey_allin'] is not None and f['gey_s'] is not None and f['gey_l'] is not None:
                 snip['geyser'] = (
                     f"Geysers from US${f['gey_allin']} all-in (supply from US${f['gey_s']} + install from US${f['gey_l']}).")
@@ -7372,7 +7400,8 @@ class ResponseMixin:
                 if _fbp is not None:
                     snip['facebook_package'] = (
                         f"Our {_fbp['label']} is US${f['fb']}"
-                        + (f" — {_fbp['en']}." if _fbp['en'] else "."))
+                        + (f" — {_fbp['en']}" if _fbp['en'] else "")
+                        + f", {copy_catalog.MATERIALS_LABOUR_INCLUDED}.")
             location = _quick_location(self)
             if location:
                 snip['location'] = location
