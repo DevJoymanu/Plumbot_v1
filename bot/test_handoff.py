@@ -922,3 +922,57 @@ class LadderCallPermissionTests(OfflineTestCase):
         self.assertIn('wa.me/263771111111?text=', out)
         self.assertIn('+263771111111', out)
         self.assertIn("Would it be okay if we called you on the 19th of October", out)
+
+
+class HesitationTests(OfflineTestCase):
+    """Hesitation over the visit gets the free online quote once; a push for an
+    exact figure gets the no-guess line and the online quote (owner decisions
+    1B, 6B, D, 2026-09-23)."""
+
+    OFFER = ("Great, what works better for you, tomorrow at 9am or Thursday at "
+             "2pm, for us to come through and take a quick look?")
+
+    def _lead(self, **kw):
+        lead = make_lead(7500 + Appointment.objects.count(), **kw)
+        lead.add_conversation_message('assistant', self.OFFER)
+        return lead
+
+    def _reply(self, lead, text):
+        from bot.hesitation import reply_for
+        return reply_for(text, lead)
+
+    def test_reluctance_gets_the_handoff_once(self):
+        lead = self._lead()
+        reply = self._reply(lead, "Can't you just quote without coming?")
+        self.assertTrue(reply.startswith('No pressure at all on the visit.'))
+        self.assertIn('You can get a free online quote first.', reply)
+        self.assertIn(PLUMBER_WA, reply)
+        self.assertTrue(reply.rstrip().endswith('+263774819901'))
+        self.assertIsNone(self._reply(lead, 'Not sure yet'))     # once only
+
+    def test_unsure_counts_only_right_after_a_visit_offer(self):
+        lead = make_lead(7590)
+        lead.add_conversation_message('assistant', 'What area are you in?')
+        self.assertIsNone(self._reply(lead, 'not sure'))
+        self.assertIsNotNone(self._reply(self._lead(), 'not sure yet'))
+
+    def test_a_lead_who_has_the_link_gets_one_short_line(self):
+        lead = self._lead(internal_notes=LINK_SENT_TAG)
+        reply = self._reply(lead, 'Do you have to come?')
+        self.assertIn('You can still get a free online quote first', reply)
+        self.assertIn('+263774819901', reply)
+        self.assertNotIn(PLUMBER_WA, reply)
+
+    def test_an_exact_figure_push_gets_the_no_guess_lines(self):
+        reply = self._reply(self._lead(), 'Just give me the exact price')
+        self.assertTrue(reply.startswith(
+            "We'd rather not guess. A quick look and you get a firm price.\n"
+            "Or if it's easier, send a few photos for a free online quote first."))
+        self.assertIn(PLUMBER_WA, reply)
+
+    def test_never_to_a_booked_lead_a_shona_lead_or_a_real_answer(self):
+        booked = self._lead(status='confirmed')
+        self.assertIsNone(self._reply(booked, "Can't you just quote?"))
+        self.assertIsNone(self._reply(self._lead(), 'Hameno, ndichaona'))
+        self.assertIsNone(self._reply(self._lead(), 'Tomorrow at 9am works'))
+        self.assertIsNone(self._reply(self._lead(), 'next month'))

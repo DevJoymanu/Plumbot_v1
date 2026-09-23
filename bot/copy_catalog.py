@@ -392,3 +392,22 @@ PHOTO_ASK_EXISTING = "If you have one, send us a picture of {thing} so we can se
 PHOTO_ASK_NEW_SPOT = "If you have one, send us a picture of {spot} where it's going."
 PHOTO_ASK_NEW_BUILD = "If you have a plan or drawings, send them through, or a picture of the site."
 PHOTO_ASK_UNCLEAR = "If you have a picture of what's there now, or a plan, send it through."
+
+# Hesitation about the visit gets the free online quote (owner decision 1B,
+# 2026-09-23): live chats lead with the visit; a lead who hesitates ("can't you
+# just quote?", "not sure yet" to the slot offer) is offered the online quote
+# ONCE, with the plumber's pre-filled link and number under it
+# (plumber_link.portfolio_handoff). Built by bot/hesitation.py.
+HESITATION_ACK = "No pressure at all on the visit."
+ONLINE_QUOTE_STILL_OPEN = (
+    "No problem. You can still get a free online quote first: send a few photos, "
+    "measurements or a plan to {who} on {number}."
+)
+ONLINE_QUOTE_STILL_OPEN_NAMELESS = (
+    "No problem. You can still get a free online quote first: send a few photos, "
+    "measurements or a plan to {number}."
+)
+# Pushed for an exact figure (owner decisions 6B and D, 2026-09-23): the soft
+# line, then the online quote, then the plumber's link and number.
+FIRM_PRICE_NO_GUESS = "We'd rather not guess. A quick look and you get a firm price."
+FIRM_PRICE_ONLINE = "Or if it's easier, send a few photos for a free online quote first."

@@ -236,9 +236,27 @@ def portfolio_handoff(appointment) -> str:
         return ''
     cc = copy_catalog
     who = _who_handles_quotes(appointment)
-    whose = f"{who}'s" if who else 'our quotes'
     handles = (cc.PORTFOLIO_HANDOFF_WHO.format(who=who) if who
                else cc.PORTFOLIO_HANDOFF_WHO_NAMELESS)
+    # The free online quote leads (owner: "they can get a free online quote
+    # first"), then how, then why it is worth it, each on its own short line.
+    offer = '\n'.join((cc.PORTFOLIO_HANDOFF_FREE_FIRST, handles,
+                       cc.PORTFOLIO_HANDOFF_CERTAINTY))
+    return f'{offer}\n\n{link_block(appointment)}'
+
+
+def link_block(appointment) -> str:
+    """What the link opens (and why it is long), the link, then the number, in
+    short lines; '' with no plumber number. The tail of portfolio_handoff, and
+    what the firm-price reply (bot/hesitation.py) puts under its two lines.
+    "why it's long" only for the long per-lead link; the plumber's own short
+    link carries a fixed message, so it says "a message ready to send"."""
+    link = quote_link(appointment)
+    if not link:
+        return ''
+    cc = copy_catalog
+    who = _who_handles_quotes(appointment)
+    whose = f"{who}'s" if who else 'our quotes'
     if is_long_link(link):
         opens = cc.PORTFOLIO_LINK_LONG.format(whose=whose)
     elif '/message/' in link:
@@ -248,11 +266,7 @@ def portfolio_handoff(appointment) -> str:
     number = f'+{plumber_number(appointment)}'
     contact = (cc.HANDOFF_NUMBER_OF.format(who=who, number=number) if who
                else cc.HANDOFF_NUMBER.format(number=number))
-    # The free online quote leads (owner: "they can get a free online quote
-    # first"), then how, then why it is worth it, each on its own short line.
-    offer = '\n'.join((cc.PORTFOLIO_HANDOFF_FREE_FIRST, handles,
-                       cc.PORTFOLIO_HANDOFF_CERTAINTY))
-    return f'{offer}\n\n{opens}\n{link}\n\n{contact}'
+    return f'{opens}\n{link}\n\n{contact}'
 
 
 def _link_opens_line(link, who) -> str:

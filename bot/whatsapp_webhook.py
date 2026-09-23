@@ -4745,6 +4745,31 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                 ).start()
                 return
 
+        # -- STEP 0-h: Hesitating over the visit, or pushing for an exact figure --
+        # Live chats lead with the visit; a lead who hesitates ("can't you just
+        # quote?", "not sure yet" to the slot we offered) or pushes for an exact
+        # price is offered the free online quote ONCE, with the plumber's link
+        # and number (owner decisions 1B, 6B, D, 2026-09-23). Here, early,
+        # because those short strings are what the classifier and the pending
+        # delay steps misread. Deterministic (bot/hesitation.py), English only,
+        # never to a booked lead; anything it does not recognise carries on.
+        # Pinned by the "hesitation" cases in TEST 0 and HesitationTests.
+        from .hesitation import reply_for as _hesitation_reply
+        _hes = _hesitation_reply(message_body, appointment)
+        if _hes:
+            print(f"🤔 Hesitation answered with the online quote: '{message_body[:60]}'")
+            _hes = finalise_outbound(_hes, appointment, message_body, check=False)
+            appointment.add_conversation_message("assistant", _hes)
+            appointment.last_outbound_at = timezone.now()
+            appointment.last_contacted_at = appointment.last_outbound_at
+            appointment.save(update_fields=['last_outbound_at', 'last_contacted_at'])
+            threading.Thread(
+                target=delayed_response,
+                args=(sender, _hes, get_random_delay(sender=sender), message_id),
+                kwargs={'tenant': tenant}, daemon=True,
+            ).start()
+            return
+
         # -- STEP 0-b: The answer to "a quick look, or a quote online first?" ---
         # Asked after the price guide (STEP 1d). "Online" gets the plumber
         # handoff (his WhatsApp, their details already typed in); "a look" gets

@@ -13695,6 +13695,31 @@ except Exception as e:
     import traceback as _tb
     results.log("after a photo", False, got=_tb.format_exc()[-600:])
 
+# -- hesitation (owner 1B/6B/D, 2026-09-23) -------------------------------------
+# Reluctance about the visit anywhere, or a non-answer right after we offered
+# it, gets the free online quote once; a push for an exact figure gets the
+# no-guess lines. A timeframe, a time clash and a clear no are NOT hesitation.
+try:
+    import types as _h_types
+    from bot.hesitation import is_visit_hesitation as _hes, pushes_for_exact_figure as _exact
+    _offered = _h_types.SimpleNamespace(conversation_history=[{'role': 'assistant', 'content':
+        "Great, what works better for you, tomorrow at 9am or Thursday at 2pm, for us to come through and take a quick look?"}])
+    _cold = _h_types.SimpleNamespace(conversation_history=[{'role': 'assistant', 'content': 'What area are you in?'}])
+    for _m in ("Can't you just quote?", "Do you have to come?", "Can I send pictures instead?",
+               "I don't want anyone coming yet"):
+        results.log(f"hesitation: '{_m}' is reluctance, anywhere", _hes(_m, _cold))
+    for _m in ("Not sure yet", "maybe", "hmm"):
+        results.log(f"hesitation: '{_m}' only right after a visit offer",
+                    _hes(_m, _offered) and not _hes(_m, _cold))
+    for _m in ("next month", "I work weekdays", "no thanks", "Tomorrow 9am works", "Borrowdale"):
+        results.log(f"hesitation: '{_m}' is not hesitation", not _hes(_m, _offered))
+    results.log("hesitation: an exact-figure push is recognised",
+                _exact("how much exactly?") and _exact("just give me the exact price")
+                and not _exact("how much is a tub?"))
+except Exception as e:
+    import traceback as _tb
+    results.log("hesitation", False, got=_tb.format_exc()[-600:])
+
 
 if GATE_ONLY:
     _finish()
