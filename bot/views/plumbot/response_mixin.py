@@ -1536,31 +1536,16 @@ class ResponseMixin:
             (installations / renovations / unknown) stick to the EXACT approved
             script — a wordy multi-part interrogation reads as pre-meditated, and
             a misclassified project_type makes it wrong too (prod: "bathroom and
-            kitchen installations" got a kitchen-only pipework grilling). Only
-            fault/repair services keep a targeted question, where the specifics
-            genuinely change the job."""
-            svc = (self.appointment.project_type or '').lower()
+            kitchen installations" got a kitchen-only pipework grilling).
 
-            if 'drain' in svc:
-                return (
-                    "Which drain is blocked, the kitchen, bathroom or outside one? "
-                    "And is it draining slowly or completely backed up?"
-                )
-            if 'pipe' in svc:
-                return (
-                    "Where's the pipe, in a wall, under a sink, or outside? "
-                    "And is it dripping or has it fully burst?"
-                )
-            if 'geyser' in svc and 'repair' in svc:
-                return (
-                    "Is the geyser not heating at all, leaking, or just making noise, "
-                    "and how long has it been like that?"
-                )
-            if 'toilet' in svc and 'repair' in svc:
-                return (
-                    "What's the toilet doing, leaking at the base, not flushing, "
-                    "or running continuously?"
-                )
+            Repairs no longer get a targeted fault question ("Which drain is
+            blocked...", "Is the geyser not heating..."): owner decision D2,
+            2026-09-23, a repair goes straight to the photo request and the
+            area, and the picture shows the fault better than a typed answer.
+            get_next_question_to_ask records the repair as the description
+            (ExtractionMixin._repair_label), so a repair never reaches here from
+            the main flow; the other callers get the same approved script.
+            Pinned by the "description question" cases in TEST 0."""
             # Generic case — the approved script, verbatim.
             return "Can you tell me a bit more about the project?"
 

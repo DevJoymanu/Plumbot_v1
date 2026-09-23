@@ -94,6 +94,9 @@ _FIXTURES = (
     (r"\bbasins?\b", 'basin'),
     (r"\btaps?\b", 'tap'),
     (r"\bpipes?\b", 'pipes'),
+    # A blocked drain shows the drain (owner D2: a repair goes straight to the
+    # photo ask, and "Blocked drain" is then the whole description).
+    (r"\bdrains?\b", 'drain'),
 )
 _ROOMS = (('bathroom', 'bathroom'), ('en-?suite', 'ensuite'), ('kitchen', 'kitchen'),
           ('toilet room', 'toilet'))

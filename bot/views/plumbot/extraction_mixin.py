@@ -370,6 +370,22 @@ class ExtractionMixin:
         # the appointment, outside it the lead is nurtured instead of pushed.
         PLAN_NEAR_TIMELINE_DAYS = 7
 
+        # The repair service types whose fault question was dropped (owner D2):
+        # the four the old targeted questions covered.
+        _REPAIR_TYPES = {
+            'drain_unblocking': 'Blocked drain',
+            'pipe_repair': 'Pipe repair',
+            'geyser_repair': 'Geyser repair',
+            'toilet_repair': 'Toilet repair',
+        }
+
+        def _repair_label(self) -> str:
+            """"Geyser repair" for a lead whose service type is a repair, else
+            ''. Read by get_next_question_to_ask, which takes it as the
+            description (owner decision D2, 2026-09-23)."""
+            return self._REPAIR_TYPES.get(
+                (getattr(self.appointment, 'project_type', '') or '').lower(), '')
+
         def _on_plan_path(self) -> bool:
             """True when this lead has sent a real plan.
 
@@ -503,6 +519,21 @@ class ExtractionMixin:
             # 2026-07-02: a 'yes' after the budget tie-down got the opener).
             if not self._job_is_known():
                 return "service_type"
+
+            # A REPAIR is described by its service type (owner decision D2,
+            # 2026-09-23): "geyser repair", "burst pipe", "blocked drain" go
+            # straight to the photo request and the area. They used to get one
+            # fault question first ("Is the geyser not heating at all, leaking,
+            # or just making noise...?"), a message before the visit that the
+            # photo usually answers anyway. The label is written as the
+            # description so the photo ask (which needs one) can name it.
+            if not self.appointment.project_description and self._repair_label():
+                self.appointment.project_description = self._repair_label()
+                try:
+                    self.appointment.save(update_fields=['project_description'])
+                except Exception:
+                    logger.warning("Could not record the repair as the description",
+                                   exc_info=True)
 
             if not self.appointment.project_description:
                 return "project_description"

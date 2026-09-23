@@ -305,6 +305,12 @@
     "5|expect|9am": false,
     "5|reject|all-in figure": true
   },
+  "repair_skips_fault_question.txt": {
+    "0|expect|what needs doing": true,
+    "1|expect|picture of the geyser": true,
+    "1|expect|what area are you in": true,
+    "1|reject|not heating": true
+  },
   "replace_old_fixture_prices_the_new_one.txt": {
     "0|expect|install": true,
     "0|expect|new basin": true,

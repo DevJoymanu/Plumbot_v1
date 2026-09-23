@@ -2818,8 +2818,9 @@ try:
     # The first-pass description question: generic service categories get the
     # EXACT approved script ("Got it! Can you tell me a bit more about the
     # project?") — never a multi-part contextual interrogation (prod: "bathroom
-    # and kitchen installations" got a kitchen-only pipework grilling). Only
-    # fault/repair types keep a targeted question.
+    # and kitchen installations" got a kitchen-only pipework grilling). Repairs
+    # lost their fault question too (owner D2): a repair skips the description
+    # step (ExtractionMixin._repair_label) and goes to the photo and the area.
     class _FakeApptDQ:
         def __init__(self, pt):
             self.project_type = pt
@@ -2837,9 +2838,35 @@ try:
     )
     _dq_drain = _FakeSelfDQ("drain_unblocking")._get_first_pass_question("project_description")
     results.log(
-        "description question: generic services use the exact script; repairs stay targeted",
-        _dq_ok and "Which drain is blocked" in _dq_drain,
+        "description question: every service uses the exact script, repairs included",
+        _dq_ok and _dq_drain == _DQ_SCRIPT,
         got=f"generic ok={_dq_ok}; drain={_dq_drain!r}",
+    )
+    # D2: a repair's service type IS its description, and the photo ask then
+    # names the thing ("a picture of the geyser").
+    from bot.views.plumbot.extraction_mixin import ExtractionMixin as _EMD2
+    from bot.photo_ask import photo_line as _pl_d2
+    class _FakeSelfD2:
+        _REPAIR_TYPES = _EMD2._REPAIR_TYPES
+        _repair_label = _EMD2._repair_label
+        def __init__(self, pt):
+            self.appointment = _FakeApptDQ(pt)
+    _d2 = {pt: _FakeSelfD2(pt)._repair_label() for pt in
+           ("geyser_repair", "drain_unblocking", "pipe_repair", "toilet_repair",
+            "bathroom_renovation", None)}
+    results.log(
+        "repair = described: the service type becomes the description, others stay empty",
+        _d2["geyser_repair"] == "Geyser repair" and _d2["drain_unblocking"] == "Blocked drain"
+        and _d2["bathroom_renovation"] == "" and _d2[None] == "",
+        got=_d2,
+    )
+    _d2_lines = {d: _pl_d2(d) for d in ("Geyser repair", "Blocked drain", "Toilet repair")}
+    results.log(
+        "repair photo ask names the thing (geyser, drain, toilet)",
+        "picture of the geyser " in _d2_lines["Geyser repair"]
+        and "picture of the drain " in _d2_lines["Blocked drain"]
+        and "picture of the toilet " in _d2_lines["Toilet repair"],
+        got=_d2_lines,
     )
     # Visit-purpose copy: a bathroom+kitchen scope must never be described as a
     # single room — even when the classifier mislabelled project_type as
