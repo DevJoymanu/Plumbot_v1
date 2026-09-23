@@ -197,7 +197,7 @@
   },
   "new_install_flow.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|a picture of what's there now, or a plan": true,
+    "1|expect|a picture of the space, or a plan": true,
     "1|expect|what area are you in?": true,
     "1|reject|US$": true,
     "1|reject|can you tell me a bit more about the project": true,
@@ -257,7 +257,7 @@
   },
   "photo_ask_replace_tub.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|picture of the old tub": true,
+    "1|expect|picture of the space where the tub goes": true,
     "1|expect|what area are you in": true
   },
   "photo_with_caption_price.txt": {

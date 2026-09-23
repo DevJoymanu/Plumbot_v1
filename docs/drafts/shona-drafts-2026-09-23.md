@@ -3,13 +3,13 @@
 Every line below is **live in English only**. The code holds anything that does not read as English, so a Shona lead keeps today's wording until these are approved. Drafts follow the house Shona style in the existing copy: short, "-i" plural politeness, and the English trade words the bot already mixes in (tub, portfolio, quote, link). **These need a native speaker's check before they go live**; mark each OK or correct it, and I will wire the approved ones in.
 
 ## Photo or plan ask (before the area question)
-Same shape as the English: "may you send us ... if you have one", then that it is not compulsory. Note "kana" means both "or" and "if" in lines 3 and 4; a native speaker may prefer another word for one of them.
+Same shape as the English: "may you send us a picture of the space ... if you have one". Note "kana" means both "or" and "if" in lines 3 and 4; a native speaker may prefer another word for one of them.
 | # | English (live) | Shona draft |
 |---|---|---|
-| 1 | May you send us a picture of the old tub if you have one, no worries if you're not near it right now. | Mungatitumirawo mufananidzo we tub yekare kana muinawo, hazvina basa kana musiri pedyo nayo parizvino. |
-| 2 | May you send us a picture of the spot in the bathroom where it's going if you have one, no worries if you're not near it right now. | Mungatitumirawo mufananidzo wenzvimbo iri mubathroom painoenda kana muinawo, hazvina basa kana musiri pedyo nayo parizvino. |
-| 3 | May you send us a plan, drawings or a picture of the site if you have one, no worries if you don't have it on hand. | Mungatitumirawo plan, madhirowa kana mufananidzo wenzvimbo kana muinazvo, hazvina basa kana musina nazvo pedyo. |
-| 4 | May you send us a picture of what's there now, or a plan, if you have one, no worries if you're not near it right now. | Mungatitumirawo mufananidzo wezviripo parizvino kana plan kana muinazvo, hazvina basa kana musiri pedyo nazvo parizvino. |
+| 1 | May you send us a picture of the space where the tub goes if you have one. | Mungatitumirawo mufananidzo wenzvimbo inoenda tub kana muinawo. |
+| 2 | May you send us a picture of the space in the bathroom where it's going if you have one. | Mungatitumirawo mufananidzo wenzvimbo iri mubathroom painoenda kana muinawo. |
+| 3 | May you send us a plan, drawings or a picture of the site if you have one. | Mungatitumirawo plan, madhirowa kana mufananidzo wenzvimbo kana muinazvo. |
+| 4 | May you send us a picture of the space, or a plan, if you have one. | Mungatitumirawo mufananidzo wenzvimbo, kana plan, kana muinazvo. |
 
 ## After a photo or a list
 | # | English (live) | Shona draft |

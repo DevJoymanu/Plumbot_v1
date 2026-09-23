@@ -389,24 +389,14 @@ PLAN_QUOTE_CHECK = (
 # lead with nothing just carries on. Chosen and inserted by bot/photo_ask.py.
 # English only until the owner approves the Shona drafts.
 # Shape (owner, 2026-09-23): "May you send us a picture of ... if you have
-# one", then say plainly it is not compulsory (they may not be near the
-# bathroom right now), then the area question finishes the message.
-PHOTO_ASK_EXISTING = (
-    "May you send us a picture of {thing} if you have one, no worries if "
-    "you're not near it right now."
-)
-PHOTO_ASK_NEW_SPOT = (
-    "May you send us a picture of {spot} where it's going if you have one, "
-    "no worries if you're not near it right now."
-)
-PHOTO_ASK_NEW_BUILD = (
-    "May you send us a plan, drawings or a picture of the site if you have "
-    "one, no worries if you don't have it on hand."
-)
-PHOTO_ASK_UNCLEAR = (
-    "May you send us a picture of what's there now, or a plan, if you have "
-    "one, no worries if you're not near it right now."
-)
+# one.", then the area question finishes the message. It leans to THE SPACE
+# rather than the old fixture: a client may already have had the old tub
+# taken out and only need the new one fitted ({thing} is "the space where
+# the tub goes"), while a repair still shows the thing ("the leak").
+PHOTO_ASK_EXISTING = "May you send us a picture of {thing} if you have one."
+PHOTO_ASK_NEW_SPOT = "May you send us a picture of {spot} where it's going if you have one."
+PHOTO_ASK_NEW_BUILD = "May you send us a plan, drawings or a picture of the site if you have one."
+PHOTO_ASK_UNCLEAR = "May you send us a picture of the space, or a plan, if you have one."
 
 # Hesitation about the visit gets the free online quote (owner decision 1B,
 # 2026-09-23): live chats lead with the visit; a lead who hesitates ("can't you

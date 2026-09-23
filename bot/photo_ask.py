@@ -7,20 +7,20 @@ WHAT (owner, 2026-09-23, decisions 7, 7a, 7b): once the lead has said what
 needs doing, the reply that asks their area first asks for a picture of what
 is there, named from their OWN words:
 
-    replacing or fixing  "May you send us a picture of the old tub if you have
-                          one, no worries if you're not near it right now. What
-                          area are you in?"
-    adding something     "May you send us a picture of the spot in the bathroom
-                          where it's going if you have one, no worries if..."
+    replacing            "May you send us a picture of the space where the tub
+                          goes if you have one. What area are you in?"
+    adding something     "May you send us a picture of the space in the
+                          bathroom where it's going if you have one. ..."
     a new build          "May you send us a plan, drawings or a picture of the
-                          site if you have one, no worries if you don't have it
-                          on hand. What area are you in?"
-    can't tell           "May you send us a picture of what's there now, or a
-                          plan, if you have one, no worries if..."
+                          site if you have one. What area are you in?"
+    a repair             "May you send us a picture of the leak if you have
+                          one. What area are you in?"
+    can't tell           "May you send us a picture of the space, or a plan,
+                          if you have one. What area are you in?"
 
 The shape is the owner's (2026-09-23): "May you send us a picture of ... if
-you have one", then plainly not compulsory (they may not be near the bathroom
-right now), then the area question finishes the message.
+you have one.", then the area question. It leans to THE SPACE, because a
+client may already have had the old tub taken out; a repair shows the thing.
 
 WHY: a picture of what is there proves we looked, makes the visit better, and
 a plan puts them on the plan path (a quote with no visit). It is a REQUEST,
@@ -144,20 +144,25 @@ def photo_line(description: str, project_type: str = '') -> str:
     fixture = _first_match(_FIXTURES, text)
     room = _first_match(_ROOMS, text)
     if _ADD_RE.search(text) and not _EXISTING_RE.search(text):
-        spot = f'the spot in the {room}' if room else 'the space'
+        spot = f'the space in the {room}' if room else 'the space'
         return copy_catalog.PHOTO_ASK_NEW_SPOT.format(spot=spot)
     # A leak is the thing to see, wherever it is ("leaking pipe under the
     # sink" asked for "the old basin" before this).
     if re.search(r"\bleak\w*", text, re.IGNORECASE):
         return copy_catalog.PHOTO_ASK_EXISTING.format(thing='the leak')
     if fixture:
-        # "old" only when it is being replaced or redone: a blocked sink is
-        # "the sink", a replaced tub is "the old tub".
-        thing = 'the pipes' if fixture == 'pipes' else (
-            f'the old {fixture}' if _REPLACING_RE.search(text) else f'the {fixture}')
+        # A replacement shows THE SPACE, not "the old tub" (owner, 2026-09-23:
+        # the old one may already be out and only the new one needs fitting).
+        # A repair ("blocked sink") still shows the thing itself.
+        if fixture == 'pipes':
+            thing = 'the pipes'
+        elif _REPLACING_RE.search(text):
+            thing = f'the space where the {fixture} goes'
+        else:
+            thing = f'the {fixture}'
         return copy_catalog.PHOTO_ASK_EXISTING.format(thing=thing)
     if room:
-        return copy_catalog.PHOTO_ASK_EXISTING.format(thing=f'the {room}')
+        return copy_catalog.PHOTO_ASK_EXISTING.format(thing=f'the space in the {room}')
     return copy_catalog.PHOTO_ASK_UNCLEAR
 
 

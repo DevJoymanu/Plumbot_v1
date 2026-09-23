@@ -6,5 +6,5 @@
 expect: what needs doing
 
 > Two bathrooms, we're replacing an old tub in each
-expect: picture of the old tub
+expect: picture of the space where the tub goes
 expect: what area are you in

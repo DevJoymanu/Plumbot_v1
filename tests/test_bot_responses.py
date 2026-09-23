@@ -13649,16 +13649,16 @@ try:
     import types as _pa_types
     from bot.photo_ask import photo_line as _pl_line, add_photo_ask as _pa_add
     _PHOTO_CASES = [
-        ("Two bathrooms, we're replacing an old tub in each", "a picture of the old tub"),
-        ("I want to add a shower to our bathroom", "the spot in the bathroom where it's going"),
+        ("Two bathrooms, we're replacing an old tub in each", "a picture of the space where the tub goes"),
+        ("I want to add a shower to our bathroom", "the space in the bathroom where it's going"),
         ("We're building a new house and need all the plumbing done", "a plan, drawings or a picture of the site"),
         ("It's a new building and we require installation of all the plumbing on the plan", "a plan, drawings or a picture of the site"),
         ("leaking pipe under the kitchen sink", "a picture of the leak"),
         ("kitchen sink blocked", "a picture of the sink"),
-        ("bathroom needs work", "a picture of the bathroom"),
-        ("something with water", "a picture of what's there now, or a plan"),
-        ("new installation", "a picture of what's there now, or a plan"),
-        ("I need a new shower cubicle fitted in the main bathroom", "the spot in the bathroom where it's going"),
+        ("bathroom needs work", "a picture of the space in the bathroom"),
+        ("something with water", "a picture of the space, or a plan"),
+        ("new installation", "a picture of the space, or a plan"),
+        ("I need a new shower cubicle fitted in the main bathroom", "the space in the bathroom where it's going"),
     ]
     for _d, _want in _PHOTO_CASES:
         _got = _pl_line(_d)
@@ -13672,7 +13672,7 @@ try:
     _r, _added = _pa_add("All good, what area are you in?", _pa_lead(), "replacing the old tub")
     results.log("photo ask: a request before the area, which stays the ONE question",
                 _added and _r.endswith("What area are you in?") and _r.count('?') == 1
-                and "picture of the old tub" in _r, got=_r)
+                and "picture of the space where the tub goes" in _r, got=_r)
     results.log("photo ask: only in front of the area question",
                 not _pa_add("Morning or afternoon?", _pa_lead(), "x")[1])
     results.log("photo ask: never before the job is known",
