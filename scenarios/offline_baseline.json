@@ -164,63 +164,48 @@
     "0|expect|what needs doing": true,
     "1|expect|wiring": false,
     "1|reject|outside what we do": true,
-    "2|expect|new plumbing installation for a new building": true,
+    "2|expect|what area are you in": true,
     "2|reject|bathroom or a kitchen": true,
+    "2|reject|new plumbing installation for a new": true,
     "2|reject|outside what we do": true,
-    "2|reject|what area are you in": true,
-    "2|reject|you'd need a specialist": true,
-    "3|expect|tell me a bit more about the project": true,
-    "3|reject|new plumbing installation for a new": true,
-    "3|reject|wiring": true
+    "2|reject|you'd need a specialist": true
   },
   "new_build_confirmed.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|new plumbing installation for a new building": true,
+    "1|expect|plan, drawings": true,
+    "1|expect|what area are you in": true,
     "1|reject|US$": true,
     "1|reject|bathroom or a kitchen": true,
-    "2|reject|bathroom or a kitchen": true,
+    "1|reject|new plumbing installation for a new": true,
+    "1|reject|tell me a bit more about the project": true,
     "2|reject|new plumbing installation for a new": true,
-    "3|reject|new plumbing installation for a new": true
+    "2|reject|what area are you in": true
   },
   "new_build_midconvo.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|new plumbing installation for a new house": true,
+    "1|expect|what area are you in": true,
     "1|reject|US$": true,
-    "1|reject|bathroom or a kitchen": true
-  },
-  "new_build_opener.txt": {
-    "0|expect|hello": true,
-    "0|expect|new plumbing installation for a new house": true,
-    "0|reject|US$": true,
-    "0|reject|bathroom or a kitchen": true,
-    "1|expect|tell me a bit more about the project": true,
+    "1|reject|bathroom or a kitchen": true,
     "1|reject|new plumbing installation for a new": true
   },
-  "new_build_rejected.txt": {
-    "0|expect|what needs doing": true,
-    "1|expect|wiring": false,
-    "1|reject|outside what we do": true,
-    "2|expect|new plumbing installation for a new building": true,
-    "3|expect|my mistake": true,
-    "3|expect|plumbing side": true,
-    "3|reject|new plumbing installation for a new": true,
-    "3|reject|what area are you in": true,
-    "4|expect|area": true,
-    "4|reject|my mistake": true,
-    "4|reject|new plumbing installation for a new": true
+  "new_build_opener.txt": {
+    "0|expect|hi, you can send us a plan": true,
+    "0|expect|what area are you in": true,
+    "0|reject|US$": true,
+    "0|reject|bathroom or a kitchen": true,
+    "0|reject|new plumbing installation for a new": true
   },
   "new_install_flow.txt": {
-    "0|expect|how may we assist you on plumbing services": false,
-    "1|expect|can you tell me a bit more about the project": true,
+    "0|expect|what needs doing": true,
+    "1|expect|a picture of what's there now, or a plan": true,
+    "1|expect|what area are you in?": true,
     "1|reject|US$": true,
+    "1|reject|can you tell me a bit more about the project": true,
     "1|reject|on-site visit": true,
     "1|reject|plumbed fresh": true,
-    "2|expect|a picture of what's there now, or a plan": true,
-    "2|expect|what area are you in?": true,
-    "2|reject|US$": true,
-    "3|expect|quick look at the space": false,
-    "3|expect|what works better for you": false,
-    "3|reject|kitchen plumbing": true
+    "2|expect|quick look at the space": false,
+    "2|expect|what works better for you": false,
+    "2|reject|kitchen plumbing": true
   },
   "no_answer_never_repeats_verbatim.txt": {
     "0|expect|what needs doing": true,
@@ -246,11 +231,9 @@
   },
   "no_to_detail_request.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|new plumbing installation for a new house": true,
-    "2|expect|tell me a bit more about the project": true,
-    "3|expect|what area are you in": true,
-    "3|reject|simple fix": true,
-    "3|reject|tell me a bit more about the project": true
+    "1|expect|tell me a bit more about the project": false,
+    "2|reject|simple fix": true,
+    "2|reject|tell me a bit more about the project": true
   },
   "no_to_slot_offer.txt": {
     "0|expect|what needs doing": true,
@@ -274,8 +257,8 @@
   },
   "photo_ask_replace_tub.txt": {
     "0|expect|what needs doing": true,
-    "1|expect|picture of the old tub": false,
-    "1|expect|what area are you in": false
+    "1|expect|picture of the old tub": true,
+    "1|expect|what area are you in": true
   },
   "photo_with_caption_price.txt": {
     "0|reject|US$": true,
@@ -313,9 +296,9 @@
     "2|expect|what works better for you": true,
     "2|reject|US$": true,
     "2|reject|all-in figure": true,
-    "3|expect|new plumbing installation for a new building": true,
     "3|reject|US$": true,
     "3|reject|all-in figure": true,
+    "3|reject|new plumbing installation for a new": true,
     "4|reject|US$": true,
     "4|reject|all-in figure": true,
     "4|reject|new plumbing installation for a new": true,

@@ -1,24 +1,20 @@
-# Generic new-install flow (prod 2026-07-02).
-# The script: opener -> description question -> area -> availability. No quote
-# pitch on a flow answer, no volunteered price, no kitchen-only copy on a
-# bathroom+kitchen job.
+# Generic new-install flow (prod 2026-07-02), under the owner's rules of
+# 2026-09-23: the opener's answer is the service type AND the description, so a
+# job named in it ("Bathroom and kitchen installations.") goes straight to the
+# area, fronted by the photo or plan request, with no "tell me a bit more". No
+# quote pitch on a flow answer, no volunteered price, no kitchen-only copy on a
+# bathroom+kitchen job, and the day comes as two real slots.
 
 > Hello! Can I get more info on this?
-expect: how may we assist you on plumbing services
+expect: what needs doing
 
 > Bathroom and kitchen installations.
-expect: can you tell me a bit more about the project
+expect: what area are you in?
+expect: a picture of what's there now, or a plan
+reject: can you tell me a bit more about the project
 reject: on-site visit
 reject: US$
 reject: plumbed fresh
-
-> new installation
-# The area question now carries the photo or plan ask in front of it
-# (owner, 2026-09-23, bot/photo_ask.py): a new installation gets the
-# either-or line, and the area stays the one question.
-expect: what area are you in?
-expect: a picture of what's there now, or a plan
-reject: US$
 
 > Not in Harare but in Hurungwe (Magunje) to be precise.
 expect: what works better for you

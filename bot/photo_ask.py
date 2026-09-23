@@ -55,7 +55,8 @@ _AREA_Q_RE = re.compile(
     re.IGNORECASE | re.DOTALL)
 
 _NEW_BUILD_RE = re.compile(
-    r"\b(?:new build|new house|new home|building (?:a|our|my) (?:new )?(?:house|home)"
+    r"\b(?:new build|new building|new property|new house|new home"
+    r"|building (?:a|our|my) (?:new )?(?:house|home)"
     r"|build(?:ing)? a house|construction|from scratch|foundation|slab"
     r"|nothing there yet|empty stand|new stand)\b", re.IGNORECASE)
 # "new" counts as adding when nothing is being replaced: "I need a new shower
@@ -210,6 +211,12 @@ def add_photo_ask(reply: str, appointment, message_body: str = None):
     question = question[:1].upper() + question[1:]
     if not question.endswith('?'):
         question += '?'
+    if pre and pre.rstrip(', ').lower() in ('hi', 'hello', 'hey', 'hi there'):
+        # A greeting keeps its comma: "Hi, you can send us a plan... What
+        # area are you in?" rather than "Hi. You can send us...".
+        new_last = f'{pre.rstrip(", ")}, {line[:1].lower()}{line[1:]} {question}'
+        parts[-1] = new_last
+        return MESSAGE_SPLIT_MARKER.join(parts), True
     if pre:
         # "All good, what area are you in?" -> "All good. <line> What area...?"
         pre = pre.rstrip(',;:')

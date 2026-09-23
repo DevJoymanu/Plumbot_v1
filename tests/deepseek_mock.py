@@ -288,6 +288,16 @@ def install():
     if _installed:
         return
     from bot.services import clients
-    clients.deepseek_client.chat.completions.create = _make_fake_create()
+    fake = _make_fake_create()
+    clients.deepseek_client.chat.completions.create = fake
+    # EVERY DeepSeek client, not only the shared one. Several modules build
+    # their own OpenAI client from DEEPSEEK_API_KEY (out_of_scope_handler, the
+    # webhook's translation and spam checks, unified_classifier), and tests
+    # load the real .env, so a test that reached one of them made a real,
+    # PAID call nobody chose to make (found 2026-09-23 while measuring the
+    # live-test cost). Patching the library class answers them all with the
+    # same fake; the owner's rule is no paid call without asking, every time.
+    import openai.resources.chat.completions as _occ
+    _occ.Completions.create = lambda self, *a, **k: fake(*a, **k)
     _installed = True
     print("🧪 DeepSeek mock installed — LLM calls are deterministic/offline")

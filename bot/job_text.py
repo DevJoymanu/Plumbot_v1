@@ -105,3 +105,30 @@ def describes_a_job(text) -> bool:
     tokens = [t.replace("'", '') for t in _TOKEN_RE.findall(str(text or '').lower())]
     tokens = [t for t in tokens if t]
     return any(t not in CONTENTLESS_WORDS for t in tokens)
+
+
+# A room, a fixture or real work, named. Stricter than describes_a_job on
+# purpose: "Hi, can you help me?", "I need a plumber" and "Two" all describe
+# SOMETHING, but none of them says what the job is.
+_JOB_NAMED_RE = re.compile(
+    r"\b(?:bath ?rooms?|kitchens?|en-?suites?|toilets?|bath ?tubs?|tubs?|baths?"
+    r"|showers?|cubicles?|basins?|sinks?|vanit(?:y|ies)|geysers?|taps?|pipes?"
+    r"|drains?|chambers?|cisterns?|mixers?|tiles?|tiling|boreholes?|tanks?"
+    r"|gutters?|reticulation|install\w*|replac\w*|fix\w*|repair\w*|renovat\w*"
+    r"|redo\w*|re-do|remodel\w*|leak\w*|blocked|block(?:age|ed)|burst|unblock\w*"
+    r"|fitt?(?:ed|ing)|new (?:build|building|house|home|property)"
+    r"|build(?:ing)? a house|construction)\b", re.IGNORECASE)
+
+
+def names_a_job(text) -> bool:
+    """True when `text` names the job: a room, a fixture or real work.
+
+    Read right after the opener ("What needs doing, and is it one room or a
+    few?"), whose answer is the service type AND the description at once
+    (owner, 2026-09-23). A reply that names a job is taken as the description,
+    so "Can you tell me a bit more about the project?" goes ONLY when the
+    answer names no job. Deterministic and English only; a Shona answer is
+    left to the model's extraction as before. Pinned by the "opener answer"
+    cases in TEST 0.
+    """
+    return bool(_JOB_NAMED_RE.search(str(text or '')))

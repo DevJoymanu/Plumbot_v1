@@ -10133,6 +10133,10 @@ class _FakeNBAppt:
         self.project_type = project_type
         self.scheduled_datetime = scheduled_datetime
         self.status = status
+        # Written by the no-confirmation path (owner, 2026-09-23).
+        self.project_description = ''
+        self.customer_area = ''
+        self.internal_notes = ''
 
     def save(self, update_fields=None):
         pass
@@ -10161,6 +10165,13 @@ class _FakeNB(ResponseMixin):
 
     def _conversation_underway(self):
         return self._underway
+
+    def _set_question_retry_count(self, q, n):
+        pass
+
+    def _get_first_pass_question(self, q):
+        from bot import copy_catalog as _cc_nb
+        return _cc_nb.AREA_ASK_WHEREABOUTS if q == 'area' else None
 
 
 _nb = _FakeNB()
@@ -10243,13 +10254,28 @@ results.log(
 
 # The whole gate: fires once, records the service type so a "yes" advances,
 # then never fires again — and stays out of the later stages entirely.
+# Owner, 2026-09-23: no "So you need a new plumbing installation...?" (yes/no
+# only after friction or a question). Their words are the answer to the
+# opener: the service type AND the description are recorded, and the next
+# question is the area (the photo ask fronts it with the plan line).
+from bot import copy_catalog as _cc_nb2
 _nb1 = _FakeNB(nq='service_type')
 _r1 = _nb1._new_build_confirmation("It's a new building, plumbing on the plan")
 results.log(
-    "new build: confirmed at the scope stage, and the service type is recorded",
-    _r1 == 'So you need a new plumbing installation for a new building?'
-    and _nb1.appointment.project_type == 'New Plumbing Installation',
-    got=f"{_r1!r} / {_nb1.appointment.project_type!r}",
+    "new build: no yes/no; type and description recorded, the area is next",
+    _r1 == _cc_nb2.AREA_ASK_WHEREABOUTS
+    and _nb1.appointment.project_type == 'New Plumbing Installation'
+    and 'plumbing on the plan' in _nb1.appointment.project_description,
+    got=f"{_r1!r} / {_nb1.appointment.project_type!r} / {_nb1.appointment.project_description!r}",
+)
+results.log(
+    "new build: handled once per lead",
+    _nb1._new_build_confirmation("It's a new building") is None,
+)
+results.log(
+    "new build: a Shona lead keeps the confirmation until Shona copy is approved",
+    _FakeNB(nq='service_type')._new_build_confirmation('ndiri kuvaka imba itsva')
+    == _FakeNB()._new_build_confirm_question('house', True),
 )
 _nb2 = _FakeNB(nq='project_description', history=[
     {'role': 'assistant',
@@ -10267,15 +10293,15 @@ results.log(
 # the flow sat on `area` and they got "All good, what area are you in?".
 _nb_area = _FakeNB(nq='area')._new_build_confirmation("It's a new building")
 results.log(
-    "new build: confirmed even when the flow has moved on to the area",
-    _nb_area == 'So you need a new plumbing installation for a new building?',
+    "new build: noted even when the flow has moved on to the area",
+    _nb_area == _cc_nb2.AREA_ASK_WHEREABOUTS,
     got=repr(_nb_area),
 )
+_nb_hasarea = _FakeNB(nq='availability_date')
+_nb_hasarea.appointment.customer_area = 'Ruwa'
 results.log(
-    "new build: a captured description does not suppress it",
-    _FakeNB(nq='availability_date')._new_build_confirmation('new house')
-    == 'So you need a new plumbing installation for a new house?',
-    got=repr(_FakeNB(nq='availability_date')._new_build_confirmation('new house')),
+    "new build: with the area in hand the ordinary flow carries on",
+    _nb_hasarea._new_build_confirmation('new house') is None,
 )
 results.log(
     "new build: never raised over a lead who has already booked a slot",
@@ -10460,11 +10486,11 @@ results.log(
 # one from "a new house" before this runs, so an OPENING message was treated as
 # mid-conversation and lost its greeting (prod probe 2026-09-01).
 results.log(
-    "new build: first contact still greets before confirming",
+    "new build: first contact is greeted in the same line as the area question",
     _FakeNB(history=[{'role': 'user', 'content': 'I want to build a new house'}],
             project_type='New Plumbing Installation')
     ._new_build_confirmation('I want to build a new house')
-    == 'Hello,\n\nSo you need a new plumbing installation for a new house?',
+    == 'Hi, whereabouts are you based?',
     got=repr(_FakeNB(history=[{'role': 'user', 'content': 'I want to build a new house'}],
                      project_type='New Plumbing Installation')
              ._new_build_confirmation('I want to build a new house')),
@@ -10475,7 +10501,7 @@ results.log(
                      {'role': 'assistant', 'content': 'Hello, How may we assist you'},
                      {'role': 'user', 'content': 'I want to build a new house'}])
     ._new_build_confirmation('I want to build a new house')
-    == 'So you need a new plumbing installation for a new house?',
+    == 'Whereabouts are you based?',
     got=repr(_FakeNB(history=[{'role': 'user', 'content': 'Hello'},
                               {'role': 'assistant', 'content': 'Hello, How may we assist you'},
                               {'role': 'user', 'content': 'I want to build a new house'}])
@@ -13626,6 +13652,7 @@ try:
         ("Two bathrooms, we're replacing an old tub in each", "a picture of the old tub"),
         ("I want to add a shower to our bathroom", "the spot in the bathroom where it's going"),
         ("We're building a new house and need all the plumbing done", "a plan, drawings or a picture of the site"),
+        ("It's a new building and we require installation of all the plumbing on the plan", "a plan, drawings or a picture of the site"),
         ("leaking pipe under the kitchen sink", "a picture of the leak"),
         ("kitchen sink blocked", "a picture of the sink"),
         ("bathroom needs work", "a picture of the bathroom"),
@@ -13727,6 +13754,22 @@ try:
 except Exception as e:
     import traceback as _tb
     results.log("hesitation", False, got=_tb.format_exc()[-600:])
+
+# -- opener answer (owner, 2026-09-23) -------------------------------------------
+# The opener's answer is the service type AND the description: a reply that
+# names a room, a fixture or real work is taken as the description, so "Can you
+# tell me a bit more about the project?" goes only when the answer names no job.
+try:
+    from bot.job_text import names_a_job as _naj
+    for _m, _want in (("Two bathrooms, we're replacing an old tub in each", True),
+                      ("bathroom needs work", True), ("my toilet is leaking", True),
+                      ("We are building a new house", True), ("geyser", True),
+                      ("Hi, can you help me?", False), ("I need a plumber", False),
+                      ("price?", False), ("Two", False), ("need plumbing done", False)):
+        results.log(f"opener answer: {_m!r} names a job = {_want}", _naj(_m) is _want)
+except Exception as e:
+    import traceback as _tb
+    results.log("opener answer", False, got=_tb.format_exc()[-600:])
 
 
 if GATE_ONLY:

@@ -5339,6 +5339,31 @@ class ResponseMixin:
                 # new house", were being answered by the standalone-question
                 # answerer long before they got this far.)
 
+                # The opener's answer IS the service type and the description
+                # (owner, 2026-09-23): "What needs doing, and is it one room or
+                # a few?" answered with a job ("two bathrooms, replacing an old
+                # tub") is taken as the description even when the model's
+                # extraction missed it, and the flow moves on (the job is known
+                # once a description is, so the service question is skipped
+                # too). "Can you tell me a bit more about the project?" is then
+                # asked ONLY when the answer names no job ("hi, can you help
+                # me?"). Deterministic (job_text.names_a_job), English only.
+                if (next_question in ('service_type', 'project_description')
+                        and self._last_assistant_was_opener()):
+                    from bot.job_text import names_a_job
+                    appt = self.appointment
+                    if (names_a_job(incoming_message)
+                            and not str(getattr(appt, 'project_description', '') or '').strip()):
+                        appt.project_description = ' '.join(
+                            (incoming_message or '').split())[:500]
+                        try:
+                            appt.save(update_fields=['project_description'])
+                        except Exception:
+                            logger.warning("Could not keep the opener answer as the "
+                                           "description", exc_info=True)
+                        next_question = self.get_next_question_to_ask()
+                        retry_count = self._get_question_retry_count(next_question)
+
                 if retry_count == 0:
                     first_pass = self._get_first_pass_question(next_question)
                     if first_pass:
@@ -5641,10 +5666,18 @@ class ResponseMixin:
             'plumbing itsva yeimba itsva',
         )
 
+        # Written when a new build is noted without the confirm question
+        # (owner, 2026-09-23), so the step runs once per lead like the old
+        # question did.
+        NEW_BUILD_NOTED_TAG = '[NEW_BUILD_NOTED]'
+
         def _already_confirmed_new_build(self) -> bool:
-            """True when a previous assistant turn already put the new-build
-            confirmation to this lead. Asking it twice is the bot loop."""
+            """True when this lead's new build was already handled: the note
+            tag, or (older leads) a previous assistant turn that put the
+            new-build confirmation. Handling it twice is the bot loop."""
             try:
+                if self.NEW_BUILD_NOTED_TAG in (getattr(self.appointment, 'internal_notes', '') or ''):
+                    return True
                 history = getattr(self.appointment, 'conversation_history', None) or []
             except Exception:
                 return False
@@ -5987,6 +6020,54 @@ class ResponseMixin:
             msg = (message or '').lower()
             is_shona = (detect_language_simple(message or '') == 'shona'
                         or any(re.search(p, msg) for p in self._NEW_BUILD_SHONA))
+
+            # No yes/no confirmation (owner, 2026-09-23: yes/no only after
+            # friction or a customer question). It used to ask "So you need a
+            # new plumbing installation for a new house?"; now their words ARE
+            # the answer to the opener (service type recorded above, their
+            # message kept as the description when it names a job, the rule
+            # that chat is never the description), and the next question is
+            # the area, which the photo ask (bot/photo_ask.py) fronts with
+            # "You can send us a plan, drawings or a picture of the site, if
+            # you have one." Once per lead: NEW_BUILD_NOTED_TAG joins the old
+            # confirmation markers in _already_confirmed_new_build. Shona keeps
+            # the old question until the owner approves Shona copy for this.
+            # Pinned by the "new build" cases in TEST 0.
+            if not is_shona:
+                from bot.job_text import describes_a_job
+                fields = []
+                if (not str(getattr(appt, 'project_description', '') or '').strip()
+                        and describes_a_job(message)):
+                    appt.project_description = ' '.join((message or '').split())[:500]
+                    fields.append('project_description')
+                notes = getattr(appt, 'internal_notes', '') or ''
+                if self.NEW_BUILD_NOTED_TAG not in notes:
+                    appt.internal_notes = f'{notes}\n{self.NEW_BUILD_NOTED_TAG}'.strip()
+                    fields.append('internal_notes')
+                if fields:
+                    try:
+                        appt.save(update_fields=fields)
+                    except Exception:
+                        logger.warning("Could not record the new build", exc_info=True)
+                logger.info("New build noted (no confirm question) from: %r",
+                            (message or '')[:80])
+                if str(getattr(appt, 'customer_area', '') or '').strip():
+                    return None     # area in hand: the ordinary flow carries on
+                self._set_question_retry_count('area', 1)
+                area_q = self._get_first_pass_question('area')
+                # A lead whose FIRST message is the new build is greeted: "Hi,
+                # what area are you in?" (the photo ask then makes it "Hi, you
+                # can send us a plan... What area are you in?"). Not "Hello,"
+                # in front of "All good, ...", which read "Hello, All good."
+                # Counted off their own turns, as below.
+                first_turns = sum(
+                    1 for m in (getattr(appt, 'conversation_history', None) or [])
+                    if isinstance(m, dict) and m.get('role') == 'user'
+                    and not str(m.get('content') or '').startswith('['))
+                if first_turns <= 1:
+                    return 'Hi, ' + area_q.split(', ', 1)[-1][:1].lower() + area_q.split(', ', 1)[-1][1:]
+                return area_q
+
             question = self._new_build_confirm_question(subject, is_shona)
             logger.info("New-build confirmation for subject=%r from: %r",
                         subject, (message or '')[:80])
