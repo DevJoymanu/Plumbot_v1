@@ -3695,6 +3695,16 @@ def finalise_outbound(reply: str, appointment, message_body: str = None,
         if _noted:
             print("💬 Visit price stated once, with the availability ask")
 
+    # The photo or plan ask rides in front of the area question, once (owner,
+    # 2026-09-23; bot/photo_ask.py). Here, at the choke point, because several
+    # paths ask the area and every one of them should carry it. After the
+    # visit-price note (which only touches the availability ask) and before
+    # the dash and one-question passes, which it must survive.
+    from bot.photo_ask import add_photo_ask
+    reply, _photo = add_photo_ask(reply, appointment, message_body)
+    if _photo:
+        print("📷 Photo or plan ask added before the area question")
+
     # We, never "the plumber" (owner rule): the business speaks as one.
     from bot.utils import speak_as_we
     _as_we = speak_as_we(reply)

@@ -381,3 +381,14 @@ PLAN_QUOTE_CHECK = (
     "{hi}, just checking the quote we sent for the {job} came through okay. "
     "Any questions on it?"
 )
+
+# The photo or plan ask (owner, 2026-09-23, decisions 7/7a/7b): once the lead
+# has said what needs doing, the reply that asks their area first asks for a
+# picture of what is there, named from THEIR words, as a request rather than a
+# question, so the area stays the one question. Asked once, never chased; a
+# lead with nothing just carries on. Chosen and inserted by bot/photo_ask.py.
+# English only until the owner approves the Shona drafts.
+PHOTO_ASK_EXISTING = "If you have one, send us a picture of {thing} so we can see what's there."
+PHOTO_ASK_NEW_SPOT = "If you have one, send us a picture of {spot} where it's going."
+PHOTO_ASK_NEW_BUILD = "If you have a plan or drawings, send them through, or a picture of the site."
+PHOTO_ASK_UNCLEAR = "If you have a picture of what's there now, or a plan, send it through."

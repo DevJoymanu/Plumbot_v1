@@ -13,7 +13,11 @@ reject: US$
 reject: plumbed fresh
 
 > new installation
-expect: all good, what area are you in?
+# The area question now carries the photo or plan ask in front of it
+# (owner, 2026-09-23, bot/photo_ask.py): a new installation gets the
+# either-or line, and the area stays the one question.
+expect: what area are you in?
+expect: a picture of what's there now, or a plan
 reject: US$
 
 > Not in Harare but in Hurungwe (Magunje) to be precise.
