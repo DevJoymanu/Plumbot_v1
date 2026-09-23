@@ -124,7 +124,9 @@ def build_reminder(call_email, appointment, now=None):
     return REMINDER_SUBJECT_PREFIX + subject, shift(text), shift(html)
 
 
-def build_call_email(intro, opening, branches, details, button_url):
+def build_call_email(intro, opening, branches, details, button_url,
+                     button_label='Log the call', button_intro=None,
+                     extra_button=None):
     """(text, html) for a "please call this lead" email, in the owner's layout.
 
     WHAT: the layout the owner approved for Barmak lead 1162 (2026-09-22):
@@ -137,6 +139,11 @@ def build_call_email(intro, opening, branches, details, button_url):
     first-paragraph intro and "Would X or Y suit you better?" shape that
     build_reminder rewrites for the 24-hour reminder.
     HOW: `branches` is [(title, [lines])], `details` is [(label, value)].
+    `button_label` / `button_intro` reword the form button (the plan email's
+    is "I've sent the quote"); `extra_button` is an optional (label, url,
+    note) second button under it, used by the plan email for the pre-filled
+    WhatsApp message (owner decision E2). Both default to the call email's
+    own wording, so existing callers are unchanged.
     """
     from html import escape
     p = 'margin:0 0 12px;font:15px/1.5 Arial,sans-serif;color:#1a1a1a;'
@@ -154,17 +161,28 @@ def build_call_email(intro, opening, branches, details, button_url):
         html += ['<p style="%smargin-left:14px;">%s</p>' % (p, escape(line, quote=False))
                  for line in lines]
         text += [title + ':'] + ['  ' + line for line in lines] + ['']
-    html.append('<p style="%smargin-top:20px;"><b>After the call, tap below and fill in '
-                'how it went:</b></p>' % p)
+    button_intro = button_intro or 'After the call, tap below and fill in how it went:'
+    html.append('<p style="%smargin-top:20px;"><b>%s</b></p>'
+                % (p, escape(button_intro, quote=False)))
     html.append('<p style="margin:0 0 24px;"><a href="%s" style="display:inline-block;'
                 'background:#1a73e8;color:#fff;text-decoration:none;font:bold 15px Arial,'
-                'sans-serif;padding:12px 22px;border-radius:6px;">Log the call</a></p>'
-                % escape(button_url))
+                'sans-serif;padding:12px 22px;border-radius:6px;">%s</a></p>'
+                % (escape(button_url), escape(button_label, quote=False)))
+    if extra_button:
+        x_label, x_url, x_note = extra_button
+        html.append('<p style="%smargin-bottom:4px;">%s</p>' % (p, escape(x_note, quote=False)))
+        html.append('<p style="margin:0 0 24px;"><a href="%s" style="display:inline-block;'
+                    'border:1.5px solid #1a9e4a;color:#1a9e4a;text-decoration:none;font:bold 15px '
+                    'Arial,sans-serif;padding:11px 20px;border-radius:6px;">%s</a></p>'
+                    % (escape(x_url), escape(x_label, quote=False)))
     html.append('<p style="%s">Lead details</p>' % h)
     html += ['<p style="%smargin-bottom:6px;"><b>%s:</b> %s</p>'
              % (p, escape(k, quote=False), escape(v, quote=False)) for k, v in details]
     html.append('</div>')
-    text += ['After the call, fill in how it went: ' + button_url, '', 'LEAD DETAILS']
+    text += [button_intro + ' ' + button_url, '']
+    if extra_button:
+        text += [extra_button[2] + ' ' + extra_button[1], '']
+    text += ['LEAD DETAILS']
     text += ['%s: %s' % kv for kv in details]
     return '\n'.join(text), '<meta charset="utf-8">' + ''.join(html)
 

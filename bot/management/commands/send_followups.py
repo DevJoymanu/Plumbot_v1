@@ -444,6 +444,12 @@ def handoff_eligible(lead) -> bool:
     try:
         from bot.lead_handoff import service_label
         from bot.plumber_link import plumber_number
+        # A plan lead is handed off too (owner decision F, 2026-09-23): the
+        # plan path never asks "bathroom or kitchen?", so the service type is
+        # often blank, and the plan itself says what the job is.
+        from bot.controller import on_plan_path
+        if on_plan_path(lead) and plumber_number(lead):
+            return True
         return bool(service_label(lead)
                     and str(getattr(lead, 'project_description', '') or '').strip()
                     and str(getattr(lead, 'customer_area', '') or '').strip()

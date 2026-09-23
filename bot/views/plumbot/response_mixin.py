@@ -4242,6 +4242,27 @@ class ResponseMixin:
             is_shona = detect_language_simple(
                 self._last_customer_message() or '') == 'shona'
 
+            # A timeline that resolves to a date more than a week out starts
+            # the job-date sequence at its portfolio step (owner decision I,
+            # 2026-09-23): the plan path already asked the date, so it is not
+            # asked again, and the ladder's -7/-3 check-ins, the email ask and
+            # (no email) the call question all follow. PlanLadderTests.
+            try:
+                from datetime import date as _d
+                from bot import job_date_ladder as _ladder
+                from bot.out_of_scope_handler import (
+                    _compute_followup_date as _cfd, start_ladder_at_portfolio)
+                _raw = (self.appointment.timeline or '').strip()
+                _iso, _ = _cfd(_raw)
+                _job_day = _d.fromisoformat(str(_iso)[:10]) if _iso else None
+                if _job_day is not None and _ladder.applies(_job_day):
+                    return start_ladder_at_portfolio(
+                        self.appointment, _job_day, source_message=_raw,
+                        is_shona=is_shona)
+            except Exception:
+                logger.warning("Could not start the job-date ladder for plan lead %s",
+                               getattr(self.appointment, 'pk', None), exc_info=True)
+
             # Hand them to the delayed-lead flow with a real check-back date,
             # rather than leaving them in the booking flow with nothing to ask.
             try:

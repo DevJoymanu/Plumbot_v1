@@ -3,9 +3,15 @@ bot/plan_quote.py
 =================
 Everything that happens after a lead sends a real plan (spec §10.3 to §10.5).
 
-The plan carries the measurements, so there is no site visit to sell. What the
-bot does instead is get the plan and the job context to the plumber, chase the
-plumber until they say the quote went out, then chase the lead.
+The plan carries the measurements, so there is no site visit to sell. The
+owner's plan sequence (2026-09-23): the bot collects the description, area and
+timeline; an hour after the plan arrives, and only if they have not booked,
+the plumber gets ONE email with the call script, the plan and a pre-filled
+WhatsApp message (plumber_notifications.send_plan_quote_email; no reminders
+after it, PLUMBER_REMINDER_OFFSET_HOURS is empty); an hour after he taps "I've
+sent the quote" the lead is asked whether it came through. A timeline more
+than a week out also starts the job-date sequence (the delay flow's email and
+portfolio step), and the email labels it SLOW LEAD.
 
 Built to the same rules as `bot/post_visit.py`, which is the module this is
 modelled on:
@@ -25,12 +31,9 @@ modelled on:
 - **One bad lead must not stop the run.** Each lead is ticked inside its own
   try.
 
-Branch B waits for a contact window before it messages the lead, because it
-fires on a clock: twelve hours after a plan that arrived at 3pm is 3am. Branch
-A does not, because it is triggered by the plumber tapping the form, and they
-only do that during the working day. The window itself is read from
-`send_followups.CONTACT_WINDOWS`, never copied, so the owner moves it in one
-place.
+The lead's quote check goes on WhatsApp only inside the free window and the
+contact hours, else by email inside the email hours, both read from
+send_followups (CONTACT_WINDOWS, EMAIL_WINDOWS), never copied.
 """
 
 from __future__ import annotations
@@ -48,13 +51,10 @@ logger = logging.getLogger(__name__)
 PLUMBER_NOTIFY_DELAY_HOURS = 1
 
 # Chase the plumber at these hours after the first email, until the form is in.
-# A list, because the count is read off it: adding a fourth reminder here is
-# the whole change.
-PLUMBER_REMINDER_OFFSET_HOURS = (2, 4, 8)
-
-# The plumber never answered. Rather than leave the lead sitting, assume the
-# quote went out and follow up anyway.
-ASSUME_QUOTE_SENT_AFTER_HOURS = 12
+# EMPTY on purpose (owner decision G2, 2026-09-23): one email only, no
+# reminders. A tuple, because the count is read off it: putting hours back
+# here (it was (2, 4, 8)) is the whole change.
+PLUMBER_REMINDER_OFFSET_HOURS = ()
 
 # Once the plumber DOES confirm, give them an hour before we ask the lead about
 # a quote they may only just have sent.
@@ -184,16 +184,13 @@ def projected_emails(appointment):
                  if request.reminders_sent >= number else None,
                  'Asks whether they have quoted this lead yet.', to='plumber')
 
-    # The lead's own follow-up: an hour after the plumber confirms (Branch A),
-    # or at +12h assuming the quote went out (Branch B).
-    if request.plumber_form_completed_at:
+    # The lead's own follow-up: an hour after the plumber confirms the quote
+    # went out, and only then (owner decision H1; the +12h "assume it went"
+    # branch is gone, see _tick_lead_followup).
+    if request.plumber_form_completed_at and request.quote_status == 'sent_confirmed':
         due = request.plumber_form_completed_at + timedelta(
             hours=LEAD_FOLLOWUP_AFTER_FORM_HOURS)
-        note = 'Asks the customer about the quote the plumber confirmed sending.'
-    elif alert_at:
-        due = alert_at + timedelta(hours=ASSUME_QUOTE_SENT_AFTER_HOURS)
-        note = ('The plumber never answered, so this assumes the quote went out '
-                'and asks the customer anyway.')
+        note = 'Asks the customer whether the quote came through.'
     else:
         due, note = None, ''
     _row('Quote follow-up to the customer', due,
@@ -356,54 +353,89 @@ def _tick_reminders(apt, row, now, dry_run, emit, stats):
 
 
 def _tick_lead_followup(apt, row, now, dry_run, emit, stats):
-    """Ask the lead about the quote.
+    """Ask the lead whether the quote came through, once.
 
-    Branch A: the plumber confirmed, so we wait an hour and ask.
-    Branch B: the plumber never answered. After 12h we assume the quote went
-    out and ask anyway, rather than leave the lead waiting on us. Both branches
-    end in the same place; only the trigger and the recorded status differ.
+    Only after the plumber has tapped "I've sent the quote", an hour later
+    (owner decision H1, 2026-09-23). The old Branch B (assume the quote went
+    out at +12h and ask anyway) is gone: with the ordinary follow-ups still
+    running for plan leads, their second touch being the plumber handoff
+    (decision F), a guessed "did you get it?" about a quote that may not exist
+    is the wrong message. A lead who is booked or suppressed is skipped.
     """
-    if row.lead_followup_sent_at:
+    if row.lead_followup_sent_at or not row.plumber_form_completed_at:
         return
-
-    if row.plumber_form_completed_at:
-        # Branch A. The plumber confirmed, so this follows an hour later.
-        if not _due(row.plumber_form_completed_at,
-                    LEAD_FOLLOWUP_AFTER_FORM_HOURS, now):
-            return
-        status = 'sent_confirmed'
-    else:
-        # Branch B. The plumber never answered, so at +12h we assume the quote
-        # went out rather than leave the lead waiting on us.
-        if not _due(row.plumber_email_sent_at,
-                    ASSUME_QUOTE_SENT_AFTER_HOURS, now):
-            return
-        # Branch B alone snaps to the contact window. Branch A is triggered by
-        # the plumber tapping the form, which they only do during the working
-        # day; Branch B fires on a clock and would otherwise land at 3am, twelve
-        # hours after a plan that arrived at 3pm.
-        if not in_contact_window(now):
-            return
-        status = 'assumed'
-
+    # Only when the plumber said the quote went out: a lead is never asked
+    # about a quote nobody has confirmed sending.
+    if row.quote_status != 'sent_confirmed':
+        return
+    if not _due(row.plumber_form_completed_at, LEAD_FOLLOWUP_AFTER_FORM_HOURS, now):
+        return
     # Re-checked immediately before a customer-facing send, not only at the top
     # of the tick: the plumber may have booked this lead an hour ago.
     if lead_is_done(apt):
         stats['skipped'] += 1
         return
-
     if dry_run:
-        emit('[dry-run] quote follow-up -> lead (apt {}, {})'.format(
-            apt.pk, status))
+        emit('[dry-run] quote check -> lead (apt {})'.format(apt.pk))
         stats['lead_followups'] += 1
         return
-
-    row.quote_status = row.quote_status or status
+    channel = _send_quote_check(apt, now)
+    if channel is None:
+        return                     # no sending hour yet; the next tick retries
+    row.quote_status = row.quote_status or 'sent_confirmed'
     row.lead_followup_sent_at = now
     row.save(update_fields=['quote_status', 'lead_followup_sent_at'])
     stats['lead_followups'] += 1
-    emit('[follow-up] lead asked about the quote (apt {}, {})'.format(
-        apt.pk, status))
+    emit('[follow-up] quote check to the lead via {} (apt {})'.format(channel, apt.pk))
+
+
+def _send_quote_check(apt, now):
+    """Send copy_catalog.PLAN_QUOTE_CHECK. Returns the channel used, 'none'
+    when no free channel exists (recorded as done so it is not retried
+    forever), or None when an email must wait for EMAIL_WINDOWS.
+
+    WhatsApp only inside the free window and the contact hours (we never pay
+    for templates), through the outbound chain with its WAMID stamped; else
+    email, only inside the email hours.
+    """
+    from bot import copy_catalog
+    from bot.lead_handoff import service_label
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    job = (service_label(apt) or '').lower() or 'job'
+    text = copy_catalog.PLAN_QUOTE_CHECK.format(
+        hi=f'Hi {name.split()[0]}' if name else 'Hi there', job=job)
+    try:
+        from bot.whatsapp_window import may_send_proactively
+        wa_ok = may_send_proactively(apt) and in_contact_window(now)
+    except Exception:
+        wa_ok = False
+    if wa_ok:
+        from bot.whatsapp_cloud_api import get_client_for_tenant
+        from bot.whatsapp_webhook import _finalised_for_send
+        out = _finalised_for_send(text, apt, check=False)
+        if not out:
+            return 'none'
+        clean = (apt.phone_number or '').replace('whatsapp:', '').replace('+', '').strip()
+        result = get_client_for_tenant(apt.tenant).send_text_message(clean, out)
+        logged = f'[PLAN QUOTE CHECK] {out}'
+        apt.add_conversation_message('assistant', logged)
+        try:
+            wamid = (result or {}).get('messages', [{}])[0].get('id')
+        except Exception:
+            wamid = None
+        apt.attach_message_id('assistant', logged, wamid)
+        return 'WhatsApp'
+    if (getattr(apt, 'customer_email', '') or '').strip():
+        if not in_email_window(now):
+            return None
+        from bot.customer_emails import _send, _wrap
+        from html import escape
+        if _send(apt, 'Your quote', _wrap(f'<p>{escape(text)}</p>', apt),
+                 category='quote_followup'):
+            apt.add_conversation_message('assistant', f'[PLAN QUOTE CHECK] (email) {text}')
+            return 'email'
+        return None
+    return 'none'
 
 
 def apply_plumber_form(row, *, outcome='quoting', quote_sent=False,

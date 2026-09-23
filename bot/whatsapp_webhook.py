@@ -759,6 +759,19 @@ def _schedule_plumber_alert(sender: str, appointment: "Appointment", file_url: "
         except Appointment.DoesNotExist:
             fresh = appointment
 
+        # A plan is not announced on arrival (owner's plan sequence, step 1):
+        # the ONE plumber email for it goes an hour later, with the job, the
+        # script and the plan attached (plan_quote / send_plan_quote_email),
+        # and only if they have not booked by then. So while that email is
+        # still pending, this alert is held back. Photos from anyone else,
+        # and files after the plan email has gone, still alert as before.
+        # Pinned by PlanQuoteEmailTests.
+        _plan_row = getattr(fresh, 'plan_quote_request', None)
+        if (_plan_row is not None and _plan_row.plan_received_at
+                and not _plan_row.plumber_email_sent_at):
+            print(f"Plan lead {fresh.id}: files alert held for the 1-hour plan email")
+            return
+
         customer_name = fresh.customer_name or "A customer"
 
         if urls:

@@ -8443,33 +8443,35 @@ class EmailFollowupSectionTests(StaffClientTestCase):
 
     # -- the plan path: the chases the user actually asked about -----------
 
-    def test_the_chases_asking_if_the_plumber_quoted_are_listed(self):
-        """"Have you quoted this lead yet?" - three of them, to the plumber."""
+    def test_no_chases_are_listed_for_the_plumber(self):
+        """One plumber email per plan, no "have you quoted?" chases (owner
+        decision G2, 2026-09-23), so the dashboard lists none."""
         from bot.models import PlanQuoteRequest
         PlanQuoteRequest.objects.create(
             appointment=self.lead, tenant=self.tenant,
             plan_received_at=timezone.now() - timedelta(hours=6),
-            plumber_email_sent_at=timezone.now() - timedelta(hours=5),
-            reminders_sent=1)
-        rows = self._rows()
-        chases = [r for r in rows if r['label'].startswith('Chase the plumber')]
-        self.assertEqual(len(chases), 3, self._labels())
-        self.assertEqual({r['to'] for r in chases}, {'plumber'})
-        self.assertEqual([r['status'] for r in chases][0], 'sent')
-        self.assertIn('Plan sent to the plumber', self._labels())
+            plumber_email_sent_at=timezone.now() - timedelta(hours=5))
+        labels = self._labels()
+        self.assertFalse([l for l in labels if l.startswith('Chase the plumber')], labels)
+        self.assertIn('Plan sent to the plumber', labels)
 
     def test_the_plan_path_also_lists_the_customers_own_follow_up(self):
+        """Listed once the plumber confirms the quote went out, and not
+        before (the guessed +12h check is gone, decision H1)."""
         from bot.models import PlanQuoteRequest
-        PlanQuoteRequest.objects.create(
+        row = PlanQuoteRequest.objects.create(
             appointment=self.lead, tenant=self.tenant,
             plan_received_at=timezone.now() - timedelta(hours=2),
             plumber_email_sent_at=timezone.now() - timedelta(hours=1))
+        self.assertNotIn('Quote follow-up to the customer', self._labels())
+        row.plumber_form_completed_at = timezone.now()
+        row.quote_status = 'sent_confirmed'
+        row.save()
+        self.lead.refresh_from_db()
         customer = [r for r in self._rows()
                     if r['label'] == 'Quote follow-up to the customer']
         self.assertEqual(len(customer), 1, self._labels())
         self.assertEqual(customer[0]['to'], 'customer')
-
-    # -- the visit check-ins ----------------------------------------------
 
     def test_the_visit_check_ins_are_listed(self):
         from bot.models import VisitProposal
@@ -8543,10 +8545,12 @@ class EmailFollowupSectionTests(StaffClientTestCase):
         PlanQuoteRequest.objects.create(
             appointment=self.lead, tenant=self.tenant,
             plan_received_at=timezone.now() - timedelta(hours=6),
-            plumber_email_sent_at=timezone.now() - timedelta(hours=5))
+            plumber_email_sent_at=timezone.now() - timedelta(hours=5),
+            plumber_form_completed_at=timezone.now() - timedelta(minutes=10),
+            quote_status='sent_confirmed')
         page = self._page()
         self.assertIn('Email Follow-ups', page)
-        self.assertIn('Chase the plumber 1 of 3', page)
+        self.assertIn('Plan sent to the plumber', page)
         self.assertIn('to the plumber', page)
         self.assertIn('to the customer', page)
         # Font Awesome 6 FREE is what this project loads: a Pro-only icon would

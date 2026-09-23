@@ -143,17 +143,18 @@ class PlanQuoteSchedulerTests(TestCase):
 
     @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
-    def test_reminders_fire_at_2_4_and_8_hours_then_stop(self, send, remind):
+    def test_there_are_no_plumber_reminders(self, send, remind):
+        """One email only (owner decision G2, 2026-09-23): the 2/4/8-hour
+        "have you quoted?" chases are gone."""
         row = self._row()
         self._tick(now=row.plan_received_at + timedelta(hours=1, minutes=1))
         row.refresh_from_db()
         anchor = row.plumber_email_sent_at
-
-        for hours, expected in ((1, 0), (2, 1), (4, 1), (8, 1), (24, 0)):
+        for hours in (2, 4, 8, 24):
             stats = self._tick(now=anchor + timedelta(hours=hours, minutes=1))
-            self.assertEqual(stats['reminders'], expected, f'at +{hours}h')
+            self.assertEqual(stats['reminders'], 0, f'at +{hours}h')
         row.refresh_from_db()
-        self.assertEqual(row.reminders_sent, 3)
+        self.assertEqual(row.reminders_sent, 0)
 
     @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
@@ -191,8 +192,11 @@ class PlanQuoteSchedulerTests(TestCase):
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.customer_email, 'new@example.com')
 
+    @patch('bot.plan_quote.in_email_window', return_value=True)
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
-    def test_lead_followup_waits_an_hour_after_the_plumber_confirms(self, send):
+    def test_lead_followup_waits_an_hour_after_the_plumber_confirms(self, send, _window):
+        """An hour after "I've sent the quote", one quote check (decision H1).
+        This lead is outside the free WhatsApp window, so it goes by email."""
         from bot.plan_quote import apply_plumber_form
         row = self._row()
         self._tick(now=row.plan_received_at + timedelta(hours=1, minutes=1))
@@ -207,37 +211,36 @@ class PlanQuoteSchedulerTests(TestCase):
             self._tick(now=done + timedelta(hours=1, minutes=1))['lead_followups'], 1)
         row.refresh_from_db()
         self.assertEqual(row.quote_status, 'sent_confirmed')
+        self.lead.refresh_from_db()
+        self.assertTrue(any('just checking the quote we sent' in str(t.get('content', ''))
+                            for t in self.lead.conversation_history or []))
 
+    @patch('bot.plan_quote.in_email_window', return_value=True)
+    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
+    def test_no_quote_check_when_the_plumber_did_not_send_one(self, send, _window):
+        from bot.plan_quote import apply_plumber_form
+        row = self._row()
+        self._tick(now=row.plan_received_at + timedelta(hours=1, minutes=1))
+        row.refresh_from_db()
+        apply_plumber_form(row, quote_sent=False)
+        row.refresh_from_db()
+        self.assertEqual(self._tick(
+            now=row.plumber_form_completed_at + timedelta(hours=2))['lead_followups'], 0)
+
+    @patch('bot.plan_quote.in_email_window', return_value=True)
     @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
-    def test_a_silent_plumber_does_not_strand_the_lead(self, send, remind):
-        """After 12h we assume the quote went out and follow up anyway, rather
-        than let the lead go cold waiting on us.
-
-        The anchor is pinned so +12h lands inside a contact window. Left on the
-        real clock this test would pass or fail depending on the time of day it
-        was run, which is worse than no test.
-        """
-        import pytz
-        from datetime import datetime
-        from bot.management.commands.send_followups import CONTACT_WINDOWS
-
-        tz = pytz.timezone('Africa/Johannesburg')
-        open_h, open_m = CONTACT_WINDOWS[0][:2]
-        # 12 hours before the first window opens, plus a few minutes so the
-        # +12h moment sits inside it rather than exactly on the edge.
-        anchor = tz.localize(datetime(2026, 6, 23, open_h, open_m + 5)) - timedelta(hours=12)
-
+    def test_a_silent_plumber_means_no_guessed_quote_check(self, send, remind, _window):
+        """The old +12h "assume the quote went out" branch is gone (decision
+        H1): the ordinary follow-ups keep going instead, their second touch the
+        plumber handoff (decision F)."""
         row = self._row()
-        row.plumber_email_sent_at = anchor
-        row.save(update_fields=['plumber_email_sent_at'])
-
-        self.assertEqual(
-            self._tick(now=anchor + timedelta(hours=11))['lead_followups'], 0)
-        self.assertEqual(
-            self._tick(now=anchor + timedelta(hours=12))['lead_followups'], 1)
+        self._tick(now=row.plan_received_at + timedelta(hours=1, minutes=1))
         row.refresh_from_db()
-        self.assertEqual(row.quote_status, 'assumed')
+        anchor = row.plumber_email_sent_at
+        for hours in (12, 24, 48):
+            self.assertEqual(
+                self._tick(now=anchor + timedelta(hours=hours))['lead_followups'], 0)
 
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
     def test_a_booked_lead_is_never_chased(self, send):
@@ -412,42 +415,35 @@ class PlanQuoteContactWindowTests(TestCase):
         self.assertFalse(in_contact_window(self._at(7, 0)))
         self.assertFalse(in_contact_window(self._at(23, 0)))
 
-    @patch('bot.plumber_notifications.send_plumber_notification_email', return_value=True)
     @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
-    def test_branch_b_waits_for_a_window_rather_than_waking_the_lead(self, send, remind):
-        """A plan at 3pm makes +12h land at 3am. The follow-up holds until the
-        next window instead of going then."""
-        from bot.plan_quote import run_plan_quote_tick
-
-        self.row.plumber_email_sent_at = self._at(15, 0)
-        self.row.save(update_fields=['plumber_email_sent_at'])
-
-        at_3am = self._at(3, 0) + timedelta(days=1)
-        self.assertEqual(
-            run_plan_quote_tick(now=at_3am)['lead_followups'], 0)
-
-        from bot.management.commands.send_followups import CONTACT_WINDOWS
-        open_h, open_m = CONTACT_WINDOWS[0][:2]
-        in_window = self._at(open_h, open_m + 5) + timedelta(days=1)
-        self.assertEqual(
-            run_plan_quote_tick(now=in_window)['lead_followups'], 1)
-
-    @patch('bot.plumber_notifications.send_email_to_recipients', return_value=True)
-    def test_branch_a_does_not_wait_for_a_window(self, send):
-        """It is triggered by the plumber tapping the form, and they only do
-        that during the working day."""
+    def test_an_emailed_quote_check_waits_for_the_email_hours(self, send):
+        """Outside the free WhatsApp window the check goes by email, and email
+        waits for EMAIL_WINDOWS (12:30-13:30, 18:00-19:30)."""
         from bot.plan_quote import apply_plumber_form, run_plan_quote_tick
-
-        self.row.plumber_email_sent_at = self._at(12, 40)
+        self.row.plumber_email_sent_at = self._at(12, 0)
         self.row.save(update_fields=['plumber_email_sent_at'])
         apply_plumber_form(self.row, quote_sent=True, now=self._at(13, 0))
-        self.row.refresh_from_db()
+        self.assertEqual(run_plan_quote_tick(now=self._at(14, 1))['lead_followups'], 0)
+        self.assertEqual(run_plan_quote_tick(now=self._at(18, 5))['lead_followups'], 1)
 
-        # An hour later is 14:00, inside a window today, but the point is that
-        # the branch does not consult one at all.
-        self.assertEqual(
-            run_plan_quote_tick(now=self._at(14, 1))['lead_followups'], 1)
-
+    def test_inside_the_free_window_it_goes_on_whatsapp_through_the_chain(self):
+        """Inside the free window and contact hours: WhatsApp, through the
+        outbound chain, logged with its WAMID."""
+        from unittest.mock import MagicMock
+        from bot.plan_quote import apply_plumber_form, run_plan_quote_tick
+        self.row.plumber_email_sent_at = self._at(12, 0)
+        self.row.save(update_fields=['plumber_email_sent_at'])
+        apply_plumber_form(self.row, quote_sent=True, now=self._at(13, 0))
+        client = MagicMock()
+        client.send_text_message.return_value = {'messages': [{'id': 'wamid.X'}]}
+        with patch('bot.whatsapp_window.may_send_proactively', return_value=True), \
+             patch('bot.whatsapp_cloud_api.get_client_for_tenant', return_value=client), \
+             patch('bot.whatsapp_webhook._finalised_for_send', side_effect=lambda t, *a, **k: t) as chain:
+            self.assertEqual(run_plan_quote_tick(now=self._at(14, 1))['lead_followups'], 1)
+        chain.assert_called_once()
+        sent = client.send_text_message.call_args[0][1]
+        self.assertIn('just checking the quote we sent', sent)
+        self.assertTrue(sent.endswith('Any questions on it?'))
 
 class PlanQuestionOrderTests(TestCase):
     """The plan path asks a different set of questions, in a different order.
@@ -617,3 +613,87 @@ class PlanFarTimelineTests(TestCase):
         self.assertNotIn('—', reply)
         self.assertNotIn(' - ', reply)
         self.assertTrue(all(ord(c) < 0x2500 for c in reply))
+
+
+class PlanQuoteEmailTests(TestCase):
+    """The one plumber email for a plan lead (owner's plan sequence, 2026-09-23):
+    the call-email layout with the plan, a pre-filled WhatsApp button, the
+    missing fields asked in the script, and SLOW LEAD on a far-off timeline."""
+
+    def setUp(self):
+        from bot.plan_quote import ensure_request
+        self.lead = make_lead(8610, customer_name='Rudo Moyo', status='pending',
+                              project_description='ensuite, full redo')
+        self.row = ensure_request(self.lead)
+
+    def _send(self):
+        from bot.plumber_notifications import send_plan_quote_email
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as send, \
+             patch('bot.plumber_notifications.split_notification_recipients',
+                   return_value=(['plumber@example.com'], [])):
+            self.assertTrue(send_plan_quote_email(self.row))
+        args, kwargs = send.call_args
+        return args[1], args[2], kwargs['html_message']
+
+    def test_script_first_asks_what_is_missing_and_has_the_whatsapp_button(self):
+        from bot.call_brief import CALL_SUBJECT_PREFIX
+        subject, text, html = self._send()
+        self.assertTrue(subject.startswith('[Plan] Call'))
+        self.assertFalse(subject.startswith(CALL_SUBJECT_PREFIX))   # no 24h chase
+        self.assertLess(text.index('SCRIPT'), text.index('LEAD DETAILS'))
+        self.assertIn('Whereabouts is the site?', text)           # area missing
+        self.assertIn("I've sent the quote", html)
+        self.assertNotIn('plumbing service', text)   # no type: "the plan" alone
+        self.assertIn('Message them on WhatsApp', html)
+        self.assertIn('wa.me/15550008610?text=', html)
+
+    def test_a_far_off_timeline_is_labelled_slow_and_not_pushed(self):
+        self.lead.customer_area = 'Budiriro'
+        self.lead.timeline = 'in three months'
+        self.lead.save()
+        from bot.plan_quote import record_timeline
+        self.row.timeline_days = 90
+        self.row.save(update_fields=['timeline_days'])
+        subject, text, _ = self._send()
+        self.assertIn('SLOW LEAD', subject)
+        self.assertIn('SLOW LEAD', text)
+        self.assertNotIn('suit you better to get booked in', text)
+        self.assertIn('Are you still looking at in three months to get started?', text)
+
+    def test_the_instant_files_alert_is_held_while_the_plan_email_is_pending(self):
+        from bot import whatsapp_webhook as wh
+        with patch.object(wh, 'send_plumber_notification_email') as alert, \
+             patch.object(wh, 'MEDIA_DEBOUNCE_SECONDS', 0):
+            wh._schedule_plumber_alert('15550008610', self.lead, 'https://x/plan.pdf', 'document')
+            import time
+            time.sleep(0.3)
+        alert.assert_not_called()
+
+    def test_a_plan_lead_gets_the_plumber_handoff_as_its_second_follow_up(self):
+        from bot.management.commands.send_followups import handoff_eligible
+        self.lead.plan_status = 'plan_uploaded'
+        self.lead.save(update_fields=['plan_status'])
+        with patch.object(Appointment, 'plumber_contact', return_value='+263771111111'):
+            self.assertTrue(handoff_eligible(self.lead))
+
+
+class PlanLadderTests(TestCase):
+    """A plan lead whose timeline is more than a week out joins the job-date
+    sequence at the email and portfolio step, never re-asked the date (owner
+    decision I, 2026-09-23)."""
+
+    def test_a_far_timeline_arms_the_ladder_and_asks_for_the_email(self):
+        from datetime import date
+        from bot import job_date_ladder as ladder
+        from bot.out_of_scope_handler import _read_pending, start_ladder_at_portfolio
+        lead = make_lead(8611, customer_name='Rudo', status='pending')
+        job = date.today() + timedelta(days=40)
+        reply = start_ladder_at_portfolio(lead, job, source_message='in about 6 weeks')
+        self.assertEqual(ladder.job_date(lead), job)
+        self.assertNotIn('Will it be okay if we follow up', reply)
+        self.assertIn('portfolio', reply)
+        self.assertIn('email', reply.lower())
+        pending = _read_pending(lead)
+        self.assertEqual(pending['category'], 'delay_email')
+        self.assertEqual(pending['original'], (job - timedelta(days=7)).isoformat())

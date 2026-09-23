@@ -373,3 +373,11 @@ LADDER_CALL_NO = "No problem, we won't call. Just message us here whenever you'r
 # decision B.1: a one-figure item says the figure covers both). Lower-case,
 # because it always follows a figure mid-sentence. PriceSplitRuleTests.
 MATERIALS_LABOUR_INCLUDED = "materials and labour included"
+
+# A plan lead, an hour after the plumber taps "I've sent the quote" (owner
+# decision H1, 2026-09-23): one short line, one question. Speaks as WE ("the
+# quote we sent"). Sent by plan_quote._send_quote_check.
+PLAN_QUOTE_CHECK = (
+    "{hi}, just checking the quote we sent for the {job} came through okay. "
+    "Any questions on it?"
+)

@@ -874,89 +874,138 @@ def _and_list(items) -> str:
     return ', '.join(items[:-1]) + ' and ' + items[-1]
 
 
-def send_plan_quote_email(row, *, dry_run=False):
-    """The first email: the job, the lead, and the plan attached.
+def _plan_lead_question(apt, gaps):
+    """The one question the plumber opens with: the first thing still missing,
+    else a re-check of the timeline (owner's plan sequence, A2: "re-confirm the
+    timeline in case it has changed"). Shared by the script and the WhatsApp
+    pre-fill so the two ask the same thing."""
+    if 'what the job is' in gaps:
+        return 'What exactly needs doing, so I price the right work?'
+    if 'the area' in gaps:
+        return 'Whereabouts is the site?'
+    timeline = ' '.join(str(getattr(apt, 'timeline', '') or '').split())
+    if not timeline:
+        return 'When are you hoping to get started?'
+    return f'Are you still looking at {timeline} to get started?'
 
-    Sent an hour after the plan arrives, and never sooner. The hour is what
-    the bot gets to collect the job and try for a booking before the plumber is
-    disturbed; a lead who books inside it generates no email at all. Whatever
-    the bot failed to get is named in the email for the plumber to ask.
+
+def send_plan_quote_email(row, *, dry_run=False):
+    """The one plumber email for a plan lead: the call script, the plan, and a
+    pre-filled WhatsApp message.
+
+    WHEN: an hour after the plan arrives, and only if the lead has not booked
+    in that hour (plan_quote._tick_one; the owner's plan sequence, step 3). It
+    is the ONLY plumber email for a plan: the instant "files received" alert is
+    held back for plans (whatsapp_webhook._schedule_plumber_alert) and there
+    are no reminders after it (owner decision G2).
+    WHAT (owner, 2026-09-23): the owner's call-email layout
+    (call_brief.build_call_email): intro, the script with the opening in a box,
+    "If ..." branches, then the lead's details. The script asks whatever the
+    bot could not get in the hour, else re-checks the timeline; a slow lead
+    (timeline more than a week out) is labelled SLOW LEAD in the subject and
+    the intro so it is not worked as an urgent callout, and its script does not
+    push for a booking. Under the "I've sent the quote" button is a second
+    button that opens the plumber's own WhatsApp to the lead with a message
+    typed in (decision E2: plan leads expect to hear back, so this one may be
+    sent first; every other lead still messages him first). Subject is NOT
+    call_brief.CALL_SUBJECT_PREFIX, so the 24h call reminder never chases it.
+    Pinned by PlanQuoteEmailTests.
     """
+    from urllib.parse import quote as _q
+
+    from bot.call_brief import _next_two_working_days, build_call_email
     from bot.customer_emails import _clean_phone, _service
-    from bot.plan_quote import form_url
+    from bot.plan_quote import form_url, missing_info, timeline_is_slow
+    from bot.utils import business_name_for
+    from django.utils import timezone as _tz
 
     apt = row.appointment
-    name = (getattr(apt, 'customer_name', '') or '').strip() or 'Unknown'
-    # Prose and subjects use lead_label (never "Unknown"); the labelled
-    # "Customer:" field below keeps the raw name, where Unknown is fine.
+    name = (getattr(apt, 'customer_name', '') or '').strip()
+    first = name.split()[0] if name else 'there'
     label = apt.lead_label()
     phone = _clean_phone(getattr(apt, 'phone_number', ''))
+    service = _service(apt).lower()
+    # A plan lead often has no service type (the plan path never asks), and
+    # _service then says "plumbing service": name the plan alone instead.
+    for_job = '' if service == 'plumbing service' else f' for the {service}'
     area = getattr(apt, 'customer_area', '') or 'not given'
-    timeline = getattr(apt, 'timeline', '') or 'not given'
-    description = getattr(apt, 'project_description', '') or 'not given'
-    link = form_url(row)
+    timeline = ' '.join(str(getattr(apt, 'timeline', '') or '').split()) or 'not given'
+    description = ' '.join(str(getattr(apt, 'project_description', '') or '').split()) or 'not given'
     data, filename = _plan_attachment(apt)
-
-    from bot.plan_quote import missing_info, timeline_is_slow
-
     gaps = missing_info(apt)
     slow = timeline_is_slow(apt)
+    try:
+        plumber = (apt.plumber_display_name() or '').strip()
+    except Exception:
+        plumber = ''
+    plumber = '' if plumber == 'the plumber' else plumber
+    plumber_first = plumber.split()[0] if plumber else ''
+    company = business_name_for(apt, default='').strip()
+    d1, d2 = _next_two_working_days(apt, _tz.now())
+    question = _plan_lead_question(apt, gaps)
 
-    # The subject carries the urgency, because it is what the plumber reads on
-    # a phone. A lead who wants the job in three months must not be worked as
-    # an emergency callout, and one who wants it this week must not be buried.
-    subject = ("[Plan, not urgent] Quote for {}".format(name) if slow
-               else "[Plan] Quote needed for {}".format(name))
+    pace = (f'SLOW LEAD: they want it around {timeline}, more than a week away. '
+            'It is a quote to win, not an urgent callout.' if slow else
+            'They want it within the week, so worth calling today.')
+    attached = ('The plan is attached.' if data else
+                'The plan could not be attached. Open the lead to view it.')
+    todo = (f' We could not get {_and_list(gaps)} out of them in the hour, so the '
+            'script asks.' if gaps else '')
+    intro = (f'Hi {plumber_first or "there"}, {label} sent us a plan{for_job} '
+             f'and has not booked, so please call them and read the script below. '
+             f'{pace} {attached}{todo}')
 
-    attached = ("The plan is attached." if data else
-                "The plan could not be attached. Open the lead to view it.")
+    who = f"it's {plumber_first}" + (f' from {company}' if company else '') if plumber_first \
+        else f"it's {company or 'us'}"
+    opening = (f"Hi {first}, {who}. Thanks for sending through the plan{for_job}. "
+               f"I'm putting your quote together. {question}")
+    if slow:
+        still_on = ['"Perfect. I\'ll send the quote over so you have it well before '
+                    'then. Take your time with it."']
+    else:
+        still_on = [f'"Perfect. I\'ll get the quote over to you today. Would {d1} or '
+                    f'{d2} suit you better to get booked in?"',
+                    'If they pick a day: "Morning or afternoon?"']
+    branches = [
+        ("If the timing still works", still_on),
+        ("If the timing has moved", [
+            '"No problem at all. Roughly when are you thinking now?" Note the new date.']),
+    ]
+    rest = [g for g in gaps if g != 'when they want it done']
+    extra_asks = {'what the job is': '"What exactly needs doing?"',
+                  'the area': '"And whereabouts is the site?"'}
+    later = [extra_asks[g] for g in rest[1:] if g in extra_asks]
+    if later:
+        branches.append(("Before you hang up, also ask", later))
+    branches += [
+        ("If they already have a quote from you", [
+            '"Did you get a chance to go over it? I can send it again if that helps."']),
+        ("If they went with someone else, or no longer need it", [
+            '"No worries at all. If it doesn\'t work out, you\'ve got my number."']),
+        ("If there's no answer", [
+            'Send them the WhatsApp message below, then leave it.']),
+    ]
+    details = [
+        ('Call', f'{name or "Name not given"}, +{phone}' if phone else (name or 'not given')),
+        ('Job', description),
+        ('Area', area),
+        ('Timeline', timeline + (' (slow lead)' if slow else '')),
+        ('Plan', 'attached' if data else 'open the lead to view it'),
+    ]
+    prefill = (f"Hi {first}, {who}. Thanks for sending through the plan{for_job}. "
+               f"I'm putting your quote together now. {question}")
+    extra = (('Message them on WhatsApp', f'https://wa.me/{phone}?text={_q(prefill, safe="")}',
+              'Or message them instead: this opens your WhatsApp with the message '
+              'typed in. Check it and press send.') if phone else None)
+    text, html = build_call_email(
+        intro, opening, branches, details, form_url(row),
+        button_label="I've sent the quote",
+        button_intro='Once the quote has gone, tap below so we can follow them up:',
+        extra_button=extra)
 
-    # An hour of asking did not get everything. Name exactly what is missing
-    # and ask the plumber to get it, rather than sending a half-filled sheet
-    # and hoping they notice the blanks.
-    todo = ('We could not get {} out of them in the hour before this went. '
-            'Worth asking when you call.'.format(_and_list(gaps)) if gaps else '')
+    subject = (f'[Plan, SLOW LEAD] Call {label}, quote{for_job}' if slow
+               else f'[Plan] Call {label} today, quote{for_job}')
 
-    pace = ('They are not in a rush, so this is a quote to win rather than a '
-            'job to squeeze in.' if slow else
-            'They want it soon, so worth getting to them today.')
-
-    message = (
-        f"{label} sent a plan, so there is no site visit to book. "
-        f"{attached}"
-        + "\n\n" + pace
-        + (("\n\n" + todo) if todo else "")
-        + "\n\n"
-        + f"Customer: {name}\n"
-        + f"WhatsApp: {phone}  " + (f"https://wa.me/{phone}" if phone else "") + "\n"
-        + f"Service: {_service(apt)}\n"
-        + f"Job: {description}\n"
-        + f"Area: {area}\n"
-        + f"Timeline: {timeline}\n\n"
-        + "Send them the quote, and push for a booking while you have them. "
-        + "Then tell us here so we stop chasing you and start following them "
-        + f"up:\n\n{link}\n"
-    )
-
-    html = (
-        f'<p><strong>{label}</strong> sent a plan, so there is no site visit to '
-        f'book. {attached}</p>'
-        + f'<p style="font-size:14px;color:#444;">{pace}</p>'
-        + (f'<p style="background:#fff4e5;border-radius:8px;padding:12px 14px;'
-           f'font-size:14px;color:#7a4b00;">{todo}</p>' if todo else '')
-        + f'<p style="font-size:14px;color:#444;">'
-        f'Customer: {name}<br>'
-        f'WhatsApp: {phone}<br>'
-        f'Service: {_service(apt)}<br>'
-        f'Job: {description}<br>'
-        f'Area: {area}<br>'
-        f'Timeline: {timeline}</p>'
-        f'<p><a href="{link}" style="display:inline-block;background:#0f766e;'
-        f'color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;'
-        f'font-size:16px;font-weight:bold;">I have sent the quote</a></p>'
-        f'<p style="font-size:13px;color:#888;">Telling us stops the reminders '
-        f'and starts the customer follow-up.</p>'
-    )
     # One path, attachment or not. send_plumber_notification_email cannot carry
     # a file, so this goes through the choke point directly and resolves the
     # same recipients: the tenant's own inbox in To, the operator in Bcc.
@@ -965,7 +1014,7 @@ def send_plan_quote_email(row, *, dry_run=False):
         logger.warning("No plumber notification email recipients configured.")
         return False
     return send_email_to_recipients(
-        recipients, subject, message,
+        recipients, subject, text,
         bcc=hidden,
         dry_run=dry_run,
         html_message=html,

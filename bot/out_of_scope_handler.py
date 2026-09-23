@@ -3394,6 +3394,57 @@ def _ladder_delay_reply(appointment, job_day, checkback, friendly_date,
     )
 
 
+def start_ladder_at_portfolio(appointment, job_day, source_message='',
+                              is_shona=False) -> str:
+    """Put a lead on the job-date ladder starting at the portfolio step.
+
+    WHAT: the delay flow for a job date more than a week out, minus its date
+    question: mark the delay, store the check-back (job - 7), arm the ladder,
+    then either send the portfolio by email (address on file) or ask for the
+    email, exactly as `_ladder_delay_reply`'s second part does. The answer to
+    the email ask is read by `_handle_delay_email_answer` as usual (a "no" gets
+    the portfolio on WhatsApp, the plumber handoff and, with no email, the call
+    question).
+    WHY: a PLAN lead's timeline has already been asked by the plan path, so
+    asking "will it be okay if we follow up on the 14th?" would re-ask the date
+    they just gave (owner decision I, 2026-09-23: start from the email and
+    portfolio step, never re-ask the date).
+    HOW: returns the reply text. Shona keeps the existing Shona portfolio copy.
+    Pinned by PlanLadderTests.
+    """
+    from bot import job_date_ladder as _ladder
+
+    mark_delay_signal(appointment, source_message or '')
+    checkback = _ladder.first_followup_date(job_day)
+    checkback_iso = checkback.isoformat()
+    _store_delay_followup_date(appointment, checkback_iso,
+                               source_message=source_message or None)
+    _ladder.arm(appointment, job_day)
+
+    if is_shona:
+        when = _checkback_when_phrase(checkback_iso, None, appointment,
+                                      is_shona=True) or ''
+        return _delay_email_ask(appointment, checkback_iso, when, is_shona=True)
+
+    if getattr(appointment, 'customer_email', None):
+        if '[DELAY_QUOTE_SENT]' in (appointment.internal_notes or ''):
+            return "Got it, thanks. Take your time with the portfolio."
+        from bot.customer_emails import send_delay_quote_email_async
+        send_delay_quote_email_async(
+            appointment, follow_up_date_str=_friendly_iso(checkback_iso))
+        _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
+        return ("Got it, thanks. I've sent our portfolio of past jobs with the "
+                "pricing to your email, so you've got it to look over."
+                + _plumber_offer_once(appointment))
+
+    _write_pending(appointment, 'delay_email', checkback_iso)
+    return (
+        "Got it, thanks. I'll send you our portfolio of past jobs with the "
+        f"pricing, so you've got something to look over. {_EMAIL_VALUE_CLAUSE}\n\n"
+        f"{copy_catalog.BEST_EMAIL_ASK}"
+    )
+
+
 def _handle_delay_confirm_answer(message: str, pending: dict, appointment) -> str:
     """
     Step 3: customer replied yes/no to the follow-up permission question.
