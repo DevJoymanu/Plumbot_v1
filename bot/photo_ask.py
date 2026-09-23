@@ -7,14 +7,17 @@ WHAT (owner, 2026-09-23, decisions 7, 7a, 7b): once the lead has said what
 needs doing, the reply that asks their area first asks for a picture of what
 is there, named from their OWN words:
 
-    replacing or fixing  "If you have one, send us a picture of the old tub so
-                          we can see what's there. What area are you in?"
-    adding something     "...a picture of the spot in the bathroom where it's
-                          going. What area are you in?"
-    a new build          "If you have a plan or drawings, send them through, or
-                          a picture of the site. What area are you in?"
-    can't tell           "If you have a picture of what's there now, or a plan,
-                          send it through. What area are you in?"
+    replacing or fixing  "You can send us a picture of the old tub if you have
+                          one. What area are you in?"
+    adding something     "You can send us a picture of the spot in the bathroom
+                          where it's going, if you have one. What area...?"
+    a new build          "You can send us a plan, drawings or a picture of the
+                          site, if you have one. What area are you in?"
+    can't tell           "You can send us a picture of what's there now, or a
+                          plan, if you have one. What area are you in?"
+
+The shape is the owner's (2026-09-23): open with "You can send us a picture",
+end with "if you have one", and let the area question finish the message.
 
 WHY: a picture of what is there proves we looked, makes the visit better, and
 a plan puts them on the plan path (a quote with no visit). It is a REQUEST,
@@ -95,12 +98,17 @@ _ROOMS = (('bathroom', 'bathroom'), ('en-?suite', 'ensuite'), ('kitchen', 'kitch
 # customer file as "[Sent image] ..." / "[Sent document] ...".
 _MEDIA_TURN_RE = re.compile(r"^\[Sent (?:image|photo|document|video|file)", re.IGNORECASE)
 
-# Our own earlier ask, whichever variant it was. The distinctive openings of
-# the four catalogue lines, so a rewording there updates this for free.
-_ASKED_MARKERS = tuple(
-    line.split(',')[0] for line in (
-        copy_catalog.PHOTO_ASK_EXISTING, copy_catalog.PHOTO_ASK_NEW_SPOT,
-        copy_catalog.PHOTO_ASK_NEW_BUILD, copy_catalog.PHOTO_ASK_UNCLEAR))
+# Our own earlier ask, whichever variant and whichever wording. The current
+# lines all open "You can send us a" (owner's shape, 2026-09-23); the first
+# wording, live for a day, opened "If you have one, send us a picture" / "If
+# you have a plan or drawings" / "If you have a picture of what's there now",
+# and a lead asked in that wording must not be asked again in the new one.
+_ASKED_MARKERS = (
+    'You can send us a',                  # all four current lines
+    'If you have one, send us a picture',
+    'If you have a plan or drawings',
+    "If you have a picture of what's there now",
+)
 
 
 def _first_match(pairs, text):

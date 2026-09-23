@@ -13622,7 +13622,7 @@ try:
     _PHOTO_CASES = [
         ("Two bathrooms, we're replacing an old tub in each", "a picture of the old tub"),
         ("I want to add a shower to our bathroom", "the spot in the bathroom where it's going"),
-        ("We're building a new house and need all the plumbing done", "a plan or drawings"),
+        ("We're building a new house and need all the plumbing done", "a plan, drawings or a picture of the site"),
         ("leaking pipe under the kitchen sink", "a picture of the leak"),
         ("kitchen sink blocked", "a picture of the sink"),
         ("bathroom needs work", "a picture of the bathroom"),

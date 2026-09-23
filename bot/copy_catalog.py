@@ -388,10 +388,12 @@ PLAN_QUOTE_CHECK = (
 # question, so the area stays the one question. Asked once, never chased; a
 # lead with nothing just carries on. Chosen and inserted by bot/photo_ask.py.
 # English only until the owner approves the Shona drafts.
-PHOTO_ASK_EXISTING = "If you have one, send us a picture of {thing} so we can see what's there."
-PHOTO_ASK_NEW_SPOT = "If you have one, send us a picture of {spot} where it's going."
-PHOTO_ASK_NEW_BUILD = "If you have a plan or drawings, send them through, or a picture of the site."
-PHOTO_ASK_UNCLEAR = "If you have a picture of what's there now, or a plan, send it through."
+# Shape (owner, 2026-09-23): open with "You can send us a picture", end
+# with "if you have one", then the area question finishes the message.
+PHOTO_ASK_EXISTING = "You can send us a picture of {thing} if you have one."
+PHOTO_ASK_NEW_SPOT = "You can send us a picture of {spot} where it's going, if you have one."
+PHOTO_ASK_NEW_BUILD = "You can send us a plan, drawings or a picture of the site, if you have one."
+PHOTO_ASK_UNCLEAR = "You can send us a picture of what's there now, or a plan, if you have one."
 
 # Hesitation about the visit gets the free online quote (owner decision 1B,
 # 2026-09-23): live chats lead with the visit; a lead who hesitates ("can't you

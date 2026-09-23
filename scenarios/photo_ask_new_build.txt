@@ -8,5 +8,5 @@ expect: what needs doing
 reject: US$
 
 > Yes
-expect: plan or drawings
+expect: plan, drawings
 expect: area

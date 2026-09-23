@@ -3,12 +3,13 @@
 Every line below is **live in English only**. The code holds anything that does not read as English, so a Shona lead keeps today's wording until these are approved. Drafts follow the house Shona style in the existing copy: short, "-i" plural politeness, and the English trade words the bot already mixes in (tub, portfolio, quote, link). **These need a native speaker's check before they go live**; mark each OK or correct it, and I will wire the approved ones in.
 
 ## Photo or plan ask (before the area question)
+Same shape as the English: open with "you can send us", end with "if you have one". Note "kana" means both "or" and "if" in lines 3 and 4; a native speaker may prefer another word for one of them.
 | # | English (live) | Shona draft |
 |---|---|---|
-| 1 | If you have one, send us a picture of the old tub so we can see what's there. | Kana muine mufananidzo we tub yekare, titumirei kuti tione zviripo. |
-| 2 | If you have one, send us a picture of the spot in the bathroom where it's going. | Kana muine mufananidzo wenzvimbo iri mubathroom painoenda, titumirei. |
-| 3 | If you have a plan or drawings, send them through, or a picture of the site. | Kana muine plan kana madhirowa, titumirei, kana mufananidzo wenzvimbo. |
-| 4 | If you have a picture of what's there now, or a plan, send it through. | Kana muine mufananidzo wezviripo parizvino, kana plan, titumirei. |
+| 1 | You can send us a picture of the old tub if you have one. | Munogona kutitumira mufananidzo we tub yekare, kana muinawo. |
+| 2 | You can send us a picture of the spot in the bathroom where it's going, if you have one. | Munogona kutitumira mufananidzo wenzvimbo iri mubathroom painoenda, kana muinawo. |
+| 3 | You can send us a plan, drawings or a picture of the site, if you have one. | Munogona kutitumira plan, madhirowa kana mufananidzo wenzvimbo, kana muinazvo. |
+| 4 | You can send us a picture of what's there now, or a plan, if you have one. | Munogona kutitumira mufananidzo wezviripo parizvino kana plan, kana muinazvo. |
 
 ## After a photo or a list
 | # | English (live) | Shona draft |

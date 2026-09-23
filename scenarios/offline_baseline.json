@@ -269,7 +269,7 @@
     "0|expect|what needs doing": true,
     "1|reject|US$": true,
     "2|expect|area": false,
-    "2|expect|plan or drawings": false
+    "2|expect|plan, drawings": false
   },
   "photo_ask_replace_tub.txt": {
     "0|expect|what needs doing": true,
