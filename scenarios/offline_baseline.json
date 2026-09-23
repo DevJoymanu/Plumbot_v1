@@ -316,7 +316,7 @@
     "0|expect|what works better for you": false,
     "0|reject|US$": true,
     "1|reject|US$": true,
-    "2|expect|check back": true,
+    "2|expect|wait to hear from you": true,
     "2|reject|what day and time works for you": true
   },
   "slow_lead_keeps_the_visit.txt": {

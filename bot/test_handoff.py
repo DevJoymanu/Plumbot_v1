@@ -976,3 +976,107 @@ class HesitationTests(OfflineTestCase):
         self.assertIsNone(self._reply(self._lead(), 'Hameno, ndichaona'))
         self.assertIsNone(self._reply(self._lead(), 'Tomorrow at 9am works'))
         self.assertIsNone(self._reply(self._lead(), 'next month'))
+
+
+class NearDateContactTests(OfflineTestCase):
+    """A day within the week, two kinds of lead (owner, 2026-09-23).
+
+    Type 1 "I'll contact you on Monday": we wait; if the day passes with no
+    word, no quote and no visit, the plumber gets a call email the morning
+    after. Type 2 "Contact me on Monday": we ask for the email; with none, the
+    plumber gets the call email that morning and the lead is told we'll call."""
+
+    def setUp(self):
+        super().setUp()
+        self.day = timezone.localdate() + timedelta(days=2)
+
+    def _answer(self, lead, message):
+        from bot.out_of_scope_handler import _handle_delay_timeframe_answer
+        with patch('bot.out_of_scope_handler._compute_followup_date',
+                   _date_reader(self.day)):
+            return _handle_delay_timeframe_answer(message, {}, lead)
+
+    def _at(self, day, hour):
+        import pytz
+        return pytz.timezone('Africa/Johannesburg').localize(
+            datetime(day.year, day.month, day.day, hour, 0))
+
+    def test_type_1_we_wait_and_do_not_chase(self):
+        from bot import copy_catalog
+        lead = make_lead(9101)
+        reply = self._answer(lead, "I'll contact you on Monday")
+        self.assertEqual(reply, copy_catalog.NEAR_WAIT_FOR_THEM)
+        lead.refresh_from_db()
+        self.assertIn('[NEAR_AWAIT]', lead.internal_notes)
+        self.assertNotIn('[FOLLOW_UP_DATE]', lead.internal_notes)   # no dated check-back
+        self.assertGreater(lead.delay_followup_due_at, timezone.now())   # follow-ups held
+
+    def test_type_2_asks_for_the_email_instead_of_booking_a_visit(self):
+        from bot import copy_catalog
+        from bot.out_of_scope_handler import _read_pending
+        lead = make_lead(9102)
+        reply = self._answer(lead, 'Contact me on Monday')
+        self.assertEqual(reply, copy_catalog.NEAR_EMAIL_ASK)
+        self.assertNotIn('What time suits you', reply)
+        lead.refresh_from_db()
+        self.assertIn('[NEAR_CALL]', lead.internal_notes)
+        self.assertEqual(_read_pending(lead)['category'], 'delay_email')
+
+    @patch('bot.out_of_scope_handler._deliver_pdf_and_schedule_checkin', return_value=True)
+    def test_type_2_without_an_email_is_told_we_will_call(self, _pdf):
+        from bot.out_of_scope_handler import _handle_delay_email_answer, _read_pending
+        lead = make_lead(9103)
+        self._answer(lead, 'Contact me on Monday')
+        lead.refresh_from_db()
+        with patch('bot.out_of_scope_handler._classify_email_step_reply',
+                   return_value='whatsapp'):
+            reply = _handle_delay_email_answer('no thanks, just send it here',
+                                               _read_pending(lead), lead)
+        self.assertIn("No problem, we'll give you a call on", reply)
+        self.assertNotIn('Would it be okay if we called', reply)
+
+    def _tick(self, now):
+        from bot.near_date_call import run_tick
+        with patch('bot.plumber_notifications.split_notification_recipients',
+                   return_value=(['plumber@example.com'], [])), \
+             patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as send:
+            stats = run_tick(now=now)
+        return stats, send
+
+    def test_type_1_plumber_is_emailed_the_morning_after_not_before(self):
+        lead = make_lead(9104)
+        self._answer(lead, "I'll contact you on Monday")
+        stats, send = self._tick(self._at(self.day, 10))          # the day itself
+        send.assert_not_called()
+        stats, send = self._tick(self._at(self.day + timedelta(days=1), 7))   # too early
+        send.assert_not_called()
+        stats, send = self._tick(self._at(self.day + timedelta(days=1), 9))
+        send.assert_called_once()
+        subject, text = send.call_args[0][1], send.call_args[0][2]
+        self.assertTrue(subject.startswith('Please call today: '))
+        self.assertIn('said they would contact us', text)
+        self.assertLess(text.index('SCRIPT'), text.index('LEAD DETAILS'))
+        stats, send = self._tick(self._at(self.day + timedelta(days=1), 12))
+        send.assert_not_called()                                    # once only
+
+    def test_type_1_no_call_if_they_wrote_booked_or_got_a_quote(self):
+        lead = make_lead(9105)
+        self._answer(lead, "I'll contact you on Monday")
+        lead.refresh_from_db()
+        lead.last_customer_response = timezone.now() + timedelta(minutes=5)
+        lead.save(update_fields=['last_customer_response'])
+        stats, send = self._tick(self._at(self.day + timedelta(days=1), 9))
+        send.assert_not_called()
+        self.assertEqual(stats['skipped'], 1)
+
+    def test_type_2_plumber_is_emailed_that_morning_only_without_an_email(self):
+        lead = make_lead(9106)
+        self._answer(lead, 'Contact me on Monday')
+        stats, send = self._tick(self._at(self.day, 9))
+        send.assert_called_once()
+        self.assertIn('asked us to call them today', send.call_args[0][1])
+        mailed = make_lead(9107, customer_email='rudo@example.com')
+        self._answer(mailed, 'Contact me on Monday')
+        stats, send = self._tick(self._at(self.day, 10))
+        send.assert_not_called()

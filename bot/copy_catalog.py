@@ -426,3 +426,15 @@ SLOT_ASK_TWO = (
     "What works better for you, {offer}, for us to come through and have a "
     "quick look at the space?"
 )
+
+# A date within a week, two kinds of lead (owner, 2026-09-23). Built by
+# out_of_scope_handler._near_they_will_contact / _near_contact_me; the plumber
+# calls are bot/near_date_call.py.
+# Type 1, "I'll contact you on Monday": we wait. No email ask, no chasing;
+# if the day passes with no word, no quote and no visit, the plumber calls.
+NEAR_WAIT_FOR_THEM = "Okay, thanks, we'll wait to hear from you."
+# Type 2, "Contact me on Monday": we ask for the email (the check-back goes by
+# email on that day). No email means the plumber calls them on that day, and
+# they are told so. They asked to be contacted, so no "may we call?".
+NEAR_EMAIL_ASK = "Okay, cool. Can I get your email?"
+NEAR_WE_WILL_CALL = "No problem, we'll give you a call on {day}."

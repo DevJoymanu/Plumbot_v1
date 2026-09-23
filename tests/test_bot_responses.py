@@ -852,12 +852,12 @@ try:
     _defer = _handle_delay_timeframe_answer(
         "Most probably during the weekend, l will get in touch.", {}, _FakeApptTf())
     results.log(
-        "delay timeframe: self-initiated defer -> parked, no booking push",
-        # "check back" not "check back on": when the agreed moment is tomorrow
-        # the copy reads "check back tomorrow", so requiring the "on <date>"
-        # phrasing made this case fail on some weekdays. The intent is only
-        # that a check-back is offered and no day/time is pushed.
-        ("check back" in _defer.lower()
+        "delay timeframe: self-initiated defer (near) -> we wait, no booking push",
+        # Owner, 2026-09-23 (type 1): "I'll contact you ..." within the week
+        # gets "Okay, thanks, we'll wait to hear from you." and nothing else;
+        # it used to be parked with a check-back and an email ask. Still never
+        # a day/time push.
+        ("wait to hear from you" in _defer.lower()
          and "day and time" not in _defer
          and "what time suits you" not in _defer.lower()),
         got=_defer,
@@ -10095,11 +10095,17 @@ try:
     _oos._compute_followup_date    = _tomorrow_date
     _oos._is_self_initiated_defer  = lambda _m: True     # they said THEY'd update us
 
+    # A "contact me" lead with an email on file (owner's type 2) gets the
+    # check-back said their way; a self-initiated one now just waits (type 1),
+    # so this case is written as type 2. Portfolio already sent, so no email
+    # goes out from the gate.
     _appt = _FakeWindowAppt(72)
-    _reply = _hdta('Let me update you tomorrow morning', {}, _appt)
+    _appt.customer_email = 'rudo@example.com'
+    _appt.internal_notes = '[DELAY_QUOTE_SENT]'
+    _reply = _hdta('Get back to me tomorrow morning', {}, _appt)
     results.log(
         "check-back reply: mirrors 'tomorrow morning', no formal date, no 'right here'",
-        ('check back with you tomorrow morning' in _reply.lower()
+        ('check back' in _reply.lower() and 'tomorrow morning' in _reply.lower()
          and 'right here' not in _reply.lower()
          and not _re.search(r'\d{1,2}\s+(January|February|March|April|May|June|July|'
                             r'August|September|October|November|December)', _reply)),
@@ -13770,6 +13776,20 @@ try:
 except Exception as e:
     import traceback as _tb
     results.log("opener answer", False, got=_tb.format_exc()[-600:])
+
+# -- near-date contact (owner, 2026-09-23) -----------------------------------------
+# Type 2, "contact me on Monday", asks US to reach out; type 1, "I'll contact
+# you on Monday", is the lead's own move. The object tells them apart.
+try:
+    from bot.out_of_scope_handler import asks_us_to_contact as _auc
+    for _m, _want in (("Contact me on Monday", True), ("call me tomorrow", True),
+                      ("can you get back to me on Friday", True), ("message me next week", True),
+                      ("I'll contact you on Monday", False), ("I will call you tomorrow", False),
+                      ("Monday works", False), ("come on Monday", False)):
+        results.log(f"near date: {_m!r} asks us to contact = {_want}", _auc(_m) is _want)
+except Exception as e:
+    import traceback as _tb
+    results.log("near date", False, got=_tb.format_exc()[-600:])
 
 
 if GATE_ONLY:

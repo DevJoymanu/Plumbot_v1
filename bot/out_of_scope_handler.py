@@ -1511,6 +1511,69 @@ def _is_self_initiated_defer_keywords(message: str) -> bool:
     return any(re.search(p, msg) for p in _SELF_DEFER_PATTERNS)
 
 
+# "Contact me / call me / message me / get back to me / check in with me": the
+# lead asks US to make the next contact (owner's type 2, 2026-09-23). The
+# object is "me" or "us", never "you", so "I'll contact you on Monday" (type 1,
+# _is_self_initiated_defer) does not match. English only.
+_ASKS_US_TO_CONTACT_RE = re.compile(
+    r"\b(?:contact|call|phone|ring|message|msg|text|whatsapp|reach|get\s+back\s+to"
+    r"|follow\s+up\s+with|check\s+(?:back\s+)?(?:in\s+)?with|talk\s+to|speak\s+to)"
+    r"\s+(?:me|us)\b", re.IGNORECASE)
+
+
+def asks_us_to_contact(message: str) -> bool:
+    """True when the lead asks us to contact them ("contact me on Monday")."""
+    return bool(_ASKS_US_TO_CONTACT_RE.search(message or ''))
+
+
+# Near-date tags (owner, 2026-09-23), read by bot/near_date_call.py:
+#   [NEAR_AWAIT] <date> <set at>  type 1: they will contact US on <date>
+#   [NEAR_CALL]  <date> <set at>  type 2: they asked us to contact them
+NEAR_AWAIT_TAG = '[NEAR_AWAIT]'
+NEAR_CALL_TAG = '[NEAR_CALL]'
+
+
+def _set_near_tag(appointment, tag, iso_date):
+    """Write one near-date tag, replacing any earlier near-date tag, so a lead
+    who moves the day is called about the new one only."""
+    from django.utils import timezone as _tz
+    notes = appointment.internal_notes or ''
+    notes = re.sub(r'^\[NEAR_(?:AWAIT|CALL)\][^\n]*\n?', '', notes, flags=re.MULTILINE)
+    notes = re.sub(r'^\[NEAR_CALL_SENT\][^\n]*\n?', '', notes, flags=re.MULTILINE)
+    appointment.internal_notes = f"{notes.strip()}\n{tag} {iso_date[:10]} {_tz.now().isoformat()}".strip()
+    appointment.save(update_fields=['internal_notes'])
+
+
+def _near_they_will_contact(appointment, iso_date) -> str:
+    """Type 1, "I'll contact you on Monday" (a date within a week).
+
+    WHAT: "Okay, thanks, we'll wait to hear from you." and nothing else: no
+    email ask, no portfolio push, no chasing before the day.
+    WHY: owner, 2026-09-23. They said they would make the next move; the job
+    is to wait, and if the day passes with no word, no quote and no visit, the
+    plumber calls them (bot/near_date_call.py, the morning after).
+    HOW: delay_followup_due_at is set to the end of that day, which holds the
+    main follow-up loop off until then (it excludes a due date still ahead);
+    NO [FOLLOW_UP_DATE] and no delay signal are written, so neither the dated
+    check-back nor the reactivation loop messages them on the day itself.
+    Pinned by NearDateContactTests.
+    """
+    import pytz
+    from datetime import datetime, time as _time
+    from bot import job_date_ladder as _ladder
+    _ladder.disarm(appointment)
+    try:
+        day = datetime.fromisoformat(iso_date[:10]).date()
+        tz = pytz.timezone('Africa/Johannesburg')
+        appointment.delay_followup_due_at = tz.localize(
+            datetime.combine(day, _time(23, 59)))
+        appointment.save(update_fields=['delay_followup_due_at'])
+    except Exception:
+        logger.warning("Could not hold follow-ups for a near-date lead", exc_info=True)
+    _set_near_tag(appointment, NEAR_AWAIT_TAG, iso_date)
+    return copy_catalog.NEAR_WAIT_FOR_THEM
+
+
 def _is_self_initiated_defer(message: str) -> bool:
     """AI-primary: does the customer signal that THEY will make the next contact
     ('I'll get in touch', 'I'll let you know', 'let me get back to you') rather
@@ -3082,7 +3145,42 @@ def _handle_delay_timeframe_answer(message: str, pending: dict, appointment) -> 
     # EXCEPTION: if the customer said THEY'll make the next move ("I'll get in
     # touch"), respect the deferral even when it's near — pushing for a day/time
     # over an explicit "I'll reach out" reads as pressure. Park gracefully instead.
-    if _timeframe_is_near(iso_date) and not _is_self_initiated_defer(message):
+    # Two kinds of near-date lead (owner, 2026-09-23), checked BEFORE the
+    # booking pivot below, because "contact me on Monday" is a request to be
+    # contacted, not "come on Monday" (it used to get "Monday works. What time
+    # suits you?"). English only; Shona keeps the old behaviour until Shona
+    # copy is approved. Pinned by NearDateContactTests.
+    #   type 2 "contact me on Monday": ask for the email; with no email the
+    #          plumber calls them that day (bot/near_date_call.py). An email
+    #          already on file falls through to the park path below, which
+    #          confirms the day and emails the portfolio.
+    #   type 1 "I'll contact you on Monday": we wait (_near_they_will_contact).
+    _near = _timeframe_is_near(iso_date)
+    _self_defer = _is_self_initiated_defer(message)
+    _near_contact_with_email = False
+    # English only, and strictly: _lead_speaks_shona alone let a one-word
+    # Shona reply through ("ndichakubatayi", I'll contact you, got the English
+    # "we'll wait to hear from you"). The shared detector must say english,
+    # and no Shona verb prefix (ndicha-/ndino-/ndiri-) may appear.
+    from bot.repeated_question_detector import detect_language_simple as _dls_near
+    _english = (not _lead_speaks_shona(message)
+                and _dls_near(message or '') == 'english'
+                and not re.search(r"\bndi(?:cha|no|ri)\w*", message or '', re.IGNORECASE))
+    if _near and _english:
+        if asks_us_to_contact(message):
+            _set_near_tag(appointment, NEAR_CALL_TAG, iso_date)
+            if not getattr(appointment, 'customer_email', None):
+                mark_delay_signal(appointment, message)
+                from bot import job_date_ladder as _ladder_near
+                _ladder_near.disarm(appointment)
+                _store_delay_followup_date(appointment, iso_date, source_message=message)
+                _write_pending(appointment, 'delay_email', iso_date)
+                return copy_catalog.NEAR_EMAIL_ASK
+            _near_contact_with_email = True
+        elif _self_defer:
+            return _near_they_will_contact(appointment, iso_date)
+
+    if _near and not _near_contact_with_email and not _self_defer:
         logger.info("Near-term timeframe — booking the visit instead of parking")
         look = f"a quick look at {_service_space_label(appointment)} — 20 minutes or so"
         # One copy of the close both branches below end on, so a rewording
@@ -3278,11 +3376,38 @@ def _portfolio_on_whatsapp_ack(appointment) -> str:
             _append_note_tag(appointment, LINK_SENT_TAG)
             parts.append(handoff)
     job_day = _ladder.job_date(appointment)
-    if job_day is not None and not (getattr(appointment, 'customer_email', '') or '').strip():
+    no_email = not (getattr(appointment, 'customer_email', '') or '').strip()
+    near_call = re.search(r'^\[NEAR_CALL\] (\d{4}-\d{2}-\d{2})',
+                          getattr(appointment, 'internal_notes', '') or '', re.MULTILINE)
+    if job_day is not None and no_email:
         call_day = _ladder.spoken_date(_ladder.step_day(job_day, _ladder.STEP_CALL))
         parts.append(copy_catalog.LADDER_CALL_ASK.format(call_day=call_day))
         _write_pending(appointment, 'delay_call_ok', call_day)
+    elif near_call and no_email:
+        # "Contact me on Monday" and no email (owner's type 2, 2026-09-23):
+        # they asked to be contacted, so this TELLS them we will call on that
+        # day; the plumber gets the call brief that morning
+        # (bot/near_date_call.py). No "may we call?": the request was theirs.
+        from datetime import date as _d
+        day = _d.fromisoformat(near_call.group(1))
+        parts.append(copy_catalog.NEAR_WE_WILL_CALL.format(
+            day=_near_day_phrase(day)))
     return MESSAGE_SPLIT_MARKER.join(parts)
+
+
+def _near_day_phrase(day) -> str:
+    """"Monday" for a day inside the coming week, "Monday the 29th" when that
+    alone could be misread; the lead named the day, so it is said their way."""
+    from django.utils import timezone as _tz
+    from bot.job_date_ladder import ordinal
+    delta = (day - _tz.localdate()).days
+    if delta == 0:
+        return 'today'
+    if delta == 1:
+        return 'tomorrow'
+    if 0 < delta < 7:
+        return day.strftime('%A')
+    return f"{day.strftime('%A')} the {ordinal(day.day)}"
 
 
 # The lead's answer to the call-permission ask. Searched, never matched whole:
@@ -4131,8 +4256,13 @@ def handle_out_of_scope(
     # is a delay signal even when the category classifier read the message as
     # in-scope (LLM nondeterminism — conv 427 got the booking push instead of
     # the access check-in on some runs).
+    # "Contact me on Monday" with a day or date in it is a deferral too (owner's
+    # type 2, 2026-09-23), whatever the classifier called it, so it reaches the
+    # near-date handling in _handle_delay_timeframe_answer.
     if category != "delay_signal" and (_is_access_deferral_keywords(message)
-                                       or _is_explicit_deferral(message)):
+                                       or _is_explicit_deferral(message)
+                                       or (asks_us_to_contact(message)
+                                           and _message_has_timeframe(message))):
         logger.info("Deterministic deferral override → delay_signal: '%s'",
                     message[:60])
         category, confidence = "delay_signal", "HIGH"

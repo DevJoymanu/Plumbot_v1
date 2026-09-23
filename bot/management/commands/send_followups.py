@@ -749,6 +749,18 @@ class Command(BaseCommand):
         except Exception as exc:  # noqa: BLE001 — never let this block normal follow-ups
             logger.warning('Scheduled follow-up dispatch failed: %s', exc)
 
+        # The plumber's call for a lead who named a day within the week (owner,
+        # 2026-09-23; bot/near_date_call.py). Before the contact-hours cutoff
+        # below: it only emails the plumber, and has its own morning gate.
+        try:
+            from bot.near_date_call import run_tick as _near_calls
+            nres = _near_calls(dry_run=dry_run, log=lambda m: self.stdout.write(m))
+            if nres['sent'] or nres['failed']:
+                self.stdout.write(self.style.SUCCESS(
+                    f"📞 Near-date calls → sent={nres['sent']} failed={nres['failed']}"))
+        except Exception as exc:  # noqa: BLE001 — never block the follow-ups
+            logger.warning('Near-date call tick failed: %s', exc)
+
         if not force and not self._in_contact_window(now_local):
             self.stdout.write(
                 self.style.WARNING(
