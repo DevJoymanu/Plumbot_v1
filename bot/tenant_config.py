@@ -534,7 +534,8 @@ class TenantConfig:
 
     def visit_price_note(self, is_shona: bool = False,
                          opening: bool = False,
-                         job_noun: str = None) -> str:
+                         job_noun: str = None,
+                         close_q: bool = True) -> str:
         """What the visit costs, said once, in its own turn before we ask for
         a day.
 
@@ -568,7 +569,8 @@ class TenantConfig:
                 if self.visit_fee_waived_on_job():
                     middle += (f'\nKana mukasarudza kuenderera mberi ne{job}, '
                                f'tinobvisa mari iyoyo pamutengo wekupedzisira.')
-            body = f'{lead_in}{ack} {middle} {close}'
+            # close_q=False: the caller keeps its own question (the slot ask).
+            body = f'{lead_in}{ack} {middle}' + (f' {close}' if close_q else '')
             return body if opening else body[:1].upper() + body[1:]
 
         lead_in = 'Great, ' if opening else ''
@@ -584,7 +586,9 @@ class TenantConfig:
             if self.visit_fee_waived_on_job():
                 middle += (f"\nIf you decide to go ahead with the {job}, we'll "
                            f"take that cost off the final price.")
-        body = f'{lead_in}{ack} {middle} {close}'
+        # close_q=False: the caller keeps its own question (the slot ask,
+        # owner 2026-09-23), so "Want me to book you a time?" is not sent.
+        body = f'{lead_in}{ack} {middle}' + (f' {close}' if close_q else '')
         return body if opening else body[:1].upper() + body[1:]
 
     def visit_cost_sentence(self, is_shona: bool = False) -> str:

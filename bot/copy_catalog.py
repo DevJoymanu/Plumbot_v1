@@ -413,3 +413,13 @@ ONLINE_QUOTE_STILL_OPEN_NAMELESS = (
 # line, then the online quote, then the plumber's link and number.
 FIRM_PRICE_NO_GUESS = "We'd rather not guess. A quick look and you get a firm price."
 FIRM_PRICE_ONLINE = "Or if it's easier, send a few photos for a free online quote first."
+
+# THE availability ask with two real slots (owner wording, 2026-09-23). Sent
+# straight after the proof photos once the area is in, and on its own: the
+# free-visit line no longer replaces it (ensure_visit_price_note). {offer} is
+# "tomorrow 9am or this Thursday 2pm", or "tomorrow 9am or 2pm" on one day.
+# Built by ResponseMixin._scripted_availability_ask.
+SLOT_ASK_TWO = (
+    "What works better for you, {offer}, for us to come through and have a "
+    "quick look at the space?"
+)

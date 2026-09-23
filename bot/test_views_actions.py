@@ -11949,7 +11949,8 @@ class ComposedAvailabilityAskTests(TestCase):
         with patch('bot.availability_ask.compose_availability_ask') as composer:
             ask = bot._availability_ask()
         composer.assert_not_called()
-        self.assertIn('tomorrow at 9am or this Sunday at 2pm', ask)
+        # Owner's wording (2026-09-23): no "at" between day and time.
+        self.assertIn('tomorrow 9am or this Sunday 2pm', ask)
 
     def test_the_awkward_shapes_reach_the_model(self):
         for slots in (['tomorrow at 9am'],

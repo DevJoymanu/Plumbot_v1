@@ -10697,14 +10697,14 @@ class _CfgFee:
     def visit_fee_waived_on_job(self):
         return False
 
-    def visit_price_note(self, is_shona=False, opening=False, job_noun=None):
+    def visit_price_note(self, is_shona=False, opening=False, job_noun=None, close_q=True):
         mid = ('The call-out is free, it covers the visit and full diagnosis.'
                if not self.fee else
                f"There's a US${self.fee} call-out fee which covers the visit "
                f"and full diagnosis.")
         lead_in = 'Great, ' if opening else ''
         ack = 'we can come for a quick site visit.'
-        body = f'{lead_in}{ack} {mid} Want me to book you a time?'
+        body = f'{lead_in}{ack} {mid}' + (' Want me to book you a time?' if close_q else '')
         return body if opening else body[:1].upper() + body[1:]
 
 
@@ -10782,11 +10782,12 @@ try:
     _o, _c = _evpn0(_offer, _ty.SimpleNamespace(tenant=None, conversation_history=[]), 'ok')
     results.log(
         "consultation fee: the availability ask is where the figure lands",
-        # The note carries its own close, so it REPLACES the question it was
-        # triggered by rather than stacking a second one after it.
+        # The fee sentence goes in front of the slot question, which stays
+        # (owner, 2026-09-23): no "Want me to book you a time?" and still one
+        # question.
         _c and _o.count('US$20') == 1
-        and _o.endswith('Want me to book you a time?')
-        and 'What works better' not in _o,
+        and _o.endswith(_offer) and _o.count('?') == 1
+        and 'Want me to book' not in _o,
         got=repr(_o),
     )
     # "Freestanding" is not "free", and a price reply is not a visit claim.
@@ -11067,7 +11068,7 @@ class _CfgNote:
     def visit_fee_waived_on_job(self):
         return bool(self.fee) and self.waived
 
-    def visit_price_note(self, is_shona=False, opening=False, job_noun=None):
+    def visit_price_note(self, is_shona=False, opening=False, job_noun=None, close_q=True):
         lead_in = 'Great, ' if opening else ''
         job = job_noun or 'work'
         if not self.fee:
@@ -11080,7 +11081,7 @@ class _CfgNote:
             mid = (f"There's a US${self.fee} call-out fee which covers the visit "
                    f"and full diagnosis.")
         ack = 'we can come for a quick site visit.'
-        body = f'{lead_in}{ack} {mid} Want me to book you a time?'
+        body = f'{lead_in}{ack} {mid}' + (' Want me to book you a time?' if close_q else '')
         return body if opening else body[:1].upper() + body[1:]
 
     def visit_cost_sentence(self, is_shona=False):
@@ -11119,13 +11120,14 @@ try:
         _parts = _out.split('\n\n')
         results.log(
             f"visit price: stated with the availability ask ({_label})",
-            # The note carries its own close, so it REPLACES the question
-            # rather than stacking a second one in front of it. What the reply
-            # said before the question is kept.
-            _added and _want in _out and len(_parts) == 2
-            and _parts[0].startswith('Borrowdale')
-            and _parts[1].endswith('Want me to book you a time?')
-            and 'What works better' not in _out,
+            # Owner, 2026-09-23: a FREE visit sends the slot question alone
+            # (no note); a fee goes IN FRONT of the question, which stays, with
+            # no "Want me to book you a time?". What came before is kept.
+            (not _added and _out == _slot_ask) if _label == 'free' else
+            (_added and _want in _out and len(_parts) == 2
+             and _parts[0].startswith('Borrowdale')
+             and _parts[1].endswith(_slot_ask.split('. ', 1)[-1])
+             and 'Want me to book' not in _out),
             got=repr(_out),
         )
 
@@ -11354,9 +11356,10 @@ results.log(
 _slot_q = _slot_two_days._get_first_pass_question("availability_date")
 results.log(
     "availability ask: the scripted question offers two full slots in one message",
-    _slot_q.startswith("Great, what works better for you, tomorrow at 9am or ")
-    and (" at 2pm, for us to come through and have a quick look at the "
-         "bathroom space?") in _slot_q,
+    # Owner's wording, 2026-09-23: no "Great,", no "at", the fixed purpose.
+    _slot_q.startswith("What works better for you, tomorrow 9am or ")
+    and _slot_q.endswith(" 2pm, for us to come through and have a quick look "
+                         "at the space?"),
     got=repr(_slot_q),
 )
 # The fee note hangs off this question being recognised as the availability ask
@@ -11778,7 +11781,7 @@ _det_one_day = _ask_one_day._scripted_availability_ask(
 results.log(
     "ask copy: two times on one day say the day ONCE",
     _det_one_day.count('tomorrow') == 1
-    and 'tomorrow at 9am or 2pm' in _det_one_day,
+    and 'tomorrow 9am or 2pm' in _det_one_day,
     got=repr(_det_one_day),
 )
 _det_one_slot = _ask_one_slot._scripted_availability_ask(
@@ -11886,7 +11889,7 @@ _wr_out = _wr._week_part_reply("Let's make a date midweek")
 results.log(
     "week part: the reply says the range back and offers two real slots",
     _wr_out.startswith("Midweek works for us. What works better for you, ")
-    and ' at 9am or ' in _wr_out and _wr_out.count('?') == 1
+    and ' 9am or ' in _wr_out and _wr_out.count('?') == 1
     and 'earlier' not in _wr_out.lower()
     and _wr.saw_part and _wr.saw_part[0] == (1, 2, 3)
     and getattr(_wr, '_week_part', None) is None,

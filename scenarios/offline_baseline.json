@@ -18,7 +18,7 @@
   },
   "any_time_in_their_own_words.txt": {
     "0|expect|what area are you in": false,
-    "1|expect|what works better for you": false,
+    "1|expect|what works better for you": true,
     "2|expect|let's say": false,
     "2|reject|when would work best": true,
     "2|reject|which day suits": true
@@ -26,7 +26,7 @@
   "any_time_is_an_answer.txt": {
     "0|expect|what needs doing": true,
     "1|expect|what area are you in": true,
-    "2|expect|what works better for you": false,
+    "2|expect|what works better for you": true,
     "3|expect|let's say": true,
     "3|reject|what time works": true,
     "3|reject|what works better for you": true,
@@ -154,7 +154,8 @@
   },
   "hesitation_online_quote.txt": {
     "0|expect|what needs doing": true,
-    "2|expect|book you a time": true,
+    "2|expect|what works better for you": true,
+    "2|reject|book you a time": true,
     "3|expect|free online quote first": true,
     "3|expect|wa.me": true,
     "3|reject|for us to come through": true
@@ -254,8 +255,8 @@
   "no_to_slot_offer.txt": {
     "0|expect|what needs doing": true,
     "1|reject|US$": true,
-    "2|expect|what works better for you": false,
-    "3|expect|what day would suit you better": false,
+    "2|expect|what works better for you": true,
+    "3|expect|what day would suit you better": true,
     "3|reject|2pm": true,
     "3|reject|9am": true
   },

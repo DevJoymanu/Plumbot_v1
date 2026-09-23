@@ -1008,21 +1008,36 @@ def ensure_visit_price_note(reply: str, appointment, message: str = None):
         return reply, False
     from bot.tenant_config import get_config
     cfg = get_config(getattr(appointment, 'tenant', None))
+    # A FREE visit needs no note: the slot question goes out on its own, in
+    # the owner's wording (2026-09-23: "What works better for you, tomorrow
+    # 9am or this Thursday 2pm, for us to come through and have a quick look
+    # at the space?"). It used to be replaced by "Great, we can come for a
+    # quick site visit. The call-out is free, and we'll do a full check for
+    # you. Want me to book you a time?", a yes/no ask with no friction behind
+    # it, which the owner ruled out (yes/no only after friction or a question).
+    if not cfg.consultation_fee:
+        return reply, False
     if visit_price_already_stated(appointment, cfg) or _states_visit_price(reply, cfg):
         return reply, False
     from bot.repeated_question_detector import detect_language_simple
     is_shona = detect_language_simple(message or '') == 'shona'
 
+    # A business that CHARGES still states its fee once, with this question
+    # (the standing rule), but the fee sentence now goes IN FRONT of the slot
+    # question instead of replacing it with its own "Want me to book...?".
     cut = _question_offset(reply)
     head = reply[:cut].strip() if cut > 0 else ''
+    question = reply[cut:].strip() if cut >= 0 else ''
     note = cfg.visit_price_note(
         is_shona=is_shona,
         opening=not head,
         job_noun=_visit_job_noun(appointment, is_shona),
+        close_q=not question,
     )
     if not note:
         return reply, False
-    return (f"{head}\n\n{note}" if head else note), True
+    body = f"{note} {question}".strip() if question else note
+    return (f"{head}\n\n{body}" if head else body), True
 
 
 def dequalify_free_visit(lead, message: str) -> str:
@@ -1719,8 +1734,15 @@ class ResponseMixin:
                 if is_shona:
                     return (f"Zvakanaka, {offer}, ndeipi inokukodzerai, "
                             f"kuti tiuye tione nzvimbo?")
-                return (f"Great, what works better for you, {offer}, "
-                        f"for us to come through and {purpose}?")
+                # The owner's wording (2026-09-23): "What works better for you,
+                # tomorrow 9am or this Thursday 2pm, for us to come through and
+                # have a quick look at the space?". No "Great," lead-in, no
+                # "at" between day and time, and the fixed purpose; it used to
+                # be "Great, what works better for you, tomorrow at 9am or ...,
+                # for us to come through and <purpose>?". Only this two-slot
+                # line changes; the other shapes keep their own wording.
+                return copy_catalog.SLOT_ASK_TWO.format(
+                    offer=offer.replace(' at ', ' '))
 
             if len(slots) == 1:
                 # ONE option: offer the one we have and ask if it works. Never
