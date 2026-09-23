@@ -8,7 +8,7 @@
 # and the greeting still leads on a first turn.
 
 > I want to build a new house
-expect: hi, you can send us a plan
+expect: hi, may you send us a plan
 expect: what area are you in
 reject: new plumbing installation for a new
 reject: US$

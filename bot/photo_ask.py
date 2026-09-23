@@ -7,17 +7,20 @@ WHAT (owner, 2026-09-23, decisions 7, 7a, 7b): once the lead has said what
 needs doing, the reply that asks their area first asks for a picture of what
 is there, named from their OWN words:
 
-    replacing or fixing  "You can send us a picture of the old tub if you have
-                          one. What area are you in?"
-    adding something     "You can send us a picture of the spot in the bathroom
-                          where it's going, if you have one. What area...?"
-    a new build          "You can send us a plan, drawings or a picture of the
-                          site, if you have one. What area are you in?"
-    can't tell           "You can send us a picture of what's there now, or a
-                          plan, if you have one. What area are you in?"
+    replacing or fixing  "May you send us a picture of the old tub if you have
+                          one, no worries if you're not near it right now. What
+                          area are you in?"
+    adding something     "May you send us a picture of the spot in the bathroom
+                          where it's going if you have one, no worries if..."
+    a new build          "May you send us a plan, drawings or a picture of the
+                          site if you have one, no worries if you don't have it
+                          on hand. What area are you in?"
+    can't tell           "May you send us a picture of what's there now, or a
+                          plan, if you have one, no worries if..."
 
-The shape is the owner's (2026-09-23): open with "You can send us a picture",
-end with "if you have one", and let the area question finish the message.
+The shape is the owner's (2026-09-23): "May you send us a picture of ... if
+you have one", then plainly not compulsory (they may not be near the bathroom
+right now), then the area question finishes the message.
 
 WHY: a picture of what is there proves we looked, makes the visit better, and
 a plan puts them on the plan path (a quote with no visit). It is a REQUEST,
@@ -99,13 +102,14 @@ _ROOMS = (('bathroom', 'bathroom'), ('en-?suite', 'ensuite'), ('kitchen', 'kitch
 # customer file as "[Sent image] ..." / "[Sent document] ...".
 _MEDIA_TURN_RE = re.compile(r"^\[Sent (?:image|photo|document|video|file)", re.IGNORECASE)
 
-# Our own earlier ask, whichever variant and whichever wording. The current
-# lines all open "You can send us a" (owner's shape, 2026-09-23); the first
-# wording, live for a day, opened "If you have one, send us a picture" / "If
-# you have a plan or drawings" / "If you have a picture of what's there now",
-# and a lead asked in that wording must not be asked again in the new one.
+# Our own earlier ask, whichever variant and whichever wording: the current
+# lines open "May you send us a"; earlier ones opened "You can send us a" and,
+# before that, "If you have one, send us a picture" / "If you have a plan or
+# drawings" / "If you have a picture of what's there now". A lead asked in any
+# of them must not be asked again in a later one.
 _ASKED_MARKERS = (
-    'You can send us a',                  # all four current lines
+    'May you send us a',                  # all four current lines
+    'You can send us a',                  # the wording before that
     'If you have one, send us a picture',
     'If you have a plan or drawings',
     "If you have a picture of what's there now",

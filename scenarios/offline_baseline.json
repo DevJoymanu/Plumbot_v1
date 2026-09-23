@@ -189,7 +189,7 @@
     "1|reject|new plumbing installation for a new": true
   },
   "new_build_opener.txt": {
-    "0|expect|hi, you can send us a plan": true,
+    "0|expect|hi, may you send us a plan": true,
     "0|expect|what area are you in": true,
     "0|reject|US$": true,
     "0|reject|bathroom or a kitchen": true,
