@@ -1571,7 +1571,54 @@ def _near_they_will_contact(appointment, iso_date) -> str:
     except Exception:
         logger.warning("Could not hold follow-ups for a near-date lead", exc_info=True)
     _set_near_tag(appointment, NEAR_AWAIT_TAG, iso_date)
-    return copy_catalog.NEAR_WAIT_FOR_THEM
+    # The email is still asked, for the portfolio (owner, 2026-09-23), but
+    # nothing is promised about checking back: we wait for them. The answer
+    # goes to the delay_email step with NO date, and that step knows a
+    # [NEAR_AWAIT] lead (no check-back scheduled, no chasing check-in).
+    if getattr(appointment, 'customer_email', None):
+        if '[DELAY_QUOTE_SENT]' in (appointment.internal_notes or ''):
+            return copy_catalog.NEAR_WAIT_FOR_THEM
+        from bot.customer_emails import send_delay_quote_email_async
+        send_delay_quote_email_async(appointment, follow_up_date_str=None)
+        _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
+        return f"{copy_catalog.NEAR_WAIT_FOR_THEM} {copy_catalog.NEAR_PORTFOLIO_EMAILED}"
+    _write_pending(appointment, 'delay_email', '')
+    return f"{copy_catalog.NEAR_WAIT_FOR_THEM} {copy_catalog.NEAR_EMAIL_FOR_PORTFOLIO}"
+
+
+def _keep_waiting(appointment) -> None:
+    """Undo what the portfolio-on-WhatsApp step sets up, for a [NEAR_AWAIT]
+    lead (type 1, "I'll contact you on Monday").
+
+    _deliver_pdf_and_schedule_checkin marks the lead delayed and schedules a
+    "did you get a chance to look at the portfolio?" check-in (or parks the
+    lead). For a lead we promised to WAIT for, that check-in is chasing, and a
+    park would suppress the plumber's call after their day. So: not delayed, no
+    check-in tags, not parked, and follow-ups held to the end of their day.
+    """
+    import pytz
+    from datetime import datetime, time as _time
+    m = re.search(r'^\[NEAR_AWAIT\] (\d{4}-\d{2}-\d{2})',
+                  appointment.internal_notes or '', re.MULTILINE)
+    if not m:
+        return
+    notes = appointment.internal_notes or ''
+    for pattern in (r'^\[DELAY_SIGNAL\][^\n]*\n?', r'^\[DELAY_KIND\] pdf_checkin[^\n]*\n?',
+                    r'^\[PDF_CHECKIN_FROM\][^\n]*\n?'):
+        notes = re.sub(pattern, '', notes, flags=re.MULTILINE)
+    appointment.internal_notes = notes.strip()
+    appointment.is_delayed = False
+    try:
+        day = datetime.fromisoformat(m.group(1)).date()
+        appointment.delay_followup_due_at = pytz.timezone('Africa/Johannesburg').localize(
+            datetime.combine(day, _time(23, 59)))
+    except Exception:
+        logger.warning("Could not re-hold a near-date lead", exc_info=True)
+    appointment.save(update_fields=['internal_notes', 'is_delayed', 'delay_followup_due_at'])
+    try:
+        appointment.unpark(save=True)
+    except Exception:
+        pass
 
 
 def _is_self_initiated_defer(message: str) -> bool:
@@ -3364,6 +3411,9 @@ def _portfolio_on_whatsapp_ack(appointment) -> str:
     from bot import job_date_ladder as _ladder
     from bot.plumber_link import LINK_SENT_TAG, portfolio_handoff
     from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER
+    # A type 1 lead we promised to wait for gets no portfolio check-in and is
+    # not parked (both are set up by the PDF step that just ran).
+    _keep_waiting(appointment)
     parts = [copy_catalog.PORTFOLIO_HERE_ACK]
     if LINK_SENT_TAG not in (getattr(appointment, 'internal_notes', '') or ''):
         try:
@@ -3999,6 +4049,14 @@ def _handle_delay_email_answer(message: str, pending: dict, appointment) -> str:
 
     from bot.customer_emails import send_delay_quote_email_async
     send_delay_quote_email_async(appointment, follow_up_date_str=friendly)
+
+    # A type 1 lead ("I'll contact you on Monday", [NEAR_AWAIT]) gave the email
+    # for the portfolio only: no check-back is scheduled and none is promised,
+    # because we wait for them (owner, 2026-09-23). The plumber's call after
+    # their day is bot/near_date_call.py. Pinned by NearDateContactTests.
+    if re.search(r'^\[NEAR_AWAIT\]', appointment.internal_notes or '', re.MULTILINE):
+        _append_note_tag(appointment, '[DELAY_QUOTE_SENT]')
+        return copy_catalog.NEAR_EMAIL_THANKS
 
     # Restore delay signal — cleared by the webhook before the OOS handler runs.
     # Re-writing the tag blocks regular follow-ups; restoring is_delayed=True

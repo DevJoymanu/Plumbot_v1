@@ -1005,7 +1005,10 @@ class NearDateContactTests(OfflineTestCase):
         from bot import copy_catalog
         lead = make_lead(9101)
         reply = self._answer(lead, "I'll contact you on Monday")
-        self.assertEqual(reply, copy_catalog.NEAR_WAIT_FOR_THEM)
+        # We wait, and still ask for the email (owner, 2026-09-23).
+        self.assertTrue(reply.startswith(copy_catalog.NEAR_WAIT_FOR_THEM))
+        self.assertIn('can I get your email', reply)
+        self.assertNotIn('check back', reply.lower())
         lead.refresh_from_db()
         self.assertIn('[NEAR_AWAIT]', lead.internal_notes)
         self.assertNotIn('[FOLLOW_UP_DATE]', lead.internal_notes)   # no dated check-back
@@ -1080,3 +1083,35 @@ class NearDateContactTests(OfflineTestCase):
         self._answer(mailed, 'Contact me on Monday')
         stats, send = self._tick(self._at(self.day, 10))
         send.assert_not_called()
+
+    @patch('bot.customer_emails.send_delay_quote_email_async')
+    def test_type_1_email_gets_the_portfolio_and_no_check_back(self, portfolio):
+        from bot import copy_catalog
+        from bot.out_of_scope_handler import _handle_delay_email_answer, _read_pending
+        lead = make_lead(9108)
+        self._answer(lead, "I'll contact you on Monday")
+        lead.refresh_from_db()
+        reply = _handle_delay_email_answer('rudo@example.com', _read_pending(lead), lead)
+        self.assertEqual(reply, copy_catalog.NEAR_EMAIL_THANKS)
+        portfolio.assert_called_once()
+        lead.refresh_from_db()
+        self.assertFalse(lead.is_delayed)
+        self.assertNotIn('[FOLLOW_UP_DATE]', lead.internal_notes)
+
+    @patch('bot.out_of_scope_handler.send_lead_magnet_on_whatsapp', return_value=True)
+    def test_type_1_declining_email_is_not_chased_or_parked(self, _pdf):
+        from bot.out_of_scope_handler import _handle_delay_email_answer, _read_pending
+        lead = make_lead(9109)
+        self._answer(lead, "I'll contact you on Monday")
+        lead.refresh_from_db()
+        with patch('bot.out_of_scope_handler._classify_email_step_reply',
+                   return_value='whatsapp'):
+            reply = _handle_delay_email_answer('no thanks, send it here',
+                                               _read_pending(lead), lead)
+        self.assertNotIn('give you a call', reply)
+        lead.refresh_from_db()
+        self.assertFalse(lead.is_delayed)
+        self.assertNotIn('pdf_checkin', lead.internal_notes)
+        self.assertGreater(lead.delay_followup_due_at, timezone.now())
+        stats, send = self._tick(self._at(self.day + timedelta(days=1), 9))
+        send.assert_called_once()                     # the plumber still calls

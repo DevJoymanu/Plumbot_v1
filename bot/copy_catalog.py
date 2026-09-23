@@ -433,6 +433,11 @@ SLOT_ASK_TWO = (
 # Type 1, "I'll contact you on Monday": we wait. No email ask, no chasing;
 # if the day passes with no word, no quote and no visit, the plumber calls.
 NEAR_WAIT_FOR_THEM = "Okay, thanks, we'll wait to hear from you."
+# ...and the email is still asked (owner, 2026-09-23), for the portfolio. It
+# follows NEAR_WAIT_FOR_THEM in the same message; no check-back is promised.
+NEAR_EMAIL_FOR_PORTFOLIO = "In the meantime, can I get your email so we can send you our portfolio?"
+NEAR_PORTFOLIO_EMAILED = "I've sent our portfolio to your email in the meantime."
+NEAR_EMAIL_THANKS = "Got it, thanks. Our portfolio is on its way to your inbox now, and we'll wait to hear from you."
 # Type 2, "Contact me on Monday": we ask for the email (the check-back goes by
 # email on that day). No email means the plumber calls them on that day, and
 # they are told so. They asked to be contacted, so no "may we call?".
