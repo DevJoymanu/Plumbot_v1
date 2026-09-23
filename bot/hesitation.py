@@ -80,10 +80,15 @@ _EXACT_FIGURE_RE = re.compile(
     re.IGNORECASE)
 
 # Our last message offered the visit or a day for it.
+# "book you a time" and "site visit" are the owner-approved visit-price note
+# ("Great, we can come for a quick site visit... Want me to book you a time?"),
+# which REPLACES the slot question; without them "not sure" after it was not
+# read as hesitation (offline replay, 2026-09-23).
 _VISIT_OFFER_MARKERS = ('for us to come through', 'quick look', 'come round',
                         'what works better for you', 'which suits',
                         'morning or afternoon', 'suit you better',
-                        'book you in', 'come and have a look')
+                        'book you in', 'come and have a look',
+                        'book you a time', 'site visit')
 
 
 def _last_assistant_text(appointment) -> str:

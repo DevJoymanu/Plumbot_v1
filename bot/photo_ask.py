@@ -55,7 +55,15 @@ _NEW_BUILD_RE = re.compile(
     r"\b(?:new build|new house|new home|building (?:a|our|my) (?:new )?(?:house|home)"
     r"|build(?:ing)? a house|construction|from scratch|foundation|slab"
     r"|nothing there yet|empty stand|new stand)\b", re.IGNORECASE)
+# "new" counts as adding when nothing is being replaced: "I need a new shower
+# cubicle fitted" got "send us a picture of the shower cubicle so we can see
+# what's there" (offline replay, 2026-09-23), a cubicle that does not exist yet.
 _ADD_RE = re.compile(
+    r"\b(?:add|adding|put in|putting in|fit a new|install a new|installing a new"
+    r"|extra|another|second|new)\b", re.IGNORECASE)
+# The adding words WITHOUT "new", for the "new installation" rule: there
+# "new" says nothing about whether the room already exists.
+_ADD_STRICT_RE = re.compile(
     r"\b(?:add|adding|put in|putting in|fit a new|install a new|installing a new"
     r"|extra|another|second)\b", re.IGNORECASE)
 _EXISTING_RE = re.compile(
@@ -118,7 +126,7 @@ def photo_line(description: str, project_type: str = '') -> str:
     # one, so it gets the either-or line (a picture of what is there, or a
     # plan) rather than a guess. scenarios/new_install_flow.txt.
     if (re.search(r"\binstallations?\b", text, re.IGNORECASE)
-            and not _EXISTING_RE.search(text) and not _ADD_RE.search(text)):
+            and not _EXISTING_RE.search(text) and not _ADD_STRICT_RE.search(text)):
         return copy_catalog.PHOTO_ASK_UNCLEAR
     fixture = _first_match(_FIXTURES, text)
     room = _first_match(_ROOMS, text)

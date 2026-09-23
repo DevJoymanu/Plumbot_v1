@@ -126,6 +126,11 @@
     "5|reject|the one I'd suggest": true,
     "5|reject|what email": true
   },
+  "exact_figure_no_guess.txt": {
+    "0|expect|what needs doing": true,
+    "3|expect|free online quote": true,
+    "3|expect|rather not guess": true
+  },
   "excluded_area_and_free_quote.txt": {
     "0|expect|free": true,
     "0|reject|dropped that on our end": true,
@@ -146,6 +151,13 @@
     "3|reject|free of charge": true,
     "4|reject|free": true,
     "5|expect|free": true
+  },
+  "hesitation_online_quote.txt": {
+    "0|expect|what needs doing": true,
+    "2|expect|book you a time": true,
+    "3|expect|free online quote first": true,
+    "3|expect|wa.me": true,
+    "3|reject|for us to come through": true
   },
   "new_build_beats_oos_decline.txt": {
     "0|expect|what needs doing": true,
@@ -214,6 +226,14 @@
     "1|expect|what area are you in": true,
     "2|reject|all good, what area are you in?": true
   },
+  "no_email_call_permission.txt": {
+    "0|expect|what needs doing": true,
+    "3|expect|email": false,
+    "3|expect|will it be okay if we follow up": false,
+    "4|expect|called you on": false,
+    "4|expect|sent the portfolio here": false,
+    "5|expect|we'll give you a call on": false
+  },
   "no_full_bathroom_scope_question.txt": {
     "0|expect|shower cubicle": true,
     "0|reject|full bathroom installation or": true,
@@ -244,6 +264,17 @@
     "0|expect|install": true,
     "0|reject|free-standing": true,
     "0|reject|freestanding": true
+  },
+  "photo_ask_new_build.txt": {
+    "0|expect|what needs doing": true,
+    "1|reject|US$": true,
+    "2|expect|area": false,
+    "2|expect|plan or drawings": false
+  },
+  "photo_ask_replace_tub.txt": {
+    "0|expect|what needs doing": true,
+    "1|expect|picture of the old tub": false,
+    "1|expect|what area are you in": false
   },
   "photo_with_caption_price.txt": {
     "0|reject|US$": true,

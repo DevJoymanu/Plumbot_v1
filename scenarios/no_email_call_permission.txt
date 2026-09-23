@@ -1,0 +1,21 @@
+# Owner 2026-09-22/23: a job-date lead who turns down email gets the portfolio
+# on WhatsApp, the plumber handoff, and is ASKED (never told) whether we may
+# call two days before their date. A yes confirms the day.
+
+> Hello! Can I get more info on this?
+expect: what needs doing
+
+> Bathroom renovation, full redo
+
+> Budiriro
+
+> I'll only be ready in about 6 weeks
+expect: will it be okay if we follow up
+expect: email
+
+> no thanks, just send it here
+expect: sent the portfolio here
+expect: called you on
+
+> yes that's fine
+expect: we'll give you a call on

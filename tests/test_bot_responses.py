@@ -13628,6 +13628,7 @@ try:
         ("bathroom needs work", "a picture of the bathroom"),
         ("something with water", "a picture of what's there now, or a plan"),
         ("new installation", "a picture of what's there now, or a plan"),
+        ("I need a new shower cubicle fitted in the main bathroom", "the spot in the bathroom where it's going"),
     ]
     for _d, _want in _PHOTO_CASES:
         _got = _pl_line(_d)
@@ -13708,6 +13709,10 @@ try:
     for _m in ("Can't you just quote?", "Do you have to come?", "Can I send pictures instead?",
                "I don't want anyone coming yet"):
         results.log(f"hesitation: '{_m}' is reluctance, anywhere", _hes(_m, _cold))
+    _noted = _h_types.SimpleNamespace(conversation_history=[{'role': 'assistant', 'content':
+        "Great, we can come for a quick site visit. The call-out is free, and we'll do a full check for you. Want me to book you a time?"}])
+    results.log("hesitation: 'not sure' after the approved visit note counts too",
+                _hes("not sure", _noted))
     for _m in ("Not sure yet", "maybe", "hmm"):
         results.log(f"hesitation: '{_m}' only right after a visit offer",
                     _hes(_m, _offered) and not _hes(_m, _cold))

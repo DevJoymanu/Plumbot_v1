@@ -1,0 +1,13 @@
+# Owner 2026-09-23 (decisions 6B and D): pushed for an exact figure, the soft
+# no-guess line, then the free online quote. bot/hesitation.py.
+
+> Hello! Can I get more info on this?
+expect: what needs doing
+
+> I need a new toilet fitted
+
+> Avondale
+
+> just give me the exact price
+expect: rather not guess
+expect: free online quote
