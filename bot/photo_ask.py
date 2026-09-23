@@ -204,3 +204,51 @@ def add_photo_ask(reply: str, appointment, message_body: str = None):
         new_last = f'{line} {question}'
     parts[-1] = new_last
     return MESSAGE_SPLIT_MARKER.join(parts), True
+
+
+# ── After a photo arrives: say what we saw ─────────────────────────────────────
+# Owner decision 9A (2026-09-23): "Got the photo, thanks. I can see the tub and
+# the basin." It proves we looked (the spec's #1166: "Thanks, I see the
+# materials list" and then a question the list had answered). Named ONLY from
+# what vision actually reported, with the same fixture words the photo ask
+# uses; nothing named means nothing said, never a guess, and no condition
+# ("cracked", "old") is claimed, because vision's condition read is the part
+# most likely to be wrong. English only until the Shona wording is approved.
+
+def seen_line(description: str) -> str:
+    """"I can see the tub and the basin." from vision's description, or ''."""
+    text = ' '.join(str(description or '').split())
+    found = []
+    for pattern, value in _FIXTURES:
+        if value == 'pipes':
+            continue            # pipes appear in almost every photo; not news
+        if re.search(pattern, text, re.IGNORECASE) and value not in found:
+            # "shower cubicle" already covers "shower".
+            if value == 'shower' and 'shower cubicle' in found:
+                continue
+            found.append(value)
+    if not found:
+        return ''
+    found = found[:3]
+    names = [f'the {f}' for f in found]
+    joined = names[0] if len(names) == 1 else ', '.join(names[:-1]) + ' and ' + names[-1]
+    return f'I can see {joined}.'
+
+
+def list_seen_line(lines) -> str:
+    """"Got your list, thanks: 22mm copper pipe, 15mm elbow and 18 more items."
+    from the transcribed list, or '' with nothing readable. The first two items
+    by name, quantities dropped, the rest counted, so the lead can tell we read
+    their page without a forty-line echo."""
+    from .materials_list import parse_line
+    items = []
+    for raw in lines or []:
+        parsed = parse_line(raw)
+        if parsed:
+            items.append(parsed[2])
+    if not items:
+        return ''
+    head = ', '.join(items[:2])
+    rest = len(items) - 2
+    tail = f' and {rest} more item{"s" if rest != 1 else ""}' if rest > 0 else ''
+    return f'Got your list, thanks: {head}{tail}.'

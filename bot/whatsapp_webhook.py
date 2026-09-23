@@ -479,9 +479,35 @@ def _media_ack_reply(appointment: "Appointment", media_type: str,
     except Exception as exc:
         print(f"Media ack could not read the photo description: {exc}")
 
+    # Say what we saw, and for a lead ready for a day offer two real slots
+    # with times in the approved wording (owner decisions 9A and 10A,
+    # 2026-09-23). English only: a Shona lead keeps the existing ack until the
+    # owner approves the Shona wording. Best effort: any failure falls back to
+    # the plain ack, never to no ack.
+    seen_text, question_override = '', None
+    try:
+        # Same English test as the photo ask: the shared detector calls most
+        # real Shona "mixed", so anything but 'english' keeps the old ack.
+        from .repeated_question_detector import detect_language_simple as _dls
+        _english = _dls(_last_typed_customer_text(appointment)) == 'english'
+        if not is_plan_document and _english:
+            from .photo_ask import list_seen_line, seen_line as _seen_line
+            if is_list:
+                from .materials_list import list_lines_in_history
+                seen_text = list_seen_line(list_lines_in_history(appointment, within=10))
+            else:
+                seen_text = _seen_line(seen)
+            if next_q == 'availability_date' and appointment.status != 'confirmed':
+                question_override = plumbot._availability_ask()
+                plumbot._set_question_retry_count('availability_date', 1)
+    except Exception as exc:
+        print(f"Media ack could not name the photo or offer slots: {exc}")
+        seen_text, question_override = '', None
+
     return _compose_media_ack(
         next_q, appointment.status, media_type, is_plan_document,
         seen_question=seen_question, is_materials_list=is_list,
+        seen_line=seen_text, question_override=question_override,
     )
 
 
@@ -632,26 +658,36 @@ def _description_is_a_plan(description: str) -> bool:
 def _compose_media_ack(next_question, status: str, media_type: str,
                        is_plan_document: bool = False,
                        seen_question: str = None,
-                       is_materials_list: bool = False) -> str:
+                       is_materials_list: bool = False,
+                       seen_line: str = '',
+                       question_override: str = None) -> str:
     """
     Pure copy builder — no DB, no network — so every branch is pinned in the
     TEST 0 gate. See _media_ack_reply for why the state matters.
+
+    `seen_line` says what we saw (owner decision 9A, 2026-09-23): for a photo
+    it follows the thanks ("Got the photo, thanks. I can see the tub."), for a
+    list it IS the thanks ("Got your list, thanks: 22mm copper pipe, ...").
+    `question_override` replaces the question from _MEDIA_ACK_QUESTIONS; it is
+    how a lead ready for a day gets the approved two-slot ask with times
+    (decision 10A) instead of the vague "this week, or a bit further out?".
+    Both optional, so the existing callers and TEST 0 cases are unchanged.
     """
     if is_plan_document:
         ack = "Thanks for sending the plan."
     elif is_materials_list:
-        ack = "Got your list, thanks."
+        ack = seen_line or "Got your list, thanks."
     elif media_type == 'video':
         ack = "Got the video, thanks."
     else:
-        ack = "Got the photo, thanks."
+        ack = "Got the photo, thanks." + (f" {seen_line}" if seen_line else "")
 
     # Already committed, or nothing left to ask: acknowledge and stop. Never
     # re-pitch someone who has already booked.
     # A question built from what the photo actually showed beats the generic
     # "describe what you'd like done" — but only for the scope questions, never
     # for area/date/time, which the picture cannot answer.
-    question = _MEDIA_ACK_QUESTIONS.get(next_question)
+    question = question_override or _MEDIA_ACK_QUESTIONS.get(next_question)
     if seen_question and next_question in ('service_type', 'project_description'):
         question = seen_question
     # A plan being priced needs the fuller ask, whatever vision thought it saw.
@@ -710,6 +746,12 @@ def _schedule_media_ack(sender: str, appointment: "Appointment", media_type: str
             fresh = appointment
 
         reply = _media_ack_reply(fresh, media_type, is_plan_document)
+        # Through the outbound chain like every other reply (non-negotiable:
+        # every outbound reply goes through it). It used to skip it, which did
+        # not matter while the ack was a fixed thank-you, and does now that it
+        # can carry the visit offer: the visit-price note and the we-voice
+        # rewrite belong on that. check=False: scripted copy, rules still run.
+        reply = finalise_outbound(reply, fresh, check=False)
         parts = [p.strip() for p in reply.split(MESSAGE_SPLIT_MARKER)]             if MESSAGE_SPLIT_MARKER in reply else [reply]
         parts = [p for p in parts if p]
         if not parts:

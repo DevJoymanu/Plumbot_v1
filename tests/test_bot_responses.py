@@ -13660,6 +13660,41 @@ except Exception as e:
     import traceback as _tb
     results.log("photo ask", False, got=_tb.format_exc()[-600:])
 
+# -- after a photo: say what we saw, then the real slots (owner 9A/10A) ---------
+# The spec's #1166: "Thanks, I see the materials list" and then a question the
+# list had answered. Now the ack names what vision reported (never a guess, no
+# condition claimed), a list is named by its first items, and a lead ready for a
+# day gets the approved two-slot ask with times.
+try:
+    from bot.photo_ask import seen_line as _sl, list_seen_line as _lsl
+    from bot.whatsapp_webhook import _compose_media_ack as _cma
+    from bot.views.plumbot.response_mixin import MESSAGE_SPLIT_MARKER as _msm2
+    _seen = _sl("A white built-in bath with a chrome mixer, a pedestal basin and a toilet.")
+    results.log("after a photo: name what vision saw, and only that",
+                _seen == "I can see the tub, the toilet and the basin.", got=_seen)
+    results.log("after a photo: nothing named means nothing claimed",
+                _sl("A handwritten page") == '' and _sl("") == '')
+    _lst = _lsl(["3 x 22mm copper pipes", "60 x 15mm copper elbows", "3 x wash hand basins"])
+    results.log("after a list: its first items by name, the rest counted",
+                _lst == "Got your list, thanks: 22mm copper pipes, 15mm copper elbows and 1 more item.",
+                got=_lst)
+    _ack = _cma('area', 'pending', 'image', seen_line=_seen)
+    results.log("after a photo: the thanks carries what we saw, then the next question",
+                _ack.split(_msm2)[0] == "Got the photo, thanks. I can see the tub, the toilet and the basin.",
+                got=_ack)
+    _slots = "Great, what works better for you, tomorrow at 9am or Thursday at 2pm, for us to come through and take a quick look?"
+    _ack2 = _cma('availability_date', 'pending', 'image', seen_line=_seen,
+                 question_override=_slots)
+    results.log("after a photo: a lead ready for a day gets two real slots with times",
+                _ack2.split(_msm2)[-1] == _slots, got=_ack2)
+    _ack3 = _cma('area', 'pending', 'image', is_materials_list=True, seen_line=_lst)
+    results.log("after a list: the list line IS the thanks, and the job is not re-asked",
+                _ack3.startswith("Got your list, thanks: 22mm") and 'describe' not in _ack3.lower(),
+                got=_ack3)
+except Exception as e:
+    import traceback as _tb
+    results.log("after a photo", False, got=_tb.format_exc()[-600:])
+
 
 if GATE_ONLY:
     _finish()
