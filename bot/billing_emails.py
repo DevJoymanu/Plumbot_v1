@@ -51,7 +51,159 @@ def _html(paragraphs):
             f'line-height:1.5;color:#0b1c30;max-width:560px;">{body}</div>')
 
 
-def _send(*, to, subject, paragraphs, issuer, pdf, filename):
+# ── The document email (owner, 2026-09-24) ──────────────────────────────────
+#
+# The invoice and receipt emails copy the Stripe receipt email Anthropic
+# sends, which the owner sent as the model: the issuer's mark and name on a
+# soft background, a white card with "Receipt from <name>", the amount large,
+# "Paid <date>", download links and a few label/value facts, then a second
+# card with the numbered document, its lines and totals, and a "Questions?"
+# line. Built with tables and inline styles, because Gmail and Outlook strip
+# <style> blocks and most layout CSS. The mark is the hosted static file
+# (Gmail does not show data: images). Every value is escaped.
+
+_BG, _CARD, _LINE = '#F4F6F7', '#FFFFFF', '#E5EAED'
+_INK, _MUTED, _LINK = '#0F1A1F', '#5E6E76', '#0A8FD8'
+_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+
+
+def _long_day(value):
+    """1 October 2026 (day first, as in Zimbabwe and South Africa)."""
+    return f'{value.day} {value:%B %Y}' if value else ''
+
+
+def _short_period(invoice):
+    """'1 Sep 2026 to 30 Sep 2026', or '' with no period."""
+    if not (invoice.period_start and invoice.period_end):
+        return ''
+    short = lambda d: f'{d.day} {d:%b %Y}'
+    return f'{short(invoice.period_start)} to {short(invoice.period_end)}'
+
+
+def _logo_url():
+    """Absolute URL of the HX emblem, or '' if static cannot resolve it."""
+    try:
+        from django.templatetags.static import static
+        base = (getattr(settings, 'SITE_URL', '') or '').rstrip('/')
+        return f"{base}{static('billing/homex_emblem.png')}"
+    except Exception:  # noqa: BLE001 - a missing logo never stops an email
+        return ''
+
+
+def _row(label, value, *, strong=False, muted_value=False, top_rule=False):
+    """One label/value row across the card."""
+    weight = '600' if strong else '400'
+    colour = _MUTED if muted_value else _INK
+    rule = f'border-top:1px solid {_LINE};' if top_rule else ''
+    # The label never wraps ("Invoice number" broke onto two lines at phone
+    # width); a long value wraps on its own side instead.
+    return (f'<tr><td style="padding:9px 12px 9px 0;{rule}font-size:14px;color:{_MUTED if not strong else _INK};'
+            f'font-weight:{weight};white-space:nowrap;vertical-align:top;">{escape(label)}</td>'
+            f'<td align="right" style="padding:9px 0;{rule}font-size:14px;color:{colour};'
+            f'font-weight:{weight};">{escape(value)}</td></tr>')
+
+
+def _document_email(*, issuer, eyebrow, amount, subline, note='', links=(), facts=(),
+                    title, period='', items=(), totals=(), pay_rows=(), subline_colour=None):
+    """The HTML for an invoice / receipt / reminder email.
+
+    eyebrow   "Invoice from HomeX Media"      amount  "US$160.00"
+    subline   "Due 1 October 2026"            note    an optional short paragraph
+    links     [(label, url)]                  facts   [(label, value)]
+    title     "Invoice HMX-2026-0001"         period  "1 Sep 2026 to 30 Sep 2026"
+    items     [(description, qty, amount)]    totals  [(label, value, strong)]
+    pay_rows  payment_lines(): "Label: value" strings, '' for a gap
+    """
+    name = escape(issuer.get('business_name') or '')
+    logo = _logo_url()
+    mark = (f'<img src="{escape(logo)}" width="32" height="32" alt="" '
+            f'style="display:block;border-radius:8px;border:0;">' if logo else '')
+    contact = (issuer.get('contact_email') or issuer.get('email') or '').strip()
+
+    link_html = ''.join(
+        f'<a href="{escape(url)}" style="color:{_INK};text-decoration:none;font-size:14px;'
+        f'margin-right:22px;white-space:nowrap;">&#8595;&nbsp;{escape(label)}</a>'
+        for label, url in links if url)
+    facts_html = ''.join(_row(k, v) for k, v in facts if v)
+    items_html = ''.join(
+        f'<tr><td style="padding:10px 0 2px;font-size:14px;color:{_INK};">{escape(desc)}'
+        f'<div style="font-size:12px;color:{_MUTED};padding-top:2px;">Qty {escape(qty)}</div></td>'
+        f'<td align="right" valign="top" style="padding:10px 0 2px;font-size:14px;color:{_INK};">'
+        f'{escape(amt)}</td></tr>'
+        for desc, qty, amt in items)
+    totals_html = ''.join(_row(label, value, strong=strong, top_rule=True)
+                          for label, value, strong in totals)
+    pay_html = ''
+    if pay_rows:
+        rows = []
+        for line in pay_rows:
+            if not line.strip():
+                continue
+            key, sep, value = line.partition(':')
+            rows.append(_row(key.strip(), value.strip()) if sep else
+                        f'<tr><td colspan="2" style="padding:6px 0;font-size:14px;color:{_INK};">'
+                        f'{escape(line)}</td></tr>')
+        pay_html = (f'<tr><td colspan="2" style="padding:22px 0 4px;font-size:15px;font-weight:600;'
+                    f'color:{_INK};">How to pay</td></tr>' + ''.join(rows))
+
+    card = (f'background:{_CARD};border:1px solid {_LINE};border-radius:12px;')
+    return f'''<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};font-family:{_FONT};">
+<tr><td align="center" style="padding:28px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+<tr><td style="padding:0 4px 20px;">
+  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+    <td valign="middle" style="padding-right:12px;">{mark}</td>
+    <td valign="middle" style="font-size:17px;font-weight:600;color:{_INK};">{name}</td>
+  </tr></table>
+</td></tr>
+<tr><td style="{card}padding:28px 28px 22px;">
+  <div style="font-size:15px;color:{_MUTED};">{escape(eyebrow)}</div>
+  <div style="font-size:34px;font-weight:700;color:{_INK};padding:6px 0 4px;">{escape(amount)}</div>
+  <div style="font-size:15px;color:{subline_colour or _MUTED};">{escape(subline)}</div>
+  {f'<div style="font-size:14px;color:{_INK};padding-top:14px;line-height:1.5;">{escape(note)}</div>' if note else ''}
+  {f'<div style="border-top:1px solid {_LINE};margin-top:18px;padding-top:16px;">{link_html}</div>' if link_html else ''}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">{facts_html}</table>
+</td></tr>
+<tr><td style="height:16px;line-height:16px;">&nbsp;</td></tr>
+<tr><td style="{card}padding:26px 28px 22px;">
+  <div style="font-size:18px;font-weight:600;color:{_INK};">{escape(title)}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
+    {f'<tr><td colspan="2" style="padding:4px 0 0;font-size:13px;color:{_MUTED};">{escape(period)}</td></tr>' if period else ''}
+    {items_html}
+    <tr><td colspan="2" style="height:10px;line-height:10px;">&nbsp;</td></tr>
+    {totals_html}
+    {pay_html}
+  </table>
+  {f'<div style="font-size:14px;color:{_MUTED};padding-top:20px;">Questions? Contact <a href="mailto:{escape(contact)}" style="color:{_LINK};text-decoration:none;">{escape(contact)}</a>.</div>' if contact else ''}
+</td></tr>
+<tr><td align="center" style="padding:20px 0 0;font-size:12px;color:{_MUTED};">{name}{' &middot; ' + escape(issuer.get('tagline') or '') if issuer.get('tagline') else ''}</td></tr>
+</table>
+</td></tr></table></body></html>'''
+
+
+def _invoice_card(invoice, *, eyebrow, amount, subline, note='', subline_colour=None,
+                  totals, pay=True):
+    """The invoice card set shared by the invoice, reminder and switch-off
+    emails: one link (the invoice PDF), Invoice number / Due date / Billing
+    period, the lines, `totals`, and How to pay (EcoCash first for a
+    Zimbabwean client, bank only otherwise; PlatformInvoice.payment_lines)."""
+    from .billing_links import invoice_pdf_url
+    cur = invoice.currency
+    return _document_email(
+        issuer=invoice.issuer or {}, eyebrow=eyebrow, amount=amount, subline=subline,
+        subline_colour=subline_colour, note=note,
+        links=[('Download invoice', invoice_pdf_url(invoice))],
+        facts=[('Invoice number', invoice.number), ('Due date', _long_day(invoice.due_date))],
+        # The period heads the lines in the second card, as on the Stripe
+        # receipt; short months, or it wrapped in the facts at phone width.
+        title=f'Invoice {invoice.number}', period=_short_period(invoice),
+        items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
+               for i in invoice.items.all()],
+        totals=totals, pay_rows=invoice.payment_lines() if pay else ())
+
+
+def _send(*, to, subject, paragraphs, issuer, pdf, filename, html=None):
     from .models import SentEmail
     from .plumber_notifications import send_email_to_recipients
 
@@ -60,7 +212,8 @@ def _send(*, to, subject, paragraphs, issuer, pdf, filename):
     reply_to = (issuer.get('email') or '').strip() or None
     ok = send_email_to_recipients(
         [to], subject, '\n\n'.join(p for p in paragraphs if p),
-        html_message=_html(paragraphs),
+        # `html` is the designed document email; plain paragraphs otherwise.
+        html_message=html or _html(paragraphs),
         attachment=pdf, attachment_name=filename,
         from_email=_sender(issuer), reply_to=reply_to,
         bcc=[reply_to] if reply_to and reply_to.lower() != to.lower() else None,
@@ -130,9 +283,17 @@ def send_billing_notice(invoice, kind, days):
             'If you have already paid, thank you. Reply to this email so we can match it.',
             sign_off,
         ]
+        # Same invoice card as the invoice email, headed as a reminder.
+        html = _invoice_card(
+            invoice, eyebrow=f'Payment reminder from {business}' if business else 'Payment reminder',
+            amount=owed,
+            subline=('Due today' if days <= 0 else f'Due {_long_day(invoice.due_date)}, {_days_phrase(days)}'),
+            note='If you have already paid, thank you. Reply to this email so we can match it.',
+            totals=[('Total', _money(invoice.currency, invoice.total), False),
+                    ('Amount due', owed, True)])
         return _send(to=invoice.bill_to_email, subject=subject, paragraphs=paragraphs,
                      issuer=issuer, pdf=build_invoice_pdf(invoice),
-                     filename=f'{invoice.number}.pdf')
+                     filename=f'{invoice.number}.pdf', html=html)
 
     if kind == 'switch_off':
         off = f'{invoice.switch_off_on:%d %b %Y}'
@@ -151,9 +312,21 @@ def send_billing_notice(invoice, kind, days):
             'If you have already paid, reply to this email so we can match it.',
             sign_off,
         ]
+        # The invoice card again, headed as overdue, the switch-off date in red.
+        html = _invoice_card(
+            invoice, eyebrow=f'Overdue invoice from {business}' if business else 'Overdue invoice',
+            amount=owed,
+            subline=(f'Service switched off today unless paid' if days <= 0
+                     else f'Service switched off {when} unless paid'),
+            subline_colour='#BA1A1A',
+            note=(f'This invoice was due on {_long_day(invoice.due_date)}. While the service is off, '
+                  'the bot stops answering your customers on WhatsApp. If you have already paid, '
+                  'reply to this email so we can match it.'),
+            totals=[('Total', _money(invoice.currency, invoice.total), False),
+                    ('Amount due', owed, True)])
         return _send(to=invoice.bill_to_email, subject=subject, paragraphs=paragraphs,
                      issuer=issuer, pdf=build_invoice_pdf(invoice),
-                     filename=f'{invoice.number}.pdf')
+                     filename=f'{invoice.number}.pdf', html=html)
 
     # Operator mail: to the billing inbox, from billing@, no attachment.
     link = _invoice_link(invoice)
@@ -215,11 +388,19 @@ def send_invoice_email(invoice):
         'Reply to this email if you have any questions.',
         f'Thank you,\n{business}' if business else 'Thank you',
     ]
+    cur = invoice.currency
+    totals = [('Subtotal', _money(cur, invoice.total), False), ('Total', _money(cur, invoice.total), False)]
+    if invoice.amount_paid:
+        totals.append(('Paid', _money(cur, invoice.amount_paid), False))
+    totals.append(('Amount due', _money(cur, total), True))
+    html = _invoice_card(
+        invoice, eyebrow=f'Invoice from {business}' if business else 'Invoice',
+        amount=_money(cur, total), subline=f'Due {_long_day(invoice.due_date)}', totals=totals)
     ok, error = _send(
         to=invoice.bill_to_email,
         subject=f'Invoice {invoice.number}' + (f' from {business}' if business else ''),
         paragraphs=paragraphs, issuer=issuer,
-        pdf=build_invoice_pdf(invoice), filename=f'{invoice.number}.pdf',
+        pdf=build_invoice_pdf(invoice), filename=f'{invoice.number}.pdf', html=html,
     )
     if ok:
         now = timezone.now()
@@ -249,11 +430,37 @@ def send_receipt_email(payment):
          if balance > 0 else 'This invoice is now paid in full.'),
         f'Thank you,\n{business}' if business else 'Thank you',
     ]
+    # The Stripe receipt the owner sent as the model: "Receipt from <name>",
+    # the amount, "Paid <date>", both download links, then Receipt number /
+    # Invoice number / Payment method, and the invoice's lines and totals
+    # with this payment as Amount paid.
+    from .billing_links import invoice_pdf_url, receipt_pdf_url
+    cur = invoice.currency
+    method = payment.get_method_display()
+    if payment.reference:
+        method = f'{method}, {payment.reference}'
+    totals = [('Subtotal', _money(cur, invoice.total), False),
+              ('Total', _money(cur, invoice.total), False),
+              ('Amount paid', _money(cur, payment.amount), True)]
+    if balance > 0:
+        totals.append(('Balance remaining', _money(cur, balance), False))
+    period = _short_period(invoice)
+    html = _document_email(
+        issuer=issuer, eyebrow=f'Receipt from {business}' if business else 'Receipt',
+        amount=_money(cur, payment.amount), subline=f'Paid {_long_day(payment.paid_on)}',
+        links=[('Download invoice', invoice_pdf_url(invoice)),
+               ('Download receipt', receipt_pdf_url(payment))],
+        facts=[('Receipt number', payment.receipt_number), ('Invoice number', invoice.number),
+               ('Payment method', method)],
+        title=f'Receipt {payment.receipt_number}', period=period,
+        items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
+               for i in invoice.items.all()],
+        totals=totals)
     ok, error = _send(
         to=invoice.bill_to_email,
         subject=f'Receipt {payment.receipt_number}' + (f' from {business}' if business else ''),
         paragraphs=paragraphs, issuer=issuer,
-        pdf=build_receipt_pdf(payment), filename=f'{payment.receipt_number}.pdf',
+        pdf=build_receipt_pdf(payment), filename=f'{payment.receipt_number}.pdf', html=html,
     )
     if ok:
         payment.emailed_at = timezone.now()

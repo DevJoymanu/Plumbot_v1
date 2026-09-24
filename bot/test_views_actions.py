@@ -13260,3 +13260,85 @@ class BillingMobileTests(TestCase):
         form = self.client.get(reverse('billing_invoice_new')).content.decode()
         self.assertIn('placeholder="Qty"', form)
         self.assertIn('placeholder="Unit price"', form)
+
+
+class BillingEmailDesignTests(TestCase):
+    """The invoice and receipt emails modelled on the Stripe receipt Anthropic
+    sends (owner, 2026-09-24): issuer header, an amount card with download
+    links and facts, a document card with lines and totals, and signed public
+    links that open the PDF without a login (bot/billing_links.py)."""
+
+    def setUp(self):
+        from .models import PlatformBillingProfile, PlatformInvoice, PlatformInvoiceItem
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        PlatformBillingProfile.current()
+        self.invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme Plumbing', bill_to_email='owner@acme.example',
+            status='sent', due_date=date(2026, 10, 1), period_start=date(2026, 9, 1),
+            period_end=date(2026, 9, 30), zimbabwe_client=True)
+        PlatformInvoiceItem.objects.create(invoice=self.invoice, description='Plumbot monthly subscription',
+                                           unit_price=Decimal('150.00'), sort_order=1)
+        PlatformInvoiceItem.objects.create(invoice=self.invoice, description='Business website',
+                                           unit_price=Decimal('10.00'), sort_order=2)
+
+    def _sent(self, send, *args):
+        with patch('bot.plumber_notifications.send_email_to_recipients', return_value=True) as mock:
+            self.assertEqual(send(*args), (True, ''))
+        return mock.call_args.kwargs['html_message']
+
+    def test_signed_links_open_the_pdf_without_a_login_and_nothing_else(self):
+        from .billing_links import invoice_pdf_url, make_token, read_token
+        url = invoice_pdf_url(self.invoice)
+        self.assertIn('/billing/doc/', url)
+        path = url[url.index('/billing/doc/'):]
+        response = self.client.get(path)          # anonymous
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        token = path.rstrip('/').rsplit('/', 1)[1]
+        self.assertEqual(read_token(token), ('inv', self.invoice.pk))
+        self.assertIsNone(read_token(token[:-2] + 'xx'))
+        self.assertEqual(self.client.get('/billing/doc/not-a-token/').status_code, 404)
+        self.assertEqual(self.client.get(
+            reverse('billing_public_document', args=[make_token('inv', 999999)])).status_code, 404)
+
+    def test_the_invoice_email_is_the_stripe_style_card(self):
+        from .billing_emails import send_invoice_email
+        html = self._sent(send_invoice_email, self.invoice)
+        for fact in ('Invoice from HomeX Media', 'US$160.00', 'Due 1 October 2026',
+                     'Download invoice', '/billing/doc/', 'Invoice number', self.invoice.number,
+                     '1 Sep 2026 to 30 Sep 2026', 'Amount due', 'How to pay', 'EcoCash',
+                     'Questions? Contact', 'billing@homexmedia.com', 'billing/homex_emblem'):
+            self.assertIn(fact, html)
+        self.assertLess(html.index('EcoCash'), html.index('Account number'))
+        self.assertNotIn('—', html)
+
+    def test_a_non_zimbabwean_invoice_email_has_no_ecocash(self):
+        from .billing_emails import send_invoice_email
+        self.invoice.zimbabwe_client = False
+        self.invoice.save()
+        html = self._sent(send_invoice_email, self.invoice)
+        self.assertNotIn('EcoCash', html)
+        self.assertIn('Account number', html)
+
+    def test_the_receipt_email_matches_the_model(self):
+        from .billing_emails import send_receipt_email
+        from .models import PlatformPayment
+        payment = PlatformPayment.objects.create(invoice=self.invoice, amount=Decimal('160.00'),
+                                                 paid_on=date(2026, 9, 28), method='ecocash')
+        html = self._sent(send_receipt_email, payment)
+        for fact in ('Receipt from HomeX Media', 'US$160.00', 'Paid 28 September 2026',
+                     'Download invoice', 'Download receipt', 'Receipt number', payment.receipt_number,
+                     'Invoice number', 'Payment method', 'EcoCash', 'Amount paid'):
+            self.assertIn(fact, html)
+        self.assertEqual(html.count('/billing/doc/'), 2)
+
+    def test_reminders_and_switch_off_notices_use_the_same_card(self):
+        from .billing_emails import send_billing_notice
+        self.invoice.switch_off_on = date(2026, 10, 9)
+        self.invoice.save()
+        remind = self._sent(send_billing_notice, self.invoice, 'remind', 7)
+        self.assertIn('Payment reminder from HomeX Media', remind)
+        self.assertIn('Download invoice', remind)
+        notice = self._sent(send_billing_notice, self.invoice, 'switch_off', 5)
+        self.assertIn('Overdue invoice from HomeX Media', notice)
+        self.assertIn('#BA1A1A', notice)

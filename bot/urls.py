@@ -242,6 +242,8 @@ urlpatterns = [
     # Platform billing: the operator invoicing tenants (superuser-only; every
     # state change is POST). docs/current-state/billing.md
     path('platform/billing/', billing_views.billing_home, name='billing_home'),
+    # PUBLIC, signed: the billing emails' Download invoice / receipt links.
+    path('billing/doc/<str:token>/', billing_views.billing_public_document, name='billing_public_document'),
     path('platform/billing/settings/', billing_views.billing_settings, name='billing_settings'),
     path('platform/billing/templates/new/', billing_views.billing_template_new, name='billing_template_new'),
     path('platform/billing/templates/<int:pk>/edit/', billing_views.billing_template_edit, name='billing_template_edit'),

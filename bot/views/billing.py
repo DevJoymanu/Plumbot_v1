@@ -860,3 +860,25 @@ def billing_template_preview(request, pk):
     data = build_template_pdf(template, PlatformBillingProfile.current(), timezone.localdate(),
                               zimbabwe=bool(request.GET.get('zimbabwe')))
     return _pdf_response(data, f'{template.name}.pdf', inline=not request.GET.get('download'))
+
+
+# ── Public document links (the emails' "Download invoice / receipt") ────────
+
+def billing_public_document(request, token):
+    """Serve the invoice or receipt PDF a signed email link names, with no
+    login (bot/billing_links.py): the tenant reading their email has no
+    billing access, as with Stripe's links. The token names exactly one
+    document; a forged, edited or unknown one is a 404. GET only, reads only."""
+    from django.http import Http404
+    from ..billing_links import read_token
+    if request.method != 'GET':
+        raise Http404
+    found = read_token(token)
+    if found is None:
+        raise Http404
+    kind, pk = found
+    if kind == 'inv':
+        invoice = get_object_or_404(PlatformInvoice, pk=pk)
+        return _pdf_response(build_invoice_pdf(invoice), f'{invoice.number}.pdf')
+    payment = get_object_or_404(PlatformPayment.objects.select_related('invoice'), pk=pk)
+    return _pdf_response(build_receipt_pdf(payment), f'{payment.receipt_number}.pdf')
