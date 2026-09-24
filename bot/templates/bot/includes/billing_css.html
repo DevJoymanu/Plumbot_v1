@@ -1,0 +1,115 @@
+{# Shared styles for the platform billing pages (bl-*). Built only on the Aetheris tokens in plumbot_variables_css.html, the same ones the platform console config pages use, so billing reads as part of the console. #}
+<style>
+  .bl-wrap { padding: 24px 32px; max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  .bl-glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: var(--glass-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-glow);
+  }
+  .bl-card { padding: 24px 26px; }
+  .bl-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .bl-eyebrow { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; font-weight: 500; color: var(--color-primary); }
+  .bl-head h1 { margin: 2px 0 0; font-weight: 400; font-size: clamp(1.35rem, 2vw, 1.7rem); color: var(--color-text); }
+  .bl-title { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 12px; font-weight: 600; color: var(--color-primary); margin-bottom: 14px; }
+  .bl-hint { font-size: 13px; color: var(--color-muted); margin: 0 0 16px; }
+  .bl-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .bl-actions form { display: inline; margin: 0; }
+
+  .bl-btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: var(--radius-pill);
+    border: 1px solid rgba(0,101,145,0.15); background: transparent; color: var(--color-primary);
+    font-family: var(--font-label); font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer;
+    transition: all var(--transition); min-height: 40px;
+  }
+  .bl-btn:hover { border-color: rgba(0,101,145,0.4); background: rgba(0,101,145,0.05); color: var(--color-primary); }
+  .bl-btn:active { transform: scale(0.97); }
+  .bl-btn--solid { background: var(--color-primary); border-color: var(--color-primary); color: #fff; box-shadow: 0 10px 24px -8px rgba(0,101,145,0.35); }
+  .bl-btn--solid:hover { background: var(--color-primary); color: #fff; opacity: 0.92; }
+  .bl-btn--danger { color: var(--color-error); border-color: rgba(186,26,26,0.25); }
+  .bl-btn--danger:hover { color: var(--color-error); border-color: rgba(186,26,26,0.5); background: rgba(186,26,26,0.05); }
+
+  /* Stat tiles: real figures only (outstanding, overdue, received, drafts). */
+  .bl-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .bl-stat { padding: 20px 22px; }
+  .bl-stat__label { font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; color: var(--color-muted); font-weight: 500; }
+  .bl-stat__value { font-size: 32px; font-weight: 300; color: var(--color-text); margin-top: 6px; line-height: 1.1; }
+  .bl-stat--alert { border-color: rgba(186,26,26,0.2); }
+  .bl-stat--alert .bl-stat__value { color: var(--color-error); }
+
+  .bl-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .bl-table th { text-align: left; font-family: var(--font-label); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); font-weight: 500; padding: 8px 12px; }
+  .bl-table td { padding: 12px; border-top: 1px solid rgba(0,101,145,0.06); vertical-align: middle; }
+  .bl-table tr.bl-row-link { cursor: pointer; transition: background var(--transition); }
+  .bl-table tr.bl-row-link:hover td { background: rgba(0,101,145,0.03); }
+  .bl-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bl-muted { color: var(--color-muted); font-size: 12.5px; }
+
+  .bl-pill { display: inline-block; padding: 2px 12px; border-radius: var(--radius-pill); font-family: var(--font-label); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .bl-pill--draft { background: rgba(91,114,133,0.12); color: #3d5366; }
+  .bl-pill--sent { background: rgba(14,165,233,0.12); color: var(--color-primary); }
+  .bl-pill--part_paid { background: rgba(70,72,212,0.12); color: #3336b0; }
+  .bl-pill--paid { background: rgba(0,128,96,0.12); color: #00684f; }
+  .bl-pill--overdue { background: rgba(186,26,26,0.10); color: var(--color-error); }
+  .bl-pill--void { background: rgba(91,114,133,0.10); color: #5b7285; text-decoration: line-through; }
+
+  /* Tap-chips: pick a known item instead of typing (tenant, status, method). */
+  .bl-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .bl-chip { display: inline-flex; align-items: center; padding: 7px 16px; border-radius: var(--radius-pill); background: var(--color-surface-low); border: 1px solid transparent; font-family: var(--font-label); font-size: 13px; font-weight: 600; color: var(--color-text-2); text-decoration: none; cursor: pointer; transition: all var(--transition); }
+  .bl-chip:hover { background: var(--color-surface-mid); color: var(--color-text); }
+  .bl-chip.on { background: var(--color-primary); color: #fff; }
+  .bl-chip-radio { position: relative; }
+  .bl-chip-radio input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .bl-chip-radio input:checked + .bl-chip { background: var(--color-primary); color: #fff; }
+  .bl-chip-radio input:focus-visible + .bl-chip { box-shadow: 0 0 0 2px rgba(0,101,145,0.35); }
+
+  .bl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px 22px; }
+  .bl-field label { display: block; font-family: var(--font-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); margin-bottom: 6px; }
+  .bl-field input:not([type=checkbox]), .bl-field select, .bl-field textarea { width: 100%; }
+  .bl-field .helptext, .bl-field small.bl-help { display: block; font-size: 12px; color: var(--color-muted); margin-top: 4px; }
+  .bl-field .errorlist { list-style: none; padding: 0; margin: 4px 0 0; color: var(--color-error); font-size: 12px; }
+  .bl-wide { grid-column: 1 / -1; }
+
+  /* Invoice lines: one row per item, scrolls inside its own box when narrow. */
+  .bl-lines { overflow-x: auto; }
+  .bl-line-head, .bl-line { display: grid; grid-template-columns: minmax(220px, 1fr) 100px 140px 110px 110px; gap: 12px; align-items: center; min-width: 680px; }
+  .bl-line-head { padding: 0 4px 8px; font-family: var(--font-label); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+  .bl-line { padding: 10px 4px; border-top: 1px solid rgba(0,101,145,0.06); }
+  .bl-line .errorlist { grid-column: 1 / -1; list-style: none; margin: 0; padding: 0; color: var(--color-error); font-size: 12px; }
+  .bl-line__del { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-muted); }
+  .bl-line__del input { width: auto !important; min-height: 0 !important; }
+  .bl-line__opts { display: flex; flex-direction: column; gap: 4px; }
+
+  .bl-totals { margin-left: auto; max-width: 320px; display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; font-size: 14px; }
+  .bl-totals .bl-strong { font-weight: 600; font-size: 16px; color: var(--color-text); }
+
+  .bl-empty { text-align: center; padding: 40px 16px; border: 2px dashed rgba(0,101,145,0.08); border-radius: var(--radius-md); color: var(--color-muted); }
+  .bl-empty i { font-size: 34px; opacity: 0.45; display: block; margin-bottom: 10px; }
+
+  /* Phone layer (owner: billing must work on mobile as well as the desk).
+     Figures two to a row, 44px tap targets, header buttons on their own
+     full-width row, and each invoice line STACKED as a small card instead of
+     a 680px row scrolled sideways: description on top, qty and unit price
+     side by side, then amount and the options. Form controls are already
+     16px here from plumbot_variables_css.html (no iOS zoom on focus).
+     Pinned by BillingMobileTests. */
+  @media (max-width: 767px) {
+    .bl-wrap { padding: 16px; gap: 16px; }
+    .bl-card { padding: 18px 16px; }
+    .bl-stats { grid-template-columns: 1fr 1fr; gap: 12px; }
+    .bl-stat { padding: 16px; }
+    .bl-stat__value { font-size: 24px; }
+    .bl-btn { min-height: 44px; }
+    .bl-head .bl-actions { width: 100%; }
+    .bl-head .bl-actions > .bl-btn, .bl-head .bl-actions > form { flex: 1 1 auto; }
+    .bl-head .bl-actions .bl-btn { width: 100%; justify-content: center; }
+    .bl-grid { grid-template-columns: 1fr; }
+    .bl-lines { overflow-x: visible; }
+    .bl-line-head { display: none; }
+    .bl-line { grid-template-columns: 1fr 1fr; min-width: 0; gap: 8px 12px; padding: 14px 0; }
+    .bl-line > input[name$="-description"] { grid-column: 1 / -1; }
+    .bl-line .bl-line-total { text-align: left; font-weight: 600; align-self: center; }
+    .bl-line__opts { flex-direction: row; gap: 16px; justify-content: flex-end; }
+    .bl-totals { max-width: none; width: 100%; }
+    .bl-chip { padding: 10px 16px; }
+  }
+</style>

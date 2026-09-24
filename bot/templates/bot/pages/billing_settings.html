@@ -1,0 +1,36 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Billing details · Billing{% endblock %}
+
+{% block extra_css %}{% include "bot/includes/billing_css.html" %}{% endblock %}
+
+{% block content %}
+<form method="post" class="bl-wrap">
+  {% csrf_token %}
+  <div class="bl-head">
+    <div>
+      <div class="bl-eyebrow"><a href="{% url 'billing_home' %}">Billing</a></div>
+      <h1>Billing details</h1>
+    </div>
+    <div class="bl-actions">
+      <a class="bl-btn" href="{% url 'billing_home' %}">Cancel</a>
+      <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-check"></i> Save</button>
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Who the invoices come from</div>
+    <p class="bl-hint">Printed at the top of every invoice and receipt. Changes apply to invoices raised from now on; invoices already raised keep the details they were issued with.</p>
+    <div class="bl-grid">
+      {% for field in form %}
+      <div class="bl-field {% if field.name == 'address' or field.name == 'payment_details' or field.name == 'footer_note' %}bl-wide{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</form>
+{% endblock %}

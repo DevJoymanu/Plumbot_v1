@@ -1,0 +1,140 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}Billing · Platform Console{% endblock %}
+
+{% block extra_css %}{% include "bot/includes/billing_css.html" %}{% endblock %}
+
+{% block content %}
+<div class="bl-wrap">
+
+  <div class="bl-head">
+    <div>
+      <div class="bl-eyebrow">Platform</div>
+      <h1>Billing</h1>
+    </div>
+    <div class="bl-actions">
+      <a class="bl-btn" href="{% url 'billing_settings' %}"><i class="fas fa-sliders"></i> Billing details</a>
+      <a class="bl-btn bl-btn--solid" href="{% url 'billing_invoice_new' %}"><i class="fas fa-plus"></i> New invoice</a>
+    </div>
+  </div>
+
+  {# Every figure binds to real rows: outstanding and overdue over issued invoices, received over this month's non-void receipts. #}
+  <div class="bl-stats">
+    <div class="bl-glass bl-stat">
+      <div class="bl-stat__label">Outstanding</div>
+      <div class="bl-stat__value">{{ currency }}{{ summary.outstanding|floatformat:2 }}</div>
+    </div>
+    <div class="bl-glass bl-stat {% if summary.overdue_count %}bl-stat--alert{% endif %}">
+      <div class="bl-stat__label">Overdue invoices</div>
+      <div class="bl-stat__value">{{ summary.overdue_count }}</div>
+    </div>
+    <div class="bl-glass bl-stat">
+      <div class="bl-stat__label">Received this month</div>
+      <div class="bl-stat__value">{{ currency }}{{ summary.received_month|floatformat:2 }}</div>
+    </div>
+    <div class="bl-glass bl-stat">
+      <div class="bl-stat__label">Drafts not sent</div>
+      <div class="bl-stat__value">{{ summary.draft_count }}</div>
+    </div>
+  </div>
+
+  {% if not profile.payment_details %}
+  <div class="bl-glass bl-card" style="border-color: rgba(180,130,0,0.25);">
+    <strong>Add how tenants should pay you.</strong>
+    <span class="bl-muted">Invoices print your bank or EcoCash details only once they are set.</span>
+    <a class="bl-btn" style="margin-left:8px;" href="{% url 'billing_settings' %}">Add billing details</a>
+  </div>
+  {% endif %}
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Invoice a tenant</div>
+    <div class="bl-chips">
+      {% for t in tenants %}
+      <a class="bl-chip" href="{% url 'billing_invoice_new' %}?tenant={{ t.slug }}">{{ t.name }}</a>
+      {% empty %}
+      <span class="bl-muted">No tenants yet.</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Invoices</div>
+    {% if any_invoices %}
+    <form method="get" class="bl-actions" style="margin-bottom:16px;">
+      <div class="bl-chips">
+        <a class="bl-chip {% if not status %}on{% endif %}" href="?{% if tenant_slug %}tenant={{ tenant_slug }}{% endif %}">All</a>
+        {% for key, label in status_choices %}
+        <a class="bl-chip {% if status == key %}on{% endif %}" href="?status={{ key }}{% if tenant_slug %}&tenant={{ tenant_slug }}{% endif %}">{{ label }}</a>
+        {% endfor %}
+      </div>
+      <input type="hidden" name="status" value="{{ status }}">
+      <select name="tenant" onchange="this.form.submit()" aria-label="Filter by tenant" style="max-width:240px;">
+        <option value="">Every tenant</option>
+        {% for t in tenants %}
+        <option value="{{ t.slug }}" {% if t.slug == tenant_slug %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <div class="pb-table-scroll">
+      <table class="bl-table">
+        <thead>
+          <tr>
+            <th>Invoice</th><th>Tenant</th><th>Issued</th><th>Due</th>
+            <th class="bl-num">Total</th><th class="bl-num">Balance</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          <tr class="bl-row-link" onclick="window.location='{% url 'billing_invoice_detail' inv.pk %}'">
+            <td><a href="{% url 'billing_invoice_detail' inv.pk %}"><strong>{{ inv.number }}</strong></a></td>
+            <td>{{ inv.bill_to_name }}{% if not inv.tenant %} <span class="bl-muted">(tenant deleted)</span>{% endif %}</td>
+            <td>{{ inv.issue_date|date:"d M Y" }}</td>
+            <td>{{ inv.due_date|date:"d M Y" }}</td>
+            <td class="bl-num">{{ inv.currency }}{{ inv.total|floatformat:2 }}</td>
+            <td class="bl-num">{{ inv.currency }}{{ inv.balance|floatformat:2 }}</td>
+            <td><span class="bl-pill bl-pill--{{ inv.display_status }}">{{ inv.display_status_label }}</span></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7"><div class="bl-empty"><i class="fas fa-filter"></i>No invoices match this filter.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bl-empty">
+      <i class="fas fa-file-invoice-dollar"></i>
+      No invoices yet. Pick a tenant above to raise the first one.
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Recent receipts</div>
+    {% if receipts %}
+    <div class="pb-table-scroll">
+      <table class="bl-table">
+        <thead>
+          <tr><th>Receipt</th><th>Invoice</th><th>From</th><th>Paid on</th><th>Method</th><th class="bl-num">Amount</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for p in receipts %}
+          <tr>
+            <td><strong>{{ p.receipt_number }}</strong>{% if p.is_void %} <span class="bl-pill bl-pill--void">Void</span>{% endif %}</td>
+            <td><a href="{% url 'billing_invoice_detail' p.invoice_id %}">{{ p.invoice.number }}</a></td>
+            <td>{{ p.invoice.bill_to_name }}</td>
+            <td>{{ p.paid_on|date:"d M Y" }}</td>
+            <td>{{ p.get_method_display }}</td>
+            <td class="bl-num">{{ p.invoice.currency }}{{ p.amount|floatformat:2 }}</td>
+            <td class="bl-num"><a class="bl-btn" href="{% url 'billing_receipt_pdf' p.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> PDF</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bl-empty"><i class="fas fa-receipt"></i>No payments recorded yet. Record one from an invoice's page.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

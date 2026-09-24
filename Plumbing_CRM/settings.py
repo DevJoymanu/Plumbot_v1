@@ -265,6 +265,14 @@ EMAIL_DOMAIN = os.environ.get('EMAIL_DOMAIN', 'homebaseplumbers.co.zw')
 # (TenantProfile.customer_from_email) and only falls back to this sender when
 # the tenant has not configured one.
 PLATFORM_EMAIL_DOMAIN = os.environ.get('PLATFORM_EMAIL_DOMAIN', 'notifications.homexmedia.com')
+# The address the platform's own invoices and receipts to tenants go out from
+# (bot/billing_emails.py). On the ROOT domain, not the notifications
+# subdomain, because an invoice is the business itself writing (owner choice);
+# homexmedia.com must be authenticated in Brevo (brevo-code + DKIM + DMARC in
+# Cloudflare) or Brevo refuses the sender. Deliberately not DEFAULT_FROM_EMAIL,
+# which falls back to Homebase's identity. docs/current-state/billing.md
+PLATFORM_BILLING_FROM_EMAIL = os.environ.get(
+    'PLATFORM_BILLING_FROM_EMAIL', 'billing@homexmedia.com')
 
 # Email transport over HTTP (port 443). Railway blocks all outbound SMTP egress,
 # so an HTTPS send API is the only path that delivers from this host; the SMTP

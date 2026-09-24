@@ -4160,6 +4160,9 @@ class SentEmail(models.Model):
         BOOKING = 'booking', 'Booking confirmation'
         FOLLOWUP = 'followup', 'Follow-up'
         PLUMBER_ALERT = 'plumber_alert', 'Plumber alert'
+        # The platform billing a tenant (invoices and receipts, bot/billing.py).
+        # Platform mail, so these rows carry tenant=None; see billing_emails.
+        BILLING = 'billing', 'Billing (invoice or receipt)'
         OTHER = 'other', 'Other'
 
     # The categories the Sent-Emails dashboard shows by default: post-visit,
@@ -4242,3 +4245,418 @@ class SentEmail(models.Model):
     @property
     def recipient_display(self):
         return ', '.join(self.recipients or []) or '(none)'
+
+
+# ── Platform billing: the operator invoicing the plumbing companies ─────────
+#
+# These are the PLATFORM's own books (HomeX Media billing each tenant its
+# subscription, plan decision #4: flat monthly fee), not a tenant's books with
+# its customers; a tenant never sees or edits these rows. Screens in
+# bot/views/billing.py (superuser-only), PDFs in bot/billing_pdf.py, email in
+# bot/billing_emails.py. Detail and rules: docs/current-state/billing.md.
+
+
+class PlatformBillingProfile(models.Model):
+    """Who the invoices are FROM: the platform operator's own letterhead,
+    payment details and defaults. One row (pk=1), edited on the Billing
+    settings page; read only through `current()`.
+
+    Why a row and not settings/env: the operator changes bank details and the
+    monthly fee without a deploy. Why it is SNAPSHOT onto every invoice
+    (`PlatformInvoice.issuer`) rather than read at render time: a PDF
+    downloaded again next year must say what the invoice said when it was
+    issued, not today's bank account.
+
+    Deliberately NOT defaulted from DEFAULT_FROM_EMAIL / EMAIL_FROM_NAME: those
+    fall back to Homebase's own identity, and a Homebase value must never reach
+    another tenant (tenancy-and-permissions.md). Absent means omit on the PDF.
+    """
+    business_name = models.CharField(max_length=120, default='HomeX Media')
+    tagline = models.CharField(max_length=80, blank=True, default='Unmatched Velocity')
+    address = models.TextField(blank=True, default='')
+    email = models.EmailField(
+        blank=True, default='',
+        help_text="Where tenants reply about billing. Also gets a Bcc copy of every invoice and receipt sent.")
+    phone = models.CharField(max_length=40, blank=True, default='')
+    currency = models.CharField(max_length=8, default='US$')
+    default_monthly_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    payment_terms_days = models.PositiveIntegerField(default=7)
+    payment_details = models.TextField(
+        blank=True, default='',
+        help_text='Bank account, EcoCash number and so on. Printed on every invoice.')
+    footer_note = models.CharField(max_length=255, blank=True, default='')
+    # Automatic reminders (bot/billing_reminders.py). Days BEFORE the due date
+    # a tenant is reminded, as "14,7"; the due day itself always gets one too.
+    # Owner rule 2026-09-24: 14 and 7 days before, then on the day, adjustable.
+    reminder_days = models.CharField(
+        max_length=40, default='14,7',
+        help_text='Days before the due date to remind the tenant, e.g. 14,7. They are also reminded on the day.')
+    # Every billing email the cron sends goes out at or after this local time
+    # (owner: 7AM). Billing mail is to a business, not a plumbing lead, so the
+    # customer email send windows do not apply to it.
+    reminder_time = models.TimeField(default=dt_time(7, 0))
+    # How the monthly subscription is allocated across Plumbot's features,
+    # printed under a line whose "feature breakdown" box is ticked (owner,
+    # 2026-09-24). One "Feature | detail | percent" per line; percents must
+    # total 100. Parsed by parse_breakdown, applied by allocate_breakdown.
+    subscription_breakdown = models.TextField(
+        blank=True, default=(
+            'WhatsApp AI sales assistant | answers 24/7, qualifies leads | 40\n'
+            'Booking and scheduling | site visits, calendar, reminders | 15\n'
+            'Automated follow-ups | WhatsApp and email | 15\n'
+            'Quotes and documents | quote builder, PDFs, templates | 10\n'
+            'Dashboard and lead management | | 10\n'
+            'Hosting, WhatsApp number and support | | 10'),
+        help_text='One per line: Feature | what it covers | percent. The percents must add up to 100.')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.business_name
+
+    def reminder_offsets(self):
+        """The configured days-before as ints, largest first, with 0 (the due
+        day) always last. Junk entries are ignored rather than failing a run."""
+        return parse_reminder_days(self.reminder_days)
+
+    @classmethod
+    def current(cls):
+        """The one profile row, created with defaults on first read so a fresh
+        database can still raise an invoice.
+
+        The billing inbox (Reply-To and Bcc on every invoice and receipt)
+        starts as the operator's own PLATFORM_NOTIFICATION_EMAIL, so replies
+        reach a real inbox before anyone has opened Billing details. Only the
+        first read sets it; an address saved on the page is never overwritten.
+        """
+        from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        obj, _ = cls.objects.get_or_create(
+            pk=1, defaults={'email': PLATFORM_NOTIFICATION_EMAIL,
+                            'payment_details': DEFAULT_PAYMENT_DETAILS})
+        return obj
+
+    def breakdown_rows(self):
+        return parse_breakdown(self.subscription_breakdown)
+
+    def snapshot(self) -> dict:
+        """The issuer block frozen onto an invoice at creation."""
+        return {
+            'business_name': self.business_name,
+            'tagline': self.tagline,
+            'address': self.address,
+            'email': self.email,
+            'phone': self.phone,
+            'payment_details': self.payment_details,
+            'footer_note': self.footer_note,
+        }
+
+
+# The operator's own bank details (owner, 2026-09-24), the starting value of
+# Billing details > How to pay. Printed on every invoice, so not a secret; kept
+# here so a fresh database issues payable invoices. FNB's universal branch
+# code and SWIFT are FNB's public codes. Edit on the page, not here.
+DEFAULT_PAYMENT_DETAILS = (
+    'Bank transfer to HomeX Media\n'
+    'FNB (First National Bank), Business Zero Account\n'
+    'Account number: 63222994055\n'
+    'Branch code: 250655\n'
+    'SWIFT, for payments from outside South Africa: FIRNZAJJ')
+
+# Document numbers: HMX-<year>-<nnnn> for invoices, HMX-R-<year>-<nnnn> for
+# receipts (owner chose the HMX prefix, 2026-09-24). The email subjects carry
+# them, and process_inbound_emails keys its "never answer billing mail" hints
+# on "invoice hmx-" / "receipt hmx-r-": change a prefix, change those hints.
+INVOICE_PREFIX = 'HMX'
+RECEIPT_PREFIX = 'HMX-R'
+
+
+def parse_breakdown(raw):
+    """'Feature | detail | 40' lines -> [{'feature','detail','percent'}].
+
+    Lines without a usable percent are skipped. Returns [] when the percents
+    do not total 100, so a mistyped split prints no breakdown rather than one
+    whose shares do not add up to the line.
+    """
+    rows = []
+    for line in str(raw or '').splitlines():
+        parts = [p.strip() for p in line.split('|')]
+        if len(parts) < 2 or not parts[0]:
+            continue
+        try:
+            percent = Decimal(parts[-1].rstrip('%'))
+        except (InvalidOperation, ValueError):
+            continue
+        detail = parts[1] if len(parts) == 3 else ''
+        rows.append({'feature': parts[0], 'detail': detail, 'percent': percent})
+    if not rows or sum(r['percent'] for r in rows) != Decimal('100'):
+        return []
+    return rows
+
+
+def allocate_breakdown(total, rows):
+    """Share `total` across `rows` by percent, to the cent, so the parts add
+    up EXACTLY to the line: the rounding remainder goes to the largest share.
+    Returns JSON-ready dicts (amounts as strings) for PlatformInvoiceItem."""
+    total = Decimal(str(total or 0)).quantize(Decimal('0.01'))
+    if not rows or total <= 0:
+        return []
+    # '{:f}' after normalize: plain "40" and "12.5". A bare str() of a
+    # normalized Decimal prints 40 as "4E+1", which reached the PDF.
+    out = [{'feature': r['feature'], 'detail': r['detail'],
+            'percent': '{:f}'.format(r['percent'].normalize()),
+            'amount': (total * r['percent'] / 100).quantize(Decimal('0.01'))}
+           for r in rows]
+    diff = total - sum(o['amount'] for o in out)
+    if diff:
+        max(out, key=lambda o: Decimal(o['percent']))['amount'] += diff
+    for o in out:
+        o['amount'] = str(o['amount'])
+    return out
+
+
+def parse_reminder_days(raw):
+    """'14, 7' -> [14, 7, 0]: unique non-negative whole days, largest first,
+    the due day (0) always included. Shared by the profile default and the
+    per-invoice override so both read the same way."""
+    days = set()
+    for part in re.split(r'[,\s]+', str(raw or '')):
+        if part.isdigit() and int(part) <= 365:
+            days.add(int(part))
+    days.add(0)
+    return sorted(days, reverse=True)
+
+
+def _next_document_number(model, field, prefix, year):
+    """Next `<prefix>-<year>-<nnnn>` for `model.field`, counting per year.
+
+    Reads the highest number already issued this year rather than counting
+    rows, so a deleted draft leaves a gap instead of a duplicate. The unique
+    constraint on the field is the real guard: `_save_with_number` retries on
+    IntegrityError, which is what makes two concurrent creates safe.
+    """
+    stem = f'{prefix}-{year}-'
+    last = (model.objects.filter(**{f'{field}__startswith': stem})
+            .order_by(f'-{field}').values_list(field, flat=True).first())
+    seq = 0
+    if last:
+        try:
+            seq = int(last[len(stem):])
+        except ValueError:
+            seq = 0
+    return f'{stem}{seq + 1:04d}'
+
+
+def _save_with_number(instance, field, prefix, save):
+    """Assign the next document number and save, retrying when a concurrent
+    create took the same number (the unique index rejects the second)."""
+    from django.db import IntegrityError, transaction
+    year = timezone.localdate().year
+    for attempt in range(5):
+        setattr(instance, field, _next_document_number(type(instance), field, prefix, year))
+        try:
+            with transaction.atomic():
+                save()
+            return
+        except IntegrityError:
+            if attempt == 4:
+                raise
+
+
+def _money(value) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal('0.01'))
+
+
+class PlatformInvoice(models.Model):
+    """An invoice from the platform to one tenant.
+
+    The tenant FK is SET_NULL, not the business tables' PROTECT: deleting a
+    tenant (`platform_delete_tenant`) must neither be blocked by the money
+    records nor take them with it. `bill_to_*` is the snapshot that keeps an
+    orphaned invoice readable, and it is what the PDF prints.
+
+    Stored status is only the operator's own act: draft -> sent, or void.
+    Paid / part paid / overdue are DERIVED from the payments and the due date
+    (`display_status`), so they can never disagree with the receipts.
+    Line items are editable only while the invoice is a draft; once it has
+    gone out, the correction is void and reissue.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        SENT = 'sent', 'Sent'
+        VOID = 'void', 'Void'
+
+    tenant = models.ForeignKey(
+        'Tenant', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='platform_invoices')
+    number = models.CharField(max_length=24, unique=True, blank=True)
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    issue_date = models.DateField(default=timezone.localdate)
+    due_date = models.DateField()
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+    currency = models.CharField(max_length=8, default='US$')
+    bill_to_name = models.CharField(max_length=160)
+    bill_to_email = models.EmailField(blank=True, default='')
+    bill_to_address = models.TextField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    issuer = models.JSONField(default=dict, blank=True)
+    # Automatic reminders for this invoice (bot/billing_reminders.py). Off
+    # stops every scheduled email for it; blank reminder_days means the
+    # Billing details default.
+    reminders_enabled = models.BooleanField(default=True)
+    reminder_days = models.CharField(
+        max_length=40, blank=True, default='',
+        help_text='Leave blank to use the default from Billing details.')
+    # What the cron has sent for this invoice: {key: {"at", "ok", "tries"}}.
+    # Keys carry the date they were scheduled against ("remind:<due>:<days>"),
+    # so moving the due date starts a fresh cycle instead of being blocked by
+    # the old one. One JSON log rather than a column per email.
+    reminder_log = models.JSONField(default=dict, blank=True)
+    # The operator's "Not paid" answer on the due-day check: starts the
+    # switch-off notices, which count down to switch_off_on.
+    unpaid_confirmed_at = models.DateTimeField(null=True, blank=True)
+    switch_off_on = models.DateField(null=True, blank=True)
+    # Set when the operator paused the tenant's account from this invoice.
+    account_paused_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    emailed_at = models.DateTimeField(null=True, blank=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-issue_date', '-id']
+
+    def __str__(self):
+        return f'{self.number} · {self.bill_to_name}'
+
+    def save(self, *args, **kwargs):
+        # A new invoice takes the next HMX-<year>-<nnnn> and the issuer as it
+        # stands today; both are fixed from then on.
+        if not self.issuer:
+            self.issuer = PlatformBillingProfile.current().snapshot()
+        if not self.number:
+            _save_with_number(self, 'number', INVOICE_PREFIX,
+                              lambda: super(PlatformInvoice, self).save(*args, **kwargs))
+            return
+        super().save(*args, **kwargs)
+
+    # -- figures (read through prefetched items/payments where a list shows many)
+
+    @property
+    def total(self) -> Decimal:
+        return _money(sum((item.line_total for item in self.items.all()), Decimal('0')))
+
+    @property
+    def amount_paid(self) -> Decimal:
+        return _money(sum((p.amount for p in self.payments.all() if not p.is_void), Decimal('0')))
+
+    @property
+    def balance(self) -> Decimal:
+        return _money(self.total - self.amount_paid)
+
+    @property
+    def is_editable(self) -> bool:
+        return self.status == self.Status.DRAFT
+
+    def reminder_offsets(self):
+        """This invoice's days-before list: its own override, else the
+        profile default read from the issuer snapshot's source row."""
+        if (self.reminder_days or '').strip():
+            return parse_reminder_days(self.reminder_days)
+        return PlatformBillingProfile.current().reminder_offsets()
+
+    @property
+    def can_take_payment(self) -> bool:
+        return self.status != self.Status.VOID and self.balance > 0
+
+    @property
+    def display_status(self) -> str:
+        """The one answer every screen shows: void, paid, part paid, overdue,
+        sent or draft, in that order of precedence. A payment on a draft still
+        reads as paid: money received outranks paperwork."""
+        if self.status == self.Status.VOID:
+            return 'void'
+        total, paid = self.total, self.amount_paid
+        if total > 0 and paid >= total:
+            return 'paid'
+        if paid > 0:
+            return 'part_paid'
+        if self.status == self.Status.SENT and self.due_date < timezone.localdate():
+            return 'overdue'
+        return self.status
+
+    DISPLAY_LABELS = {
+        'draft': 'Draft', 'sent': 'Sent', 'overdue': 'Overdue',
+        'part_paid': 'Part paid', 'paid': 'Paid', 'void': 'Void',
+    }
+
+    @property
+    def display_status_label(self) -> str:
+        return self.DISPLAY_LABELS.get(self.display_status, self.display_status)
+
+
+class PlatformInvoiceItem(models.Model):
+    """One line on a platform invoice (the subscription month, a setup fee)."""
+    invoice = models.ForeignKey(PlatformInvoice, on_delete=models.CASCADE, related_name='items')
+    description = models.CharField(max_length=255)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    sort_order = models.PositiveIntegerField(default=0)
+    # The feature allocation printed under this line (allocate_breakdown),
+    # frozen when the invoice is saved so a later change to the split in
+    # Billing details never rewrites an issued invoice. [] = no breakdown.
+    breakdown = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.description
+
+    @property
+    def line_total(self) -> Decimal:
+        return _money((self.quantity or 0) * (self.unit_price or 0))
+
+
+class PlatformPayment(models.Model):
+    """Money received against a platform invoice. Each payment IS a receipt:
+    it takes its own HMX-R-<year>-<nnnn> number and its own PDF.
+
+    Voided, never deleted, so a receipt number that went out on paper always
+    still resolves to a row. A voided payment stops counting toward the
+    invoice's paid figure. PROTECT on the invoice for the same reason.
+    """
+
+    class Method(models.TextChoices):
+        BANK = 'bank', 'Bank transfer'
+        ECOCASH = 'ecocash', 'EcoCash'
+        INNBUCKS = 'innbucks', 'InnBucks'
+        CASH = 'cash', 'Cash'
+        CARD = 'card', 'Card'
+        OTHER = 'other', 'Other'
+
+    invoice = models.ForeignKey(PlatformInvoice, on_delete=models.PROTECT, related_name='payments')
+    receipt_number = models.CharField(max_length=24, unique=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    paid_on = models.DateField(default=timezone.localdate)
+    method = models.CharField(max_length=12, choices=Method.choices, default=Method.BANK)
+    reference = models.CharField(max_length=120, blank=True, default='')
+    note = models.CharField(max_length=255, blank=True, default='')
+    is_void = models.BooleanField(default=False)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    emailed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-paid_on', '-id']
+
+    def __str__(self):
+        return f'{self.receipt_number} · {self.amount}'
+
+    def save(self, *args, **kwargs):
+        if not self.receipt_number:
+            _save_with_number(self, 'receipt_number', RECEIPT_PREFIX,
+                              lambda: super(PlatformPayment, self).save(*args, **kwargs))
+            return
+        super().save(*args, **kwargs)

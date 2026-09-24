@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from . import auth_views
 from .views import platform as platform_views
+from .views import billing as billing_views
 from .views import gallery as gallery_views
 from .views import offer as offer_views
 from .views import legal as legal_views
@@ -238,6 +239,27 @@ urlpatterns = [
     path('platform/tenants/<slug:slug>/staff/<int:user_id>/toggle/', platform_views.platform_toggle_staff, name='platform_toggle_staff'),
     path('platform/tenants/<slug:slug>/staff/<int:user_id>/reset/', platform_views.platform_reset_staff_password, name='platform_reset_staff_password'),
     path('platform/intake/<int:pk>/', platform_views.platform_review_intake, name='platform_review_intake'),
+    # Platform billing: the operator invoicing tenants (superuser-only; every
+    # state change is POST). docs/current-state/billing.md
+    path('platform/billing/', billing_views.billing_home, name='billing_home'),
+    path('platform/billing/settings/', billing_views.billing_settings, name='billing_settings'),
+    path('platform/billing/invoices/new/', billing_views.billing_invoice_new, name='billing_invoice_new'),
+    path('platform/billing/invoices/<int:pk>/', billing_views.billing_invoice_detail, name='billing_invoice_detail'),
+    path('platform/billing/invoices/<int:pk>/edit/', billing_views.billing_invoice_edit, name='billing_invoice_edit'),
+    path('platform/billing/invoices/<int:pk>/pdf/', billing_views.billing_invoice_pdf, name='billing_invoice_pdf'),
+    path('platform/billing/invoices/<int:pk>/email/', billing_views.billing_invoice_email, name='billing_invoice_email'),
+    path('platform/billing/invoices/<int:pk>/mark-sent/', billing_views.billing_invoice_mark_sent, name='billing_invoice_mark_sent'),
+    path('platform/billing/invoices/<int:pk>/void/', billing_views.billing_invoice_void, name='billing_invoice_void'),
+    path('platform/billing/invoices/<int:pk>/delete/', billing_views.billing_invoice_delete, name='billing_invoice_delete'),
+    path('platform/billing/invoices/<int:pk>/payments/add/', billing_views.billing_payment_add, name='billing_payment_add'),
+    path('platform/billing/invoices/<int:pk>/extend/', billing_views.billing_invoice_extend, name='billing_invoice_extend'),
+    path('platform/billing/invoices/<int:pk>/not-paid/', billing_views.billing_invoice_not_paid, name='billing_invoice_not_paid'),
+    path('platform/billing/invoices/<int:pk>/pause-account/', billing_views.billing_invoice_pause_account, name='billing_invoice_pause_account'),
+    path('platform/billing/invoices/<int:pk>/resume-account/', billing_views.billing_invoice_resume_account, name='billing_invoice_resume_account'),
+    path('platform/billing/invoices/<int:pk>/reminders/', billing_views.billing_invoice_reminders, name='billing_invoice_reminders'),
+    path('platform/billing/receipts/<int:pk>/pdf/', billing_views.billing_receipt_pdf, name='billing_receipt_pdf'),
+    path('platform/billing/receipts/<int:pk>/email/', billing_views.billing_receipt_email, name='billing_receipt_email'),
+    path('platform/billing/receipts/<int:pk>/void/', billing_views.billing_payment_void, name='billing_payment_void'),
     # PUBLIC owner intake form (token-gated, no login) — decision #2.
     path('intake/<token>/', platform_views.intake_form, name='intake_form'),
     path('intake/<token>/autosave/', platform_views.intake_autosave, name='intake_autosave'),

@@ -13,4 +13,5 @@ One file per area. Read the one for the code you are about to change BEFORE you 
 - [Email](email.md) - Inbound (reply-only), sending identities, transports, the sent-email screens and the Settings > Email health panel.
 - [Tenancy, branding and permissions](tenancy-and-permissions.md) - No Homebase value reaches another tenant; tenant hours; logos; who may do what on the dashboard.
 - [Quotes and quote templates](quotes.md) - My Quotes, templates (client vs global, the sectioned builder), the flat and sectioned editors, the document, sending, deposits, drafts and the plan tab.
+- [Platform billing](billing.md) - The operator invoicing tenants: invoices, payments and receipts, the PDFs, and the platform billing email identity.
 - [Dashboard UI](dashboard-ui.md) - The sidebar, the detail page (date/time form, compact header, chat composer), the diary, lead search, the inbox date window, and mobile parity.

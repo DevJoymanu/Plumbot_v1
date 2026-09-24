@@ -172,3 +172,19 @@ class Command(BaseCommand):
                     f"failed={cres['failed']}")
         except Exception as exc:  # noqa: BLE001
             logger.warning('Call reminders failed: %s', exc)
+
+        # Platform billing reminders (bot/billing_reminders.py): tenant
+        # reminders before and on the due date, the operator's due-day payment
+        # check, and the not-paid switch-off countdown. Ridden on this 5-minute
+        # cron so billing needs no Railway service or PLUMBOT_CRON entry; each
+        # step is logged on the invoice, so every later tick the same day is a
+        # no-op. Its own try, like everything above.
+        try:
+            from bot.billing_reminders import run_billing_reminders
+            bres = run_billing_reminders(dry_run=dry_run, log=lambda m: self.stdout.write(m))
+            if any(bres.values()):
+                self.stdout.write(
+                    f"Billing reminders → due={bres['due']} sent={bres['sent']} "
+                    f"failed={bres['failed']}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Billing reminders failed: %s', exc)

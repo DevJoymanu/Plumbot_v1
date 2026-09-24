@@ -1,0 +1,128 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}{% if mode == 'edit' %}Edit {{ invoice.number }}{% else %}New invoice{% endif %} · Billing{% endblock %}
+
+{% block extra_css %}{% include "bot/includes/billing_css.html" %}{% endblock %}
+
+{% block content %}
+<form method="post" class="bl-wrap" id="invoice-form" novalidate>
+  {% csrf_token %}
+
+  <div class="bl-head">
+    <div>
+      <div class="bl-eyebrow"><a href="{% url 'billing_home' %}">Billing</a></div>
+      <h1>{% if mode == 'edit' %}Edit {{ invoice.number }}{% else %}New invoice{% endif %}</h1>
+    </div>
+    <div class="bl-actions">
+      <a class="bl-btn" href="{% if mode == 'edit' %}{% url 'billing_invoice_detail' invoice.pk %}{% else %}{% url 'billing_home' %}{% endif %}">Cancel</a>
+      <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-check"></i> Save draft</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}<div class="bl-glass bl-card" style="color:var(--color-error);">{{ form.non_field_errors }}</div>{% endif %}
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Who and when</div>
+    {% if mode == 'new' %}<p class="bl-hint">Picking a tenant fills in who to bill from their last invoice, or from their profile if this is their first.</p>{% endif %}
+    <div class="bl-grid">
+      {% for field in form %}
+      <div class="bl-field {% if field.name == 'bill_to_address' or field.name == 'notes' %}bl-wide{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Lines</div>
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<div style="color:var(--color-error); font-size:13px; margin-bottom:10px;">{{ formset.non_form_errors }}</div>{% endif %}
+    <div class="bl-lines">
+      <div class="bl-line-head"><span>Description</span><span>Qty</span><span>Unit price</span><span class="bl-num">Amount</span><span>Options</span></div>
+      <div id="bl-line-list">
+        {% for item in formset %}
+        <div class="bl-line">
+          {% for hidden in item.hidden_fields %}{{ hidden }}{% endfor %}
+          {{ item.description }}
+          {{ item.quantity }}
+          {{ item.unit_price }}
+          <span class="bl-num bl-line-total">0.00</span>
+          <span class="bl-line__opts"><label class="bl-line__del" title="Print the subscription feature split under this line">{{ item.with_breakdown }} Breakdown</label><label class="bl-line__del">{{ item.DELETE }} Remove</label></span>
+          {% if item.errors %}<ul class="errorlist">{% for f in item %}{% for e in f.errors %}<li>{{ f.label }}: {{ e }}</li>{% endfor %}{% endfor %}</ul>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {# The spare row the Add line button copies; Django's own empty_form so the posted names match a server-rendered row. #}
+    <template id="bl-line-template">
+      <div class="bl-line">
+        {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+        {{ formset.empty_form.description }}
+        {{ formset.empty_form.quantity }}
+        {{ formset.empty_form.unit_price }}
+        <span class="bl-num bl-line-total">0.00</span>
+        <span class="bl-line__opts"><label class="bl-line__del" title="Print the subscription feature split under this line">{{ formset.empty_form.with_breakdown }} Breakdown</label><label class="bl-line__del">{{ formset.empty_form.DELETE }} Remove</label></span>
+      </div>
+    </template>
+    <div class="bl-actions" style="margin-top:14px; justify-content:space-between;">
+      <button type="button" class="bl-btn" id="bl-add-line"><i class="fas fa-plus"></i> Add line</button>
+      <div class="bl-totals">
+        <span class="bl-strong">Total</span><span class="bl-strong bl-num" id="bl-grand">0.00</span>
+      </div>
+    </div>
+    <p class="bl-hint" style="margin:12px 0 0;">Blank lines are ignored. Tick Breakdown to print the subscription feature split (set in Billing details) under a line. You can still change anything here until the invoice is sent.</p>
+  </div>
+</form>
+
+<script>
+/* Invoice editor: live line and grand totals, the Add line button, and (new
+   invoices only) reloading with ?tenant= when the tenant changes, so the
+   bill-to fields refill from that tenant's own records. Totals here are a
+   preview; the saved figures are computed server-side from the lines. */
+(function () {
+  const list = document.getElementById('bl-line-list');
+  const totalForms = document.querySelector('[name$="-TOTAL_FORMS"]');
+  const money = (n) => (Math.round(n * 100) / 100).toFixed(2);
+
+  function recalc() {
+    let grand = 0;
+    list.querySelectorAll('.bl-line').forEach((row) => {
+      const q = parseFloat(row.querySelector('[name$="-quantity"]').value) || 0;
+      const u = parseFloat(row.querySelector('[name$="-unit_price"]').value) || 0;
+      const del = row.querySelector('[name$="-DELETE"]');
+      const line = q * u;
+      row.querySelector('.bl-line-total').textContent = money(line);
+      row.style.opacity = del && del.checked ? 0.45 : 1;
+      if (!(del && del.checked)) grand += line;
+    });
+    document.getElementById('bl-grand').textContent = money(grand);
+  }
+
+  document.getElementById('bl-add-line').addEventListener('click', () => {
+    const index = parseInt(totalForms.value, 10);
+    const html = document.getElementById('bl-line-template').innerHTML.replace(/__prefix__/g, index);
+    list.insertAdjacentHTML('beforeend', html);
+    totalForms.value = index + 1;
+    list.lastElementChild.querySelector('[name$="-description"]').focus();
+    recalc();
+  });
+  list.addEventListener('input', recalc);
+  list.addEventListener('change', recalc);
+  recalc();
+
+  {% if mode == 'new' %}
+  const tenant = document.getElementById('id_tenant');
+  if (tenant) {
+    tenant.addEventListener('change', () => {
+      if (tenant.value) {
+        window.location = '{% url "billing_invoice_new" %}?tenant_id=' + encodeURIComponent(tenant.value);
+      }
+    });
+  }
+  {% endif %}
+})();
+</script>
+{% endblock %}

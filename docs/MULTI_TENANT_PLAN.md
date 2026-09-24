@@ -231,6 +231,10 @@ templates/auth/design system. Grows with the phases:
   per-tenant 999 test-line management.
 - **Usage & billing (Phase 6):** DeepSeek token metering per tenant/day, message
   volumes, leads→bookings conversion, subscription state (follows decision #4).
+  *Built 2026-09-24:* invoices, payments and receipts to tenants, with PDFs and
+  email, at `/platform/billing/` (docs/current-state/billing.md). Still to come:
+  automatic monthly invoices, overdue reminders, a tenant-facing invoices page,
+  and the usage metering.
 
 ### 3.5 What stays shared
 - DeepSeek API key (platform-level; add `tenant` to a usage log for billing later)

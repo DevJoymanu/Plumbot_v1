@@ -1,0 +1,287 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}{{ invoice.number }} · Billing{% endblock %}
+
+{% block extra_css %}{% include "bot/includes/billing_css.html" %}{% endblock %}
+
+{% block content %}
+<div class="bl-wrap">
+
+  <div class="bl-head">
+    <div>
+      <div class="bl-eyebrow"><a href="{% url 'billing_home' %}">Billing</a></div>
+      <h1>{{ invoice.number }} <span class="bl-pill bl-pill--{{ invoice.display_status }}" style="vertical-align:middle;">{{ invoice.display_status_label }}</span></h1>
+    </div>
+    {# Every state change here is a POST form; the PDF links are the only GETs. #}
+    <div class="bl-actions">
+      <a class="bl-btn" href="{% url 'billing_invoice_pdf' invoice.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> View PDF</a>
+      <a class="bl-btn" href="{% url 'billing_invoice_pdf' invoice.pk %}?download=1"><i class="fas fa-download"></i> Download</a>
+      {% if invoice.status != 'void' %}
+      <form method="post" action="{% url 'billing_invoice_email' invoice.pk %}"
+            onsubmit="return confirm('Email {{ invoice.number|escapejs }} to {{ invoice.bill_to_email|default:'nobody yet'|escapejs }}?');">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn bl-btn--solid" {% if not invoice.bill_to_email %}disabled title="Add a billing email first"{% endif %}>
+          <i class="fas fa-paper-plane"></i> {% if invoice.emailed_at %}Email again{% else %}Email to tenant{% endif %}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% comment %}
+  The payment check. The operator's due-day email links here: from the due day until
+  answered it asks paid / more days / not paid; once marked not paid it shows the
+  switch-off countdown and the Pause button. Every button is a POST (billing.py).
+  {% endcomment %}
+  {% if stage == 'check' %}
+  <div class="bl-glass bl-card" style="border-color: rgba(186,26,26,0.2);">
+    <div class="bl-title" style="color:var(--color-error);">Has {{ invoice.bill_to_name }} paid?</div>
+    <p class="bl-hint">It was due {% if days_overdue == 0 %}today{% else %}on {{ invoice.due_date|date:"d M Y" }}, {{ days_overdue }} day{{ days_overdue|pluralize }} ago{% endif %}. Balance {{ invoice.currency }}{{ invoice.balance|floatformat:2 }}.</p>
+    <div class="bl-actions">
+      <a class="bl-btn bl-btn--solid" href="#record-payment"><i class="fas fa-check"></i> They've paid</a>
+      <form method="post" action="{% url 'billing_invoice_extend' invoice.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="days" value="7">
+        <button type="submit" class="bl-btn"><i class="fas fa-calendar-plus"></i> 7 more days</button>
+      </form>
+      <form method="post" action="{% url 'billing_invoice_extend' invoice.pk %}" class="bl-actions">
+        {% csrf_token %}
+        <input type="number" name="days" min="1" max="90" placeholder="Days" aria-label="How many more days" style="width:96px;" required>
+        <button type="submit" class="bl-btn">More days</button>
+      </form>
+      <form method="post" action="{% url 'billing_invoice_not_paid' invoice.pk %}"
+            onsubmit="return confirm('Mark {{ invoice.number|escapejs }} not paid? {{ invoice.bill_to_name|escapejs }} will start getting switch-off notices tomorrow.');">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn bl-btn--danger"><i class="fas fa-xmark"></i> Not paid</button>
+      </form>
+    </div>
+  </div>
+  {% elif stage == 'countdown' %}
+  <div class="bl-glass bl-card" style="border-color: rgba(186,26,26,0.25);">
+    <div class="bl-title" style="color:var(--color-error);">Not paid: switch-off {% if days_to_off > 0 %}in {{ days_to_off }} day{{ days_to_off|pluralize }}{% else %}day{% endif %}</div>
+    <p class="bl-hint">Marked not paid on {{ invoice.unpaid_confirmed_at|date:"d M Y" }}. {{ invoice.bill_to_name }} has been told their service is switched off on <strong>{{ invoice.switch_off_on|date:"d M Y" }}</strong>. Nothing is switched off automatically: you pause them here.</p>
+    <div class="bl-actions">
+      {% if invoice.tenant and not tenant_paused %}
+      <form method="post" action="{% url 'billing_invoice_pause_account' invoice.pk %}"
+            onsubmit="return confirm('Pause {{ invoice.bill_to_name|escapejs }}? Their bot stops answering customers and their staff lose the dashboard.');">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn bl-btn--danger" {% if invoice.tenant.slug == 'homebase' %}disabled title="Homebase cannot be paused"{% endif %}><i class="fas fa-power-off"></i> Pause their account</button>
+      </form>
+      {% endif %}
+      <a class="bl-btn bl-btn--solid" href="#record-payment"><i class="fas fa-check"></i> They've paid</a>
+      <form method="post" action="{% url 'billing_invoice_extend' invoice.pk %}" class="bl-actions">
+        {% csrf_token %}
+        <input type="number" name="days" min="1" max="90" value="7" aria-label="How many more days" style="width:96px;" required>
+        <button type="submit" class="bl-btn">Give more days</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if tenant_paused %}
+  <div class="bl-glass bl-card">
+    <div class="bl-title">{{ invoice.tenant.name }} is paused</div>
+    <p class="bl-hint">{% if invoice.account_paused_at %}Paused from this invoice on {{ invoice.account_paused_at|date:"d M Y" }}. {% endif %}Their bot is not answering customers.{% if invoice.display_status == 'paid' %} This invoice is now paid.{% endif %}</p>
+    <form method="post" action="{% url 'billing_invoice_resume_account' invoice.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-power-off"></i> Switch their account back on</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="bl-glass bl-card">
+    <div class="bl-grid">
+      <div>
+        <div class="bl-title">Bill to</div>
+        <strong>{{ invoice.bill_to_name }}</strong>
+        {% if invoice.bill_to_address %}<div class="bl-muted" style="white-space:pre-line;">{{ invoice.bill_to_address }}</div>{% endif %}
+        <div class="bl-muted">{{ invoice.bill_to_email|default:"No billing email" }}</div>
+        {% if invoice.tenant %}<div class="bl-muted">Tenant: {{ invoice.tenant.name }}</div>{% else %}<div class="bl-muted">Tenant deleted; the invoice is kept.</div>{% endif %}
+      </div>
+      <div>
+        <div class="bl-title">Dates</div>
+        <div>Issued {{ invoice.issue_date|date:"d M Y" }}</div>
+        <div>Due {{ invoice.due_date|date:"d M Y" }}</div>
+        {% if invoice.period_start %}<div class="bl-muted">Period {{ invoice.period_start|date:"d M Y" }} to {{ invoice.period_end|date:"d M Y" }}</div>{% endif %}
+      </div>
+      <div>
+        <div class="bl-title">Sent</div>
+        {% if invoice.emailed_at %}<div>Emailed {{ invoice.emailed_at|date:"d M Y, H:i" }}</div>
+        {% elif invoice.sent_at %}<div>Marked sent {{ invoice.sent_at|date:"d M Y, H:i" }}</div>
+        {% else %}<div class="bl-muted">Not sent yet</div>{% endif %}
+        {% if invoice.voided_at %}<div style="color:var(--color-error);">Voided {{ invoice.voided_at|date:"d M Y, H:i" }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Lines</div>
+    <div class="pb-table-scroll">
+      <table class="bl-table">
+        <thead><tr><th>Description</th><th class="bl-num">Qty</th><th class="bl-num">Unit price</th><th class="bl-num">Amount</th></tr></thead>
+        <tbody>
+          {% for item in invoice.items.all %}
+          <tr>
+            <td>{{ item.description }}</td>
+            <td class="bl-num">{{ item.quantity|floatformat:"-2" }}</td>
+            <td class="bl-num">{{ invoice.currency }}{{ item.unit_price|floatformat:2 }}</td>
+            <td class="bl-num">{{ invoice.currency }}{{ item.line_total|floatformat:2 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="bl-totals" style="margin-top:16px;">
+      <span>Total</span><span class="bl-num">{{ invoice.currency }}{{ invoice.total|floatformat:2 }}</span>
+      <span>Paid</span><span class="bl-num">{{ invoice.currency }}{{ invoice.amount_paid|floatformat:2 }}</span>
+      <span class="bl-strong">Balance due</span><span class="bl-strong bl-num">{{ invoice.currency }}{{ invoice.balance|floatformat:2 }}</span>
+    </div>
+    {% if invoice.notes %}<p class="bl-hint" style="margin:16px 0 0; white-space:pre-line;">{{ invoice.notes }}</p>{% endif %}
+  </div>
+
+  {% if invoice.can_take_payment %}
+  <div class="bl-glass bl-card" id="record-payment" style="scroll-margin-top:24px;">
+    <div class="bl-title">Record a payment</div>
+    <p class="bl-hint">Recording a payment issues its receipt. The amount can be part of the balance; it cannot be more.</p>
+    <form method="post" action="{% url 'billing_payment_add' invoice.pk %}">
+      {% csrf_token %}
+      <div class="bl-grid">
+        <div class="bl-field">
+          <label for="pay-amount">Amount ({{ invoice.currency }})</label>
+          <input id="pay-amount" type="number" name="amount" step="0.01" min="0.01" max="{{ invoice.balance|stringformat:'s' }}" value="{{ invoice.balance|stringformat:'s' }}" required>
+        </div>
+        <div class="bl-field">
+          <label for="pay-date">Date paid</label>
+          <input id="pay-date" type="date" name="paid_on" value="{{ today|date:'Y-m-d' }}">
+        </div>
+        <div class="bl-field">
+          <label for="pay-ref">Reference</label>
+          <input id="pay-ref" type="text" name="reference" maxlength="120" placeholder="Bank or EcoCash reference">
+        </div>
+        <div class="bl-field bl-wide">
+          <label>Paid by</label>
+          <div class="bl-chips">
+            {% for value, label in methods %}
+            <label class="bl-chip-radio"><input type="radio" name="method" value="{{ value }}" {% if forloop.first %}checked{% endif %}><span class="bl-chip">{{ label }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="bl-field bl-wide">
+          <label for="pay-note">Note (printed on the receipt)</label>
+          <input id="pay-note" type="text" name="note" maxlength="255">
+        </div>
+      </div>
+      <div class="bl-actions" style="margin-top:16px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+          <input type="checkbox" name="email_receipt" value="1" {% if invoice.bill_to_email %}checked{% else %}disabled{% endif %} style="width:auto; min-height:0;">
+          Email the receipt to {{ invoice.bill_to_email|default:"the tenant (no billing email yet)" }}
+        </label>
+        <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-receipt"></i> Record payment</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Payments and receipts</div>
+    {% if payments %}
+    <div class="pb-table-scroll">
+      <table class="bl-table">
+        <thead><tr><th>Receipt</th><th>Paid on</th><th>Method</th><th>Reference</th><th class="bl-num">Amount</th><th class="bl-num">Actions</th></tr></thead>
+        <tbody>
+          {% for p in payments %}
+          <tr {% if p.is_void %}style="opacity:0.55;"{% endif %}>
+            <td><strong>{{ p.receipt_number }}</strong>{% if p.is_void %} <span class="bl-pill bl-pill--void">Void</span>{% elif p.emailed_at %}<div class="bl-muted">Emailed {{ p.emailed_at|date:"d M Y" }}</div>{% endif %}</td>
+            <td>{{ p.paid_on|date:"d M Y" }}</td>
+            <td>{{ p.get_method_display }}</td>
+            <td>{{ p.reference|default:"" }}</td>
+            <td class="bl-num">{{ invoice.currency }}{{ p.amount|floatformat:2 }}</td>
+            <td class="bl-num">
+              <div class="bl-actions" style="justify-content:flex-end;">
+                <a class="bl-btn" href="{% url 'billing_receipt_pdf' p.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> PDF</a>
+                {% if not p.is_void %}
+                <form method="post" action="{% url 'billing_receipt_email' p.pk %}">
+                  {% csrf_token %}
+                  <button type="submit" class="bl-btn" {% if not invoice.bill_to_email %}disabled{% endif %}><i class="fas fa-paper-plane"></i> Email</button>
+                </form>
+                <form method="post" action="{% url 'billing_payment_void' p.pk %}"
+                      onsubmit="return confirm('Void receipt {{ p.receipt_number|escapejs }}? The balance goes back up. The number stays on record.');">
+                  {% csrf_token %}
+                  <button type="submit" class="bl-btn bl-btn--danger">Void</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bl-empty"><i class="fas fa-receipt"></i>No payments yet.</div>
+    {% endif %}
+  </div>
+
+  {% if invoice.status != 'void' %}
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Reminders</div>
+    <p class="bl-hint">
+      {% if not invoice.reminders_enabled %}Off for this invoice. Nothing is sent automatically.
+      {% else %}Emailed to {{ invoice.bill_to_email|default:"the tenant (no billing email yet)" }} {% for d in offsets %}{{ d }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if offsets %} days before and {% endif %}on the due day, from {{ profile.reminder_time|time:"H:i" }}. On the due day you get an email asking if they paid. They stop the moment it is paid or voided.
+      {% if invoice.status == 'draft' %}They start once the invoice is sent.{% endif %}{% endif %}
+    </p>
+    <form method="post" action="{% url 'billing_invoice_reminders' invoice.pk %}" class="bl-actions">
+      {% csrf_token %}
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
+        <input type="checkbox" name="enabled" value="1" {% if invoice.reminders_enabled %}checked{% endif %} style="width:auto; min-height:0;"> Send reminders
+      </label>
+      <input type="text" name="reminder_days" value="{{ invoice.reminder_days }}" placeholder="Days before, default {{ profile.reminder_days }}" aria-label="Days before the due date" style="max-width:220px;">
+      <button type="submit" class="bl-btn">Save</button>
+    </form>
+    {% if reminder_history %}
+    <div class="pb-table-scroll" style="margin-top:16px;">
+      <table class="bl-table">
+        <thead><tr><th>Sent</th><th>When</th><th>Result</th></tr></thead>
+        <tbody>
+          {% for row in reminder_history %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="bl-muted">{{ row.at|date:"d M Y, H:i"|default:"" }}</td>
+            <td>{% if row.ok %}<span class="bl-pill bl-pill--paid">Sent</span>{% else %}<span class="bl-pill bl-pill--overdue">Failed{% if row.tries > 1 %} x{{ row.tries }}{% endif %}</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Manage</div>
+    <div class="bl-actions">
+      {% if invoice.is_editable %}
+      <a class="bl-btn" href="{% url 'billing_invoice_edit' invoice.pk %}"><i class="fas fa-pen"></i> Edit draft</a>
+      <form method="post" action="{% url 'billing_invoice_mark_sent' invoice.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn" title="For an invoice you handed over another way, such as WhatsApp"><i class="fas fa-check"></i> Mark as sent</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{% url 'billing_invoice_void' invoice.pk %}"
+            onsubmit="return confirm('Void {{ invoice.number|escapejs }}? It stays on record as void and cannot be paid.');">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn bl-btn--danger"><i class="fas fa-ban"></i> Void invoice</button>
+      </form>
+      {% if invoice.is_editable and not payments %}
+      <form method="post" action="{% url 'billing_invoice_delete' invoice.pk %}"
+            onsubmit="return confirm('Delete draft {{ invoice.number|escapejs }}? This cannot be undone.');">
+        {% csrf_token %}
+        <button type="submit" class="bl-btn bl-btn--danger"><i class="fas fa-trash"></i> Delete draft</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if not invoice.is_editable %}<p class="bl-hint" style="margin:12px 0 0;">This invoice has been sent, so its lines are locked. To correct it, void it and raise a new one.</p>{% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -6,6 +6,7 @@
 - `appointments.py`, `dashboard.py`, `followups.py`, `conversations`: `docs/current-state/dashboard-ui.md` and `docs/current-state/followups-and-cron.md`
 - `sent_emails.py`, email settings: `docs/current-state/email.md`
 - `platform.py`, auth, profile, branding: `docs/current-state/tenancy-and-permissions.md`
+- `billing.py` (the operator invoicing tenants): `docs/current-state/billing.md`
 
 What goes wrong here most:
 

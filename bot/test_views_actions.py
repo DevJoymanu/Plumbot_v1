@@ -12401,3 +12401,635 @@ class PriceSplitRuleTests(TestCase):
             bad += self._offenders(f'rough {family}', line, splitter=r'\n')
         bad += self._offenders('catalogue', cfg.catalogue_price_lines(), splitter=r'\n')
         self.assertEqual(bad, [], '\n'.join(bad))
+
+
+class PlatformBillingTests(TestCase):
+    """Platform billing (bot/views/billing.py, docs/current-state/billing.md):
+    the operator invoicing tenants. Pins who may reach it, numbering, the
+    draft-only edit lock, payments and receipts, voiding, the email identity
+    (never Homebase's), and that invoices outlive a deleted tenant."""
+
+    def setUp(self):
+        from .models import PlatformBillingProfile
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        TenantProfile.objects.create(tenant=self.acme, email_sender='owner@acme.example')
+        profile = PlatformBillingProfile.current()
+        profile.business_name = 'HomeX Media'
+        profile.email = 'billing-inbox@homex.example'
+        profile.default_monthly_fee = Decimal('50.00')
+        profile.payment_details = 'Bank: Example Bank, account 123'
+        profile.save()
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def _invoice(self, **kwargs):
+        from .models import PlatformInvoice, PlatformInvoiceItem
+        defaults = dict(tenant=self.acme, bill_to_name='Acme Plumbing',
+                        bill_to_email='owner@acme.example',
+                        due_date=timezone.localdate() + timedelta(days=7))
+        defaults.update(kwargs)
+        invoice = PlatformInvoice.objects.create(**defaults)
+        PlatformInvoiceItem.objects.create(
+            invoice=invoice, description='Subscription', quantity=1,
+            unit_price=Decimal('50.00'), sort_order=1)
+        return invoice
+
+    def _post_new(self, **overrides):
+        today = timezone.localdate()
+        data = {
+            'tenant': self.acme.pk, 'issue_date': today.isoformat(),
+            'due_date': (today + timedelta(days=7)).isoformat(),
+            'period_start': '', 'period_end': '', 'currency': 'US$',
+            'bill_to_name': 'Acme Plumbing', 'bill_to_email': 'owner@acme.example',
+            'bill_to_address': '', 'notes': '',
+            'items-TOTAL_FORMS': '2', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-description': 'Plumbot monthly subscription, September 2026',
+            'items-0-quantity': '1', 'items-0-unit_price': '50.00',
+            # An untouched blank spare row, exactly as the page posts it.
+            'items-1-description': '', 'items-1-quantity': '1', 'items-1-unit_price': '0',
+        }
+        data.update(overrides)
+        return self.client.post(reverse('billing_invoice_new'), data)
+
+    def test_plain_staff_cannot_reach_billing(self):
+        invoice = self._invoice()
+        get_user_model().objects.create_user(
+            username='plainstaff', password='pass12345', is_staff=True)
+        self.client.login(username='plainstaff', password='pass12345')
+        for name, args in [('billing_home', []), ('billing_settings', []),
+                           ('billing_invoice_new', []),
+                           ('billing_invoice_detail', [invoice.pk]),
+                           ('billing_invoice_pdf', [invoice.pk])]:
+            response = self.client.get(reverse(name, args=args))
+            self.assertIn(response.status_code, (302, 403), name)
+        response = self.client.post(reverse('billing_invoice_void', args=[invoice.pk]))
+        self.assertIn(response.status_code, (302, 403))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, 'draft')
+
+    def test_every_billing_page_renders(self):
+        from .models import PlatformPayment
+        invoice = self._invoice()
+        payment = PlatformPayment.objects.create(invoice=invoice, amount=Decimal('20.00'))
+        for url in [reverse('billing_home'),
+                    reverse('billing_home') + '?status=part_paid&tenant=acme',
+                    reverse('billing_settings'),
+                    reverse('billing_invoice_new'),
+                    reverse('billing_invoice_new') + '?tenant=acme',
+                    reverse('billing_invoice_new') + f'?tenant_id={self.acme.pk}',
+                    reverse('billing_invoice_detail', args=[invoice.pk]),
+                    reverse('billing_invoice_edit', args=[invoice.pk])]:
+            self.assertEqual(self.client.get(url).status_code, 200, url)
+        for url in [reverse('billing_invoice_pdf', args=[invoice.pk]),
+                    reverse('billing_receipt_pdf', args=[payment.pk])]:
+            response = self.client.get(url)
+            self.assertEqual(response['Content-Type'], 'application/pdf')
+            self.assertTrue(response.content.startswith(b'%PDF'), url)
+
+    def test_new_invoice_prefills_the_tenant_and_the_fee(self):
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertIn('owner@acme.example', body)
+        self.assertIn('Plumbot monthly subscription', body)
+        self.assertIn('50.00', body)
+
+    def test_create_numbers_the_invoice_and_keeps_the_prefilled_line(self):
+        from .models import PlatformInvoice
+        response = self._post_new()
+        invoice = PlatformInvoice.objects.get()
+        self.assertRedirects(response, reverse('billing_invoice_detail', args=[invoice.pk]))
+        self.assertEqual(invoice.number, f'HMX-{timezone.localdate().year}-0001')
+        self.assertEqual(invoice.status, 'draft')
+        self.assertEqual([i.description for i in invoice.items.all()],
+                         ['Plumbot monthly subscription, September 2026'])
+        self.assertEqual(invoice.total, Decimal('50.00'))
+        self.assertEqual(invoice.issuer['business_name'], 'HomeX Media')
+        self._post_new()
+        self.assertEqual(PlatformInvoice.objects.order_by('id').last().number,
+                         f'HMX-{timezone.localdate().year}-0002')
+
+    def test_an_invoice_with_no_lines_is_refused(self):
+        from .models import PlatformInvoice
+        self._post_new(**{'items-0-description': ''})
+        self.assertFalse(PlatformInvoice.objects.exists())
+
+    def test_a_sent_invoice_can_no_longer_be_edited(self):
+        invoice = self._invoice()
+        self.client.post(reverse('billing_invoice_mark_sent', args=[invoice.pk]))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, 'sent')
+        response = self.client.get(reverse('billing_invoice_edit', args=[invoice.pk]))
+        self.assertRedirects(response, reverse('billing_invoice_detail', args=[invoice.pk]))
+
+    def test_payment_issues_a_receipt_and_pays_the_invoice(self):
+        from .models import PlatformPayment
+        invoice = self._invoice(status='sent')
+        self.client.post(reverse('billing_payment_add', args=[invoice.pk]),
+                         {'amount': '20', 'method': 'ecocash', 'paid_on': '2026-09-20'})
+        payment = PlatformPayment.objects.get()
+        self.assertEqual(payment.receipt_number, f'HMX-R-{timezone.localdate().year}-0001')
+        self.assertEqual(payment.method, 'ecocash')
+        self.assertEqual(payment.paid_on, date(2026, 9, 20))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.display_status, 'part_paid')
+        self.assertEqual(invoice.balance, Decimal('30.00'))
+        # More than the balance is refused; the rest pays it off.
+        self.client.post(reverse('billing_payment_add', args=[invoice.pk]), {'amount': '31'})
+        self.assertEqual(PlatformPayment.objects.count(), 1)
+        self.client.post(reverse('billing_payment_add', args=[invoice.pk]), {'amount': '30'})
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.display_status, 'paid')
+        self.assertFalse(invoice.can_take_payment)
+
+    def test_void_waits_for_receipts_then_keeps_the_record(self):
+        from .models import PlatformPayment
+        invoice = self._invoice(status='sent')
+        payment = PlatformPayment.objects.create(invoice=invoice, amount=Decimal('10.00'))
+        self.client.post(reverse('billing_invoice_void', args=[invoice.pk]))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, 'sent')
+        self.client.post(reverse('billing_payment_void', args=[payment.pk]))
+        payment.refresh_from_db()
+        self.assertTrue(payment.is_void)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.amount_paid, Decimal('0.00'))
+        self.client.post(reverse('billing_invoice_void', args=[invoice.pk]))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.display_status, 'void')
+
+    def test_only_an_unsent_draft_can_be_deleted(self):
+        from .models import PlatformInvoice
+        sent = self._invoice(status='sent')
+        self.client.post(reverse('billing_invoice_delete', args=[sent.pk]))
+        self.assertTrue(PlatformInvoice.objects.filter(pk=sent.pk).exists())
+        draft = self._invoice()
+        self.client.post(reverse('billing_invoice_delete', args=[draft.pk]))
+        self.assertFalse(PlatformInvoice.objects.filter(pk=draft.pk).exists())
+
+    def test_state_changes_refuse_get(self):
+        invoice = self._invoice()
+        for name in ('billing_invoice_email', 'billing_invoice_mark_sent',
+                     'billing_invoice_void', 'billing_invoice_delete',
+                     'billing_payment_add'):
+            response = self.client.get(reverse(name, args=[invoice.pk]))
+            self.assertEqual(response.status_code, 405, name)
+
+    @override_settings(PLATFORM_BILLING_FROM_EMAIL='billing@notifications.example')
+    def test_email_goes_as_platform_mail_never_as_homebase(self):
+        invoice = self._invoice()
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as send:
+            self.client.post(reverse('billing_invoice_email', args=[invoice.pk]))
+        kwargs = send.call_args.kwargs
+        self.assertEqual(send.call_args.args[0], ['owner@acme.example'])
+        self.assertIsNone(kwargs['tenant'])
+        self.assertEqual(kwargs['from_email'], 'HomeX Media <billing@notifications.example>')
+        self.assertEqual(kwargs['reply_to'], 'billing-inbox@homex.example')
+        self.assertEqual(kwargs['bcc'], ['billing-inbox@homex.example'])
+        self.assertTrue(kwargs['attachment'].startswith(b'%PDF'))
+        self.assertEqual(kwargs['attachment_name'], f'{invoice.number}.pdf')
+        text = send.call_args.args[2] + kwargs['html_message']
+        self.assertNotIn('homebase', text.lower())
+        self.assertNotIn('—', text)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, 'sent')
+        self.assertIsNotNone(invoice.emailed_at)
+
+    def test_receipt_can_be_emailed_when_the_payment_is_recorded(self):
+        from .models import PlatformPayment
+        invoice = self._invoice(status='sent')
+        with patch('bot.plumber_notifications.send_email_to_recipients',
+                   return_value=True) as send:
+            self.client.post(reverse('billing_payment_add', args=[invoice.pk]),
+                             {'amount': '50', 'method': 'bank', 'email_receipt': '1'})
+        payment = PlatformPayment.objects.get()
+        self.assertEqual(send.call_args.kwargs['attachment_name'], f'{payment.receipt_number}.pdf')
+        self.assertIsNotNone(payment.emailed_at)
+
+    def test_invoice_with_no_email_is_not_sent(self):
+        invoice = self._invoice(bill_to_email='')
+        with patch('bot.plumber_notifications.send_email_to_recipients') as send:
+            self.client.post(reverse('billing_invoice_email', args=[invoice.pk]))
+        send.assert_not_called()
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, 'draft')
+
+    def test_the_inbox_reader_never_answers_billing_mail(self):
+        # Our Bcc copy (from billing@) and a tenant replying to an invoice or
+        # receipt are both left for the operator, never answered by the bot.
+        from email.message import Message
+        from .management.commands.process_inbound_emails import _is_automated
+        self.assertTrue(_is_automated(Message(), 'billing@homexmedia.com',
+                                      'Invoice HMX-2026-0001 from HomeX Media'))
+        self.assertTrue(_is_automated(Message(), 'owner@acme.example',
+                                      'Re: Invoice HMX-2026-0001 from HomeX Media'))
+        self.assertTrue(_is_automated(Message(), 'owner@acme.example',
+                                      'RE: Receipt HMX-R-2026-0003 from HomeX Media'))
+        # The first numbering (INV-/RCT-) is still recognised.
+        self.assertTrue(_is_automated(Message(), 'owner@acme.example',
+                                      'Re: Invoice INV-2026-0001 from HomeX Media'))
+        self.assertFalse(_is_automated(Message(), 'owner@acme.example',
+                                       'Re: my bathroom quote'))
+
+    def test_the_billing_inbox_defaults_to_the_operator(self):
+        from .models import PlatformBillingProfile
+        from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
+        PlatformBillingProfile.objects.all().delete()
+        self.assertEqual(PlatformBillingProfile.current().email, PLATFORM_NOTIFICATION_EMAIL)
+
+    def test_invoices_outlive_a_deleted_tenant(self):
+        from .views.platform import PLATFORM_DELETE_PASSWORD
+        invoice = self._invoice(status='sent')
+        self.client.post(reverse('platform_delete_tenant', args=['acme']),
+                         {'delete_password': PLATFORM_DELETE_PASSWORD})
+        self.assertFalse(Tenant.objects.filter(slug='acme').exists())
+        invoice.refresh_from_db()
+        self.assertIsNone(invoice.tenant)
+        self.assertEqual(invoice.bill_to_name, 'Acme Plumbing')
+        self.assertEqual(self.client.get(reverse('billing_home')).status_code, 200)
+
+
+class BillingReminderTests(TestCase):
+    """Automatic billing reminders (bot/billing_reminders.py, owner rule
+    2026-09-24): tenant reminders 14 and 7 days before and on the due day, the
+    operator's due-day payment check, and after "Not paid" the switch-off
+    notices the day after due, 3 days after, the day before and on the day,
+    with the operator's pause prompt on the day. All stop once paid."""
+
+    def setUp(self):
+        from .models import PlatformBillingProfile
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        profile = PlatformBillingProfile.current()
+        profile.business_name = 'HomeX Media'
+        profile.save()
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def _at(self, day, hour=8):
+        from datetime import datetime, time as dtime
+        return timezone.make_aware(datetime.combine(day, dtime(hour, 0)))
+
+    def _invoice(self, due, sent_days_before=20, **kwargs):
+        from .models import PlatformInvoice, PlatformInvoiceItem
+        invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme Plumbing',
+            bill_to_email='owner@acme.example', status='sent',
+            issue_date=due - timedelta(days=sent_days_before), due_date=due,
+            sent_at=self._at(due - timedelta(days=sent_days_before)), **kwargs)
+        PlatformInvoiceItem.objects.create(
+            invoice=invoice, description='Subscription', quantity=1,
+            unit_price=Decimal('50.00'), sort_order=1)
+        return invoice
+
+    def _run_days(self, start, end, hour=8):
+        """Run the cron once (and a second time, to prove idempotence) on
+        every day from start to end; return [(day offset from start, kind, days)]."""
+        from .billing_reminders import run_billing_reminders
+        sent = []
+        with patch('bot.billing_emails.send_billing_notice', return_value=(True, '')) as send:
+            day = start
+            while day <= end:
+                run_billing_reminders(now=self._at(day, hour))
+                run_billing_reminders(now=self._at(day, hour + 3))
+                for call in send.call_args_list[len(sent):]:
+                    sent.append(((day - start).days, call.args[1], call.args[2]))
+                day += timedelta(days=1)
+        return sent
+
+    def test_reminders_fourteen_and_seven_days_before_and_on_the_day(self):
+        due = date(2026, 11, 30)
+        self._invoice(due)
+        sent = self._run_days(due - timedelta(days=20), due)
+        self.assertEqual(sent, [(6, 'remind', 14), (13, 'remind', 7),
+                                (20, 'remind', 0), (20, 'check', 0)])
+
+    def test_nothing_goes_before_the_send_time(self):
+        from .billing_reminders import run_billing_reminders
+        due = date(2026, 11, 30)
+        self._invoice(due)
+        with patch('bot.billing_emails.send_billing_notice', return_value=(True, '')) as send:
+            run_billing_reminders(now=self._at(due - timedelta(days=7), hour=6))
+            send.assert_not_called()
+            run_billing_reminders(now=self._at(due - timedelta(days=7), hour=7))
+            self.assertEqual(send.call_count, 1)
+
+    def test_paid_void_and_switched_off_invoices_are_never_chased(self):
+        from .models import PlatformPayment
+        due = date(2026, 11, 30)
+        paid = self._invoice(due)
+        PlatformPayment.objects.create(invoice=paid, amount=Decimal('50.00'))
+        self._invoice(due, reminders_enabled=False)
+        void = self._invoice(due)
+        void.status = 'void'
+        void.save()
+        self.assertEqual(self._run_days(due - timedelta(days=20), due + timedelta(days=3)), [])
+
+    def test_a_missed_week_sends_only_the_latest_step(self):
+        # The cron was down from the 14-day mark; the first run 5 days out
+        # sends the 7-day reminder once, saying 5 days, not a burst.
+        due = date(2026, 11, 30)
+        self._invoice(due)
+        sent = self._run_days(due - timedelta(days=5), due - timedelta(days=1))
+        self.assertEqual(sent, [(0, 'remind', 5)])
+
+    def test_an_invoice_sent_late_skips_the_steps_before_it(self):
+        due = date(2026, 11, 30)
+        self._invoice(due, sent_days_before=10)
+        sent = self._run_days(due - timedelta(days=10), due - timedelta(days=1))
+        self.assertEqual(sent, [(3, 'remind', 7)])
+
+    def test_not_paid_counts_down_to_switch_off(self):
+        from .billing_reminders import switch_off_date_for
+        due = date(2026, 11, 30)
+        invoice = self._invoice(due)
+        # Every pre-due step already went out.
+        invoice.reminder_log = {f'remind:{due}:{d}': {'ok': True, 'tries': 1, 'at': ''}
+                                for d in (14, 7, 0)}
+        invoice.reminder_log[f'check:{due}'] = {'ok': True, 'tries': 1, 'at': ''}
+        invoice.unpaid_confirmed_at = self._at(due, 12)
+        invoice.switch_off_on = switch_off_date_for(invoice, due)
+        invoice.save()
+        self.assertEqual(invoice.switch_off_on, due + timedelta(days=8))
+        sent = self._run_days(due, due + timedelta(days=10))
+        self.assertEqual(sent, [(1, 'switch_off', 7), (3, 'switch_off', 5),
+                                (7, 'switch_off', 1), (8, 'switch_off', 0), (8, 'pause', 0)])
+
+    def test_a_failed_send_is_retried_three_times_at_most(self):
+        from .billing_reminders import run_billing_reminders
+        due = date(2026, 11, 30)
+        self._invoice(due)
+        with patch('bot.billing_emails.send_billing_notice', return_value=(False, 'down')) as send:
+            for hour in (8, 9, 10, 11, 12):
+                run_billing_reminders(now=self._at(due - timedelta(days=7), hour))
+        self.assertEqual(send.call_count, 3)
+
+    def test_payment_check_page_and_its_buttons(self):
+        today = timezone.localdate()
+        invoice = self._invoice(today)
+        body = self.client.get(reverse('billing_invoice_detail', args=[invoice.pk])).content.decode()
+        self.assertIn('Has Acme Plumbing paid?', body)
+        for name in ('billing_invoice_extend', 'billing_invoice_not_paid'):
+            self.assertIn(reverse(name, args=[invoice.pk]), body)
+        self.assertIn('href="#record-payment"', body)
+        self.assertIn('id="record-payment"', body)
+
+    def test_not_paid_starts_the_countdown_only_once_due(self):
+        today = timezone.localdate()
+        early = self._invoice(today + timedelta(days=3))
+        self.client.post(reverse('billing_invoice_not_paid', args=[early.pk]))
+        early.refresh_from_db()
+        self.assertIsNone(early.unpaid_confirmed_at)
+        invoice = self._invoice(today)
+        self.client.post(reverse('billing_invoice_not_paid', args=[invoice.pk]))
+        invoice.refresh_from_db()
+        self.assertIsNotNone(invoice.unpaid_confirmed_at)
+        self.assertEqual(invoice.switch_off_on, today + timedelta(days=8))
+        body = self.client.get(reverse('billing_invoice_detail', args=[invoice.pk])).content.decode()
+        self.assertIn(reverse('billing_invoice_pause_account', args=[invoice.pk]), body)
+
+    def test_more_days_moves_the_due_date_and_calls_off_the_countdown(self):
+        today = timezone.localdate()
+        invoice = self._invoice(today - timedelta(days=2),
+                                unpaid_confirmed_at=timezone.now(),
+                                switch_off_on=today + timedelta(days=6))
+        self.client.post(reverse('billing_invoice_extend', args=[invoice.pk]), {'days': '7'})
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.due_date, today + timedelta(days=7))
+        self.assertIsNone(invoice.unpaid_confirmed_at)
+        self.assertIsNone(invoice.switch_off_on)
+        self.client.post(reverse('billing_invoice_extend', args=[invoice.pk]), {'days': '500'})
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.due_date, today + timedelta(days=7))
+
+    def test_pause_and_resume_the_account(self):
+        today = timezone.localdate()
+        invoice = self._invoice(today)
+        self.client.post(reverse('billing_invoice_pause_account', args=[invoice.pk]))
+        self.acme.refresh_from_db()
+        self.assertFalse(self.acme.is_active)
+        invoice.refresh_from_db()
+        self.assertIsNotNone(invoice.account_paused_at)
+        self.client.post(reverse('billing_invoice_resume_account', args=[invoice.pk]))
+        self.acme.refresh_from_db()
+        self.assertTrue(self.acme.is_active)
+        homebase, _ = Tenant.objects.get_or_create(slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        hb = self._invoice(today)
+        hb.tenant = homebase
+        hb.save()
+        self.client.post(reverse('billing_invoice_pause_account', args=[hb.pk]))
+        homebase.refresh_from_db()
+        self.assertTrue(homebase.is_active)
+
+    def test_reminders_can_be_switched_off_or_given_their_own_days(self):
+        from .billing_reminders import plan_for
+        due = date(2026, 11, 30)
+        invoice = self._invoice(due)
+        self.client.post(reverse('billing_invoice_reminders', args=[invoice.pk]),
+                         {'enabled': '1', 'reminder_days': '10, 3, junk'})
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.reminder_days, '10,3')
+        self.assertEqual(invoice.reminder_offsets(), [10, 3, 0])
+        self.assertEqual([k for k, _, _ in plan_for(invoice, due - timedelta(days=3))],
+                         [f'remind:{due}:3'])
+        self.client.post(reverse('billing_invoice_reminders', args=[invoice.pk]), {})
+        invoice.refresh_from_db()
+        self.assertFalse(invoice.reminders_enabled)
+        self.assertEqual(plan_for(invoice, due), [])
+
+    def test_the_notices_say_the_days_left_and_replies_stay_with_the_operator(self):
+        from email.message import Message
+        from .billing_emails import send_billing_notice
+        from .management.commands.process_inbound_emails import _is_automated
+        due = date(2026, 11, 30)
+        invoice = self._invoice(due, switch_off_on=due + timedelta(days=8))
+        subjects = {}
+        with patch('bot.plumber_notifications.send_email_to_recipients', return_value=True) as send:
+            for kind, days in (('remind', 7), ('remind', 0), ('switch_off', 5),
+                               ('check', 0), ('pause', 0)):
+                self.assertEqual(send_billing_notice(invoice, kind, days), (True, ''))
+                call = send.call_args
+                subjects[(kind, days)] = call.args[1]
+                self.assertIsNone(call.kwargs['tenant'])
+                self.assertNotIn('homebase', (call.args[2] + call.args[1]).lower())
+                self.assertNotIn('—', call.args[2])
+                if kind in ('check', 'pause'):
+                    self.assertIn(reverse('billing_invoice_detail', args=[invoice.pk]), call.args[2])
+                    self.assertIsNone(call.kwargs.get('attachment'))
+                else:
+                    self.assertEqual(call.args[0], ['owner@acme.example'])
+                    self.assertTrue(call.kwargs['attachment'].startswith(b'%PDF'))
+                    self.assertTrue(_is_automated(Message(), 'owner@acme.example', 'Re: ' + call.args[1]))
+        self.assertIn('in 7 days', subjects[('remind', 7)])
+        self.assertIn('due today', subjects[('remind', 0)])
+        self.assertIn('switched off in 5 days', subjects[('switch_off', 5)])
+
+
+class BillingPdfTests(TestCase):
+    """The HomeX signature invoice and receipt (bot/billing_pdf.py, design C
+    chosen 2026-09-24): the feature breakdown allocation, the per-invoice
+    currency, the default payment details, and PDFs that render in every
+    state (due, part paid, paid, void, overdue, many pages)."""
+
+    def setUp(self):
+        from .models import PlatformBillingProfile
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.profile = PlatformBillingProfile.current()
+        self.profile.default_monthly_fee = Decimal('50.00')
+        self.profile.save()
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.login(username='root', password='pass12345')
+
+    def test_the_breakdown_adds_up_to_the_cent(self):
+        from .models import allocate_breakdown, parse_breakdown
+        rows = parse_breakdown('A | x | 33.3\nB | | 33.3\nC | y | 33.4')
+        parts = allocate_breakdown(Decimal('10.00'), rows)
+        self.assertEqual(sum(Decimal(p['amount']) for p in parts), Decimal('10.00'))
+        default = allocate_breakdown(Decimal('50.00'), self.profile.breakdown_rows())
+        self.assertEqual([p['percent'] for p in default], ['40', '15', '15', '10', '10', '10'])
+        self.assertEqual(default[0]['amount'], '20.00')
+        # Percents that do not total 100 give no breakdown at all.
+        self.assertEqual(parse_breakdown('A | | 60\nB | | 30'), [])
+
+    def test_a_split_that_does_not_total_100_is_refused_on_the_page(self):
+        data = {f: getattr(self.profile, f) for f in (
+            'business_name', 'tagline', 'address', 'email', 'phone', 'currency',
+            'default_monthly_fee', 'payment_terms_days', 'payment_details',
+            'footer_note', 'reminder_days')}
+        data['reminder_time'] = '07:00'
+        data['subscription_breakdown'] = 'A | | 60\nB | | 30'
+        response = self.client.post(reverse('billing_settings'), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('adding up to 100', response.content.decode())
+
+    def test_new_profile_carries_the_fnb_details_and_new_invoices_use_hmx(self):
+        from .models import PlatformBillingProfile, PlatformInvoice
+        PlatformBillingProfile.objects.all().delete()
+        profile = PlatformBillingProfile.current()
+        self.assertIn('63222994055', profile.payment_details)
+        self.assertIn('250655', profile.payment_details)
+        invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme', due_date=timezone.localdate())
+        self.assertTrue(invoice.number.startswith('HMX-'))
+        self.assertEqual(invoice.issuer['tagline'], 'Unmatched Velocity')
+
+    def test_ticking_breakdown_freezes_the_allocation_on_the_line(self):
+        from .models import PlatformInvoice
+        today = timezone.localdate()
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertIn('name="items-0-with_breakdown"', body)
+        self.client.post(reverse('billing_invoice_new'), {
+            'tenant': self.acme.pk, 'issue_date': today.isoformat(),
+            'due_date': (today + timedelta(days=7)).isoformat(),
+            'period_start': '', 'period_end': '', 'currency': 'R',
+            'bill_to_name': 'Acme Plumbing', 'bill_to_email': 'owner@acme.example',
+            'bill_to_address': '', 'notes': '',
+            'items-TOTAL_FORMS': '2', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '1', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-description': 'Plumbot monthly subscription', 'items-0-quantity': '1',
+            'items-0-unit_price': '900', 'items-0-with_breakdown': 'on',
+            'items-1-description': 'Setup', 'items-1-quantity': '1', 'items-1-unit_price': '100',
+        })
+        invoice = PlatformInvoice.objects.get()
+        self.assertEqual(invoice.currency, 'R')
+        sub, setup = list(invoice.items.all())
+        self.assertEqual(sum(Decimal(p['amount']) for p in sub.breakdown), Decimal('900.00'))
+        self.assertEqual(setup.breakdown, [])
+        # A later change to the split never rewrites the issued line.
+        self.profile.subscription_breakdown = 'Everything | | 100'
+        self.profile.save()
+        sub.refresh_from_db()
+        self.assertEqual(len(sub.breakdown), 6)
+        # The next invoice for this tenant starts in rand again.
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertIn('<option value="R" selected>', body)
+
+    def test_pdfs_render_in_every_state(self):
+        from .billing_pdf import EMBLEM_PATH, build_invoice_pdf, build_receipt_pdf
+        from .models import PlatformInvoice, PlatformInvoiceItem, PlatformPayment, allocate_breakdown
+        self.assertTrue(EMBLEM_PATH.exists())
+        today = timezone.localdate()
+        invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme Plumbing', status='sent',
+            due_date=today - timedelta(days=3))
+        PlatformInvoiceItem.objects.create(
+            invoice=invoice, description='Plumbot monthly subscription', quantity=1,
+            unit_price=Decimal('50.00'),
+            breakdown=allocate_breakdown(Decimal('50.00'), self.profile.breakdown_rows()))
+        for i in range(40):  # enough lines to need a second page
+            PlatformInvoiceItem.objects.create(
+                invoice=invoice, description=f'Line {i}', quantity=1, unit_price=Decimal('1.00'))
+        overdue = build_invoice_pdf(invoice)
+        self.assertTrue(overdue.startswith(b'%PDF'))
+        self.assertGreaterEqual(overdue.count(b'/Type /Page\n') + overdue.count(b'/Type /Page '), 2)
+        part = PlatformPayment.objects.create(invoice=invoice, amount=Decimal('10.00'))
+        self.assertTrue(part.receipt_number.startswith('HMX-R-'))
+        for data in (build_invoice_pdf(invoice), build_receipt_pdf(part)):
+            self.assertTrue(data.startswith(b'%PDF'))
+        PlatformPayment.objects.create(invoice=invoice, amount=invoice.balance)
+        part.is_void = True
+        part.save()
+        invoice.status = 'void'
+        for data in (build_invoice_pdf(invoice), build_receipt_pdf(part)):
+            self.assertTrue(data.startswith(b'%PDF'))
+
+
+class BillingMobileTests(TestCase):
+    """Billing is reachable from the admin panel and works on a phone (owner,
+    2026-09-24): the console links to it and to an invoice per tenant, the
+    phone's More sheet carries it for the operator only, and the billing
+    pages carry the phone layer (stacked invoice lines, 44px buttons)."""
+
+    def setUp(self):
+        self.homebase, _ = Tenant.objects.get_or_create(
+            slug='homebase', defaults={'name': 'Homebase Plumbers'})
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+
+    def test_the_console_links_to_billing_and_to_an_invoice_per_tenant(self):
+        self.client.force_login(self.root)
+        body = self.client.get(reverse('platform_console')).content.decode()
+        self.assertIn(f'href="{reverse("billing_home")}"', body)
+        self.assertIn(f'{reverse("billing_invoice_new")}?tenant=acme', body)
+
+    def test_the_phone_sheet_has_billing_for_the_operator_only(self):
+        self.client.force_login(self.root)
+        body = self.client.get(reverse('dashboard')).content.decode()
+        sheet = body.split('id="pbMobileSheet"', 1)[1]
+        self.assertIn(reverse('billing_home'), sheet)
+        staff = get_user_model().objects.create_user(
+            username='phone-staff', password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=staff, tenant=self.homebase, role='staff')
+        self.client.force_login(staff)
+        body = self.client.get(reverse('dashboard')).content.decode()
+        self.assertNotIn(reverse('billing_home'), body)
+
+    def test_billing_pages_carry_the_phone_layer(self):
+        import re
+        from .models import PlatformInvoice, PlatformInvoiceItem
+        self.client.force_login(self.root)
+        invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme', due_date=timezone.localdate())
+        PlatformInvoiceItem.objects.create(invoice=invoice, description='Sub', unit_price=Decimal('5'))
+        for url in (reverse('billing_home'), reverse('billing_settings'),
+                    reverse('billing_invoice_new'),
+                    reverse('billing_invoice_detail', args=[invoice.pk]),
+                    reverse('billing_invoice_edit', args=[invoice.pk])):
+            body = self.client.get(url).content.decode()
+            # The billing styles only: the layout has its own phone block first.
+            billing_css = body.split('.bl-wrap {', 1)[1]
+            phone = re.search(r'@media \(max-width: 767px\) \{(.*?)\n  \}', billing_css, re.S)
+            self.assertIsNotNone(phone, url)
+            self.assertIn('.bl-btn { min-height: 44px; }', phone.group(1), url)
+            self.assertIn('.bl-line-head { display: none; }', phone.group(1), url)
+            # Wide tables scroll inside their own box, never the page.
+            if '<table' in body:
+                self.assertIn('pb-table-scroll', body, url)
+        form = self.client.get(reverse('billing_invoice_new')).content.decode()
+        self.assertIn('placeholder="Qty"', form)
+        self.assertIn('placeholder="Unit price"', form)

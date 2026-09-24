@@ -242,6 +242,7 @@ def send_email_to_recipients(
     html_message=None, attachment=None, attachment_name="attachment.pdf",
     from_name=None, message_id=None, tenant=None, from_email=None, bcc=None,
     category=None, appointment=None, to_role=None, track_opens=False,
+    reply_to=None,
 ):
     """
     Send email to an explicit list of recipients via the configured SMTP
@@ -262,6 +263,10 @@ def send_email_to_recipients(
         choke point all mail goes through, so the gate cannot be sidestepped by a
         new caller. Omit it only for PLATFORM mail (dashboard password resets),
         which belongs to no tenant and is always allowed.
+    reply_to: explicit Reply-To address. Only platform billing passes it: it is
+        tenant=None mail, and the unscoped fallback (EMAIL_REPLY_TO) defaults
+        to Homebase's own inbox, so without it a tenant replying to their
+        invoice would write to another business. None keeps the rules below.
     """
     bcc = [a for a in (bcc or []) if a]
     if not recipients:
@@ -308,7 +313,10 @@ def send_email_to_recipients(
     # Reply-To must stay on the same identity as From — a tenant-scoped send
     # replying to the platform's global inbox would route a customer's reply to
     # the wrong business. Only unscoped platform mail uses EMAIL_REPLY_TO.
-    if tenant is not None and from_addr_only:
+    # An explicit reply_to (platform billing) wins over both.
+    if reply_to:
+        pass
+    elif tenant is not None and from_addr_only:
         reply_to = from_addr_only
     else:
         reply_to = getattr(settings, "EMAIL_REPLY_TO", None) or from_addr_only

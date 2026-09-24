@@ -84,6 +84,7 @@ Then respond:
 | Quote views, quote templates, `quote_pdf.py` | [quotes.md](docs/current-state/quotes.md) |
 | Dashboard views and templates | [dashboard-ui.md](docs/current-state/dashboard-ui.md) (and load the `plumbot-ui-design` skill) |
 | Anything touching email | [email.md](docs/current-state/email.md) |
+| Platform billing (`bot/views/billing.py`, `billing_pdf.py`, `billing_emails.py`, the `Platform*` billing models) | [billing.md](docs/current-state/billing.md) |
 | Anything with a figure, name, number, place, logo or permission in it | [tenancy-and-permissions.md](docs/current-state/tenancy-and-permissions.md) |
 
 When you learn something that belongs in those notes, write it into the doc for that area, in the same commit as the code, never back into this file.

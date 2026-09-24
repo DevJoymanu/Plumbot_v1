@@ -4,6 +4,10 @@
 
 {% block extra_css %}
 <style>
+  /* Title row with the Billing button pushed right; wraps under the title on a phone. */
+  .page-topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                 max-width: 1100px; margin: 0 auto; padding: 20px 24px 0; }
+  .page-topbar h1 { margin: 0; }
   .platform-body { padding: 24px; max-width: 1100px; margin: 0 auto; }
   .platform-card {
     background: var(--color-card, #fff);
@@ -53,6 +57,10 @@
 <div class="page-topbar">
   <i class="fas fa-building"></i>
   <h1>Platform Console</h1>
+  {# Billing is part of the console: reachable from here as well as the sidebar and the phone's More sheet. #}
+  <a class="btn-pill btn-pill--solid" href="{% url 'billing_home' %}" style="margin-left:auto;">
+    <i class="fas fa-file-invoice-dollar"></i> Billing
+  </a>
 </div>
 
 <div class="platform-body">
@@ -101,6 +109,7 @@
               </td>
               <td style="text-align:right; white-space:nowrap;">
                 <a class="btn-pill" href="{% url 'platform_tenant_config' row.tenant.slug %}">Config</a>
+                <a class="btn-pill" href="{% url 'billing_invoice_new' %}?tenant={{ row.tenant.slug }}" title="Raise an invoice for {{ row.tenant.name }}">Invoice</a>
                 {% if row.tenant.is_active %}
                 <form method="post" action="{% url 'switch_tenant' %}" style="display:inline;">
                   {% csrf_token %}

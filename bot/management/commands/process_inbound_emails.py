@@ -747,6 +747,15 @@ _AUTOMATED_SUBJECT_HINTS = (
     "out of office", "out-of-office",
     "your receipt", "receipt from", "payment receipt", "your invoice",
     "verification code", "password reset", "security alert",
+    # The platform's own invoices and receipts to tenants (bot/billing_emails.py,
+    # subjects "Invoice HMX-..." / "Receipt HMX-R-...", prefixes from
+    # models.INVOICE_PREFIX / RECEIPT_PREFIX; the INV-/RCT- pair is the first
+    # numbering, kept so replies to those still match). A tenant owner replying
+    # to one is asking the operator about billing, and their address may also
+    # sit on one of their own WhatsApp leads (an owner testing their bot), which
+    # would otherwise get the bot answering a billing question as a plumbing
+    # customer. Pinned by PlatformBillingTests.
+    "invoice hmx-", "receipt hmx-r-", "invoice inv-", "receipt rct-",
 )
 
 

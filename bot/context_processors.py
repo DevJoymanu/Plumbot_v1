@@ -35,6 +35,12 @@ NAV_MAP = {
     "ai_settings": "settings",
     "profile": "profile",
     "change_password": "profile",
+    # Platform billing (superuser-only): its own sidebar item under Platform.
+    "billing_home": "billing",
+    "billing_settings": "billing",
+    "billing_invoice_new": "billing",
+    "billing_invoice_detail": "billing",
+    "billing_invoice_edit": "billing",
 }
 
 # Quotes, templates and the tenant's own offer are one job - raising and
