@@ -23,6 +23,7 @@ operator-triggered send. Copy follows the house rules even though the reader
 is a business: short lines, no emojis, no dash punctuation.
 """
 
+from decimal import Decimal
 from html import escape
 
 from django.conf import settings
@@ -138,7 +139,9 @@ def _document_email(*, issuer, eyebrow, amount, subline, note='', links=(), fact
     subline   "Paid 28 September 2026"        note    an optional short paragraph
     links     [(label, url)]                  facts   [(label, value)]
     title     "Receipt #HMX-R-2026-0001"      period  "1 Sep 2026 to 30 Sep 2026"
-    items     [(description, qty, amount)]    totals  [(label, value, strong)]
+    items     [(description, qty, amount, parts)] from _email_lines, parts being
+              the line's feature breakdown [(feature, percent, amount)]
+    totals    [(label, value, strong)]
     pay_rows  payment_lines(): "Label: value" strings ('' is a gap)
     """
     name = escape(issuer.get('business_name') or '')
@@ -162,12 +165,25 @@ def _document_email(*, issuer, eyebrow, amount, subline, note='', links=(), fact
     note_html = (f'<div style="font-size:15px;color:{_INK};line-height:1.5;padding-top:14px;">'
                  f'{escape(note)}</div>' if note else '')
 
-    items_html = ''.join(
-        f'<tr><td style="padding:8px 12px 12px 0;font-size:16px;color:{_INK};">{escape(desc)}'
-        f'<div style="font-size:14px;color:{_MUTED};padding-top:3px;">Qty {escape(qty)}</div></td>'
-        f'<td align="right" valign="top" style="padding:8px 0 12px;font-size:16px;color:{_INK};'
-        f'white-space:nowrap;">{escape(amt)}</td></tr>'
-        for desc, qty, amt in items)
+    # Each line, then its feature breakdown (owner, 2026-09-24: "show the full
+    # breakdown in the receipt as well"): the parts frozen on the line,
+    # indented and muted under it with their share and amount, as the PDF
+    # prints them. `items` rows are (description, qty, amount, parts) with
+    # parts [(feature, percent, amount)], [] for a line without one.
+    items_html = ''
+    for desc, qty, amt, parts in items:
+        items_html += (
+            f'<tr><td style="padding:8px 12px {4 if parts else 12}px 0;font-size:16px;color:{_INK};">{escape(desc)}'
+            f'<div style="font-size:14px;color:{_MUTED};padding-top:3px;">Qty {escape(qty)}</div></td>'
+            f'<td align="right" valign="top" style="padding:8px 0 {4 if parts else 12}px;font-size:16px;'
+            f'color:{_INK};white-space:nowrap;">{escape(amt)}</td></tr>')
+        for i, (feature, percent, part_amt) in enumerate(parts):
+            bottom = 12 if i == len(parts) - 1 else 3
+            items_html += (
+                f'<tr><td style="padding:3px 12px {bottom}px 14px;font-size:13px;color:{_MUTED};">'
+                f'{escape(feature)} &middot; {escape(percent)}%</td>'
+                f'<td align="right" style="padding:3px 0 {bottom}px;font-size:13px;color:{_MUTED};'
+                f'white-space:nowrap;">{escape(part_amt)}</td></tr>')
     totals_html = ''
     for label, value, strong in totals:
         totals_html += _total(label, value, strong) + _bar()
@@ -227,6 +243,18 @@ def _document_email(*, issuer, eyebrow, amount, subline, note='', links=(), fact
 </td></tr></table></body></html>'''
 
 
+def _email_lines(invoice):
+    """The invoice's lines for the email, each with its frozen feature
+    breakdown: (description, qty, amount, [(feature, percent, amount)])."""
+    cur = invoice.currency
+    rows = []
+    for item in invoice.items.all():
+        parts = [(p.get('feature', ''), p.get('percent', ''), _money(cur, Decimal(str(p.get('amount') or 0))))
+                 for p in (item.breakdown or [])]
+        rows.append((item.description, f'{item.quantity.normalize():f}', _money(cur, item.line_total), parts))
+    return rows
+
+
 def _invoice_card(invoice, *, eyebrow, amount, subline, note='', subline_colour=None,
                   totals, pay=True):
     """The invoice card set shared by the invoice, reminder and switch-off
@@ -243,8 +271,7 @@ def _invoice_card(invoice, *, eyebrow, amount, subline, note='', subline_colour=
         # The period heads the lines in the second card, as on the Stripe
         # receipt; short months, or it wrapped in the facts at phone width.
         title=f'Invoice #{invoice.number}', period=_short_period(invoice),
-        items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
-               for i in invoice.items.all()],
+        items=_email_lines(invoice),
         totals=totals, pay_rows=invoice.payment_lines() if pay else ())
 
 
@@ -498,8 +525,7 @@ def send_receipt_email(payment):
         facts=[('Receipt number', payment.receipt_number), ('Invoice number', invoice.number),
                ('Payment method', method)],
         title=f'Receipt #{payment.receipt_number}', period=period,
-        items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
-               for i in invoice.items.all()],
+        items=_email_lines(invoice),
         totals=totals)
     ok, error = _send(
         to=invoice.bill_to_email,

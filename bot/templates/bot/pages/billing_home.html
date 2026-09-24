@@ -117,7 +117,7 @@
         <thead>
           <tr>
             <th>Invoice</th><th>Tenant</th><th>Issued</th><th>Due</th>
-            <th class="bl-num">Total</th><th class="bl-num">Balance</th><th>Status</th>
+            <th class="bl-num">Total</th><th class="bl-num">Balance</th><th>Status</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -130,9 +130,10 @@
             <td class="bl-num">{{ inv.currency }}{{ inv.total|floatformat:2 }}</td>
             <td class="bl-num">{{ inv.currency }}{{ inv.balance|floatformat:2 }}</td>
             <td><span class="bl-pill bl-pill--{{ inv.display_status }}">{{ inv.display_status_label }}</span></td>
+            <td class="bl-num">{% if inv.display_status == 'sent' or inv.display_status == 'overdue' or inv.display_status == 'part_paid' %}<button type="button" class="bl-btn" data-mark-paid data-url="{% url 'billing_payment_add' inv.pk %}" data-number="{{ inv.number }}" data-name="{{ inv.bill_to_name }}" data-balance="{{ inv.balance|stringformat:'s' }}" data-currency="{{ inv.currency }}" data-email="{{ inv.bill_to_email }}"><i class="fas fa-check"></i> Mark paid</button>{% endif %}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="7"><div class="bl-empty"><i class="fas fa-filter"></i>No invoices match this filter.</div></td></tr>
+          <tr><td colspan="8"><div class="bl-empty"><i class="fas fa-filter"></i>No invoices match this filter.</div></td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -174,4 +175,6 @@
   </div>
 
 </div>
+{# Mark paid opens the shared pop-up, which asks whether to email the receipt now. #}
+{% include "bot/includes/billing_paid_modal.html" %}
 {% endblock %}

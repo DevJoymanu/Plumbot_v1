@@ -14,6 +14,7 @@
     </div>
     {# Every state change here is a POST form; the PDF links are the only GETs. #}
     <div class="bl-actions">
+      {% if invoice.can_take_payment %}<button type="button" class="bl-btn bl-btn--solid" data-mark-paid data-url="{% url 'billing_payment_add' invoice.pk %}" data-number="{{ invoice.number }}" data-name="{{ invoice.bill_to_name }}" data-balance="{{ invoice.balance|stringformat:'s' }}" data-currency="{{ invoice.currency }}" data-email="{{ invoice.bill_to_email }}"><i class="fas fa-check"></i> Mark as paid</button>{% endif %}
       <a class="bl-btn" href="{% url 'billing_invoice_pdf' invoice.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> View PDF</a>
       <a class="bl-btn" href="{% url 'billing_invoice_pdf' invoice.pk %}?download=1"><i class="fas fa-download"></i> Download</a>
       {% if invoice.status != 'void' %}
@@ -38,7 +39,7 @@
     <div class="bl-title" style="color:var(--color-error);">Has {{ invoice.bill_to_name }} paid?</div>
     <p class="bl-hint">It was due {% if days_overdue == 0 %}today{% else %}on {{ invoice.due_date|date:"d M Y" }}, {{ days_overdue }} day{{ days_overdue|pluralize }} ago{% endif %}. Balance {{ invoice.currency }}{{ invoice.balance|floatformat:2 }}.</p>
     <div class="bl-actions">
-      <a class="bl-btn bl-btn--solid" href="#record-payment"><i class="fas fa-check"></i> They've paid</a>
+      <button type="button" class="bl-btn bl-btn--solid" data-mark-paid data-url="{% url 'billing_payment_add' invoice.pk %}" data-number="{{ invoice.number }}" data-name="{{ invoice.bill_to_name }}" data-balance="{{ invoice.balance|stringformat:'s' }}" data-currency="{{ invoice.currency }}" data-email="{{ invoice.bill_to_email }}"><i class="fas fa-check"></i> They've paid</button>
       <form method="post" action="{% url 'billing_invoice_extend' invoice.pk %}">
         {% csrf_token %}
         <input type="hidden" name="days" value="7">
@@ -68,7 +69,7 @@
         <button type="submit" class="bl-btn bl-btn--danger" {% if invoice.tenant.slug == 'homebase' %}disabled title="Homebase cannot be paused"{% endif %}><i class="fas fa-power-off"></i> Pause their account</button>
       </form>
       {% endif %}
-      <a class="bl-btn bl-btn--solid" href="#record-payment"><i class="fas fa-check"></i> They've paid</a>
+      <button type="button" class="bl-btn bl-btn--solid" data-mark-paid data-url="{% url 'billing_payment_add' invoice.pk %}" data-number="{{ invoice.number }}" data-name="{{ invoice.bill_to_name }}" data-balance="{{ invoice.balance|stringformat:'s' }}" data-currency="{{ invoice.currency }}" data-email="{{ invoice.bill_to_email }}"><i class="fas fa-check"></i> They've paid</button>
       <form method="post" action="{% url 'billing_invoice_extend' invoice.pk %}" class="bl-actions">
         {% csrf_token %}
         <input type="number" name="days" min="1" max="90" value="7" aria-label="How many more days" style="width:96px;" required>
@@ -139,48 +140,6 @@
     {% if invoice.notes %}<p class="bl-hint" style="margin:16px 0 0; white-space:pre-line;">{{ invoice.notes }}</p>{% endif %}
   </div>
 
-  {% if invoice.can_take_payment %}
-  <div class="bl-glass bl-card" id="record-payment" style="scroll-margin-top:24px;">
-    <div class="bl-title">Record a payment</div>
-    <p class="bl-hint">Recording a payment issues its receipt. The amount can be part of the balance; it cannot be more.</p>
-    <form method="post" action="{% url 'billing_payment_add' invoice.pk %}">
-      {% csrf_token %}
-      <div class="bl-grid">
-        <div class="bl-field">
-          <label for="pay-amount">Amount ({{ invoice.currency }})</label>
-          <input id="pay-amount" type="number" name="amount" step="0.01" min="0.01" max="{{ invoice.balance|stringformat:'s' }}" value="{{ invoice.balance|stringformat:'s' }}" required>
-        </div>
-        <div class="bl-field">
-          <label for="pay-date">Date paid</label>
-          <input id="pay-date" type="date" name="paid_on" value="{{ today|date:'Y-m-d' }}">
-        </div>
-        <div class="bl-field">
-          <label for="pay-ref">Reference</label>
-          <input id="pay-ref" type="text" name="reference" maxlength="120" placeholder="Bank or EcoCash reference">
-        </div>
-        <div class="bl-field bl-wide">
-          <label>Paid by</label>
-          <div class="bl-chips">
-            {% for value, label in methods %}
-            <label class="bl-chip-radio"><input type="radio" name="method" value="{{ value }}" {% if forloop.first %}checked{% endif %}><span class="bl-chip">{{ label }}</span></label>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="bl-field bl-wide">
-          <label for="pay-note">Note (printed on the receipt)</label>
-          <input id="pay-note" type="text" name="note" maxlength="255">
-        </div>
-      </div>
-      <div class="bl-actions" style="margin-top:16px;">
-        <label style="display:flex; align-items:center; gap:8px; font-size:14px;">
-          <input type="checkbox" name="email_receipt" value="1" {% if invoice.bill_to_email %}checked{% else %}disabled{% endif %} style="width:auto; min-height:0;">
-          Email the receipt to {{ invoice.bill_to_email|default:"the tenant (no billing email yet)" }}
-        </label>
-        <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-receipt"></i> Record payment</button>
-      </div>
-    </form>
-  </div>
-  {% endif %}
 
   <div class="bl-glass bl-card">
     <div class="bl-title">Payments and receipts</div>
@@ -284,4 +243,5 @@
   {% endif %}
 
 </div>
+{% include "bot/includes/billing_paid_modal.html" %}
 {% endblock %}

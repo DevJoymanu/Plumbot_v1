@@ -12774,8 +12774,9 @@ class BillingReminderTests(TestCase):
         self.assertIn('Has Acme Plumbing paid?', body)
         for name in ('billing_invoice_extend', 'billing_invoice_not_paid'):
             self.assertIn(reverse(name, args=[invoice.pk]), body)
-        self.assertIn('href="#record-payment"', body)
-        self.assertIn('id="record-payment"', body)
+        # "They've paid" opens the Mark as paid pop-up (BillingMarkPaidTests).
+        self.assertIn('data-mark-paid', body)
+        self.assertIn('id="bl-paid-dialog"', body)
 
     def test_not_paid_starts_the_countdown_only_once_due(self):
         today = timezone.localdate()
@@ -13342,3 +13343,70 @@ class BillingEmailDesignTests(TestCase):
         notice = self._sent(send_billing_notice, self.invoice, 'switch_off', 5)
         self.assertIn('Overdue invoice from HomeX Media', notice)
         self.assertIn('#BA1A1A', notice)
+
+    def test_both_emails_show_the_full_feature_breakdown(self):
+        # Owner, 2026-09-24: "show the full breakdown in the receipt as well".
+        from .billing_emails import send_invoice_email, send_receipt_email
+        from .models import PlatformBillingProfile, PlatformPayment, allocate_breakdown
+        sub = self.invoice.items.first()
+        sub.breakdown = allocate_breakdown(sub.line_total, PlatformBillingProfile.current().breakdown_rows())
+        sub.save()
+        payment = PlatformPayment.objects.create(invoice=self.invoice, amount=Decimal('160.00'))
+        for html in (self._sent(send_invoice_email, self.invoice), self._sent(send_receipt_email, payment)):
+            for fact in ('WhatsApp AI sales assistant &middot; 40%', 'US$60.00',
+                         'Hosting, updates and support &middot; 10%', 'US$15.00'):
+                self.assertIn(fact, html)
+
+
+class BillingMarkPaidTests(TestCase):
+    """Mark as paid (owner, 2026-09-24): pressing it opens a pop-up asking
+    whether to email the receipt now, a tick box ticked by default; Done
+    records the payment and emails the receipt ONLY when it is ticked."""
+
+    def setUp(self):
+        from .models import PlatformInvoice, PlatformInvoiceItem
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.force_login(self.root)
+        self.invoice = PlatformInvoice.objects.create(
+            tenant=self.acme, bill_to_name='Acme Plumbing', bill_to_email='owner@acme.example',
+            status='sent', due_date=timezone.localdate() + timedelta(days=7))
+        PlatformInvoiceItem.objects.create(invoice=self.invoice, description='Plumbot',
+                                           unit_price=Decimal('160.00'), sort_order=1)
+
+    def test_the_list_and_the_invoice_page_offer_the_pop_up(self):
+        from .models import PlatformInvoice
+        draft = PlatformInvoice.objects.create(tenant=self.acme, bill_to_name='Acme',
+                                               due_date=timezone.localdate())
+        url = reverse('billing_payment_add', args=[self.invoice.pk])
+        for page in (reverse('billing_home'), reverse('billing_invoice_detail', args=[self.invoice.pk])):
+            body = self.client.get(page).content.decode()
+            self.assertIn('id="bl-paid-dialog"', body)
+            self.assertIn(f'data-url="{url}"', body)
+            self.assertRegex(body, r'name="email_receipt"[^>]*checked')
+        home = self.client.get(reverse('billing_home')).content.decode()
+        self.assertNotIn(reverse('billing_payment_add', args=[draft.pk]), home)
+        detail = self.client.get(reverse('billing_invoice_detail', args=[self.invoice.pk])).content.decode()
+        self.assertNotIn('id="record-payment"', detail)
+
+    def test_ticked_sends_the_receipt_and_unticked_does_not(self):
+        from .models import PlatformPayment
+        url = reverse('billing_payment_add', args=[self.invoice.pk])
+        with patch('bot.views.billing.send_receipt_email', return_value=(True, '')) as send:
+            response = self.client.post(url, {'amount': '60', 'method': 'bank',
+                                              'next': reverse('billing_home')})
+            self.assertRedirects(response, reverse('billing_home'), fetch_redirect_response=False)
+            send.assert_not_called()
+            self.client.post(url, {'amount': '100', 'method': 'ecocash', 'email_receipt': '1'})
+            self.assertEqual(send.call_count, 1)
+        self.assertEqual(PlatformPayment.objects.count(), 2)
+        self.invoice.refresh_from_db()
+        self.assertEqual(self.invoice.display_status, 'paid')
+
+    def test_next_never_leaves_the_site(self):
+        url = reverse('billing_payment_add', args=[self.invoice.pk])
+        with patch('bot.views.billing.send_receipt_email', return_value=(True, '')):
+            response = self.client.post(url, {'amount': '10', 'next': 'https://evil.example/'})
+        self.assertRedirects(response, reverse('billing_invoice_detail', args=[self.invoice.pk]),
+                             fetch_redirect_response=False)

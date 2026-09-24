@@ -32,6 +32,7 @@ from django.db import transaction
 from django.forms import inlineformset_factory
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -340,6 +341,9 @@ def billing_home(request):
         'status_choices': list(PlatformInvoice.DISPLAY_LABELS.items()),
         'tenants': Tenant.objects.order_by('name'),
         'invoice_templates': PlatformInvoiceTemplate.objects.all(),
+        # For the Mark as paid pop-up on each unpaid row.
+        'methods': PlatformPayment.Method.choices,
+        'today': today,
         'receipts': (PlatformPayment.objects.select_related('invoice')
                      .order_by('-paid_on', '-id')[:10]),
     })
@@ -689,21 +693,29 @@ def billing_payment_add(request, pk):
     """Record money received against an invoice, which issues its receipt.
 
     The amount must be positive and no more than the balance: an overpayment
-    would leave a negative balance with nowhere to go. Ticking "email the
-    receipt" sends it straight away.
+    would leave a negative balance with nowhere to go. The receipt is emailed
+    ONLY when `email_receipt` is posted: the "Mark as paid" pop-up's tick box
+    (ticked by default, owner 2026-09-24) sends it, and unticking it records
+    the payment without emailing anyone.
+
+    Returns to `next` (the Billing list or the invoice page, whichever the
+    pop-up was opened from), through safe_return_path so only a local path is
+    honoured; the invoice page otherwise.
     """
+    from .quotations import safe_return_path
     invoice = get_object_or_404(PlatformInvoice, pk=pk)
+    back = safe_return_path(request, reverse('billing_invoice_detail', args=[invoice.pk]))
     if not invoice.can_take_payment:
         messages.error(request, 'This invoice cannot take a payment (it is void or already paid).')
-        return redirect('billing_invoice_detail', pk=invoice.pk)
+        return redirect(back)
     amount = _parse_amount(request.POST.get('amount'))
     method = request.POST.get('method', '')
     if amount is None:
         messages.error(request, 'Enter the amount received, above zero.')
-        return redirect('billing_invoice_detail', pk=invoice.pk)
+        return redirect(back)
     if amount > invoice.balance:
         messages.error(request, f'That is more than the balance of {invoice.currency}{invoice.balance:,.2f}.')
-        return redirect('billing_invoice_detail', pk=invoice.pk)
+        return redirect(back)
     if method not in PlatformPayment.Method.values:
         method = PlatformPayment.Method.OTHER
     payment = PlatformPayment.objects.create(
@@ -719,7 +731,9 @@ def billing_payment_add(request, pk):
             messages.success(request, f'Receipt emailed to {invoice.bill_to_email}.')
         else:
             messages.error(request, error)
-    return redirect('billing_invoice_detail', pk=invoice.pk)
+    else:
+        messages.info(request, 'The receipt was not emailed. You can send it later from the invoice page.')
+    return redirect(back)
 
 
 @require_POST

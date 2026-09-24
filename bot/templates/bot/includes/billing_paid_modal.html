@@ -1,0 +1,82 @@
+{% comment %}
+The "Mark as paid" pop-up (owner, 2026-09-24): pressing Mark as paid on an invoice opens this
+instead of going straight through, and asks whether to email the receipt now. The tick box is
+ticked by default; Done posts to billing_payment_add, which emails the receipt ONLY when
+email_receipt is posted, so unticking it records the payment and sends nothing.
+One dialog per page, filled from the pressed button's data-* attributes (data-mark-paid):
+data-url (the invoice's billing_payment_add), data-number, data-name, data-balance,
+data-currency, data-email. `next` returns to the page it was opened from.
+Needs `methods` (PlatformPayment.Method.choices) and `today` in the context.
+Pinned by BillingMarkPaidTests.
+{% endcomment %}
+<dialog id="bl-paid-dialog" class="bl-dialog" aria-labelledby="bl-paid-title">
+  <form method="post" id="bl-paid-form">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <h2 id="bl-paid-title" class="bl-dialog__title">Mark <span data-f="number"></span> as paid</h2>
+    <p class="bl-hint" style="margin:0 0 16px;"><span data-f="name"></span> · balance <strong data-f="balance-label"></strong></p>
+    <div class="bl-grid" style="grid-template-columns:1fr 1fr;">
+      <div class="bl-field">
+        <label for="bl-paid-amount">Amount received (<span data-f="currency"></span>)</label>
+        <input id="bl-paid-amount" type="number" name="amount" step="0.01" min="0.01" inputmode="decimal" required>
+      </div>
+      <div class="bl-field">
+        <label for="bl-paid-date">Date paid</label>
+        <input id="bl-paid-date" type="date" name="paid_on" value="{{ today|date:'Y-m-d' }}">
+      </div>
+      <div class="bl-field bl-wide">
+        <label>Paid by</label>
+        <div class="bl-chips">
+          {% for value, label in methods %}
+          <label class="bl-chip-radio"><input type="radio" name="method" value="{{ value }}" {% if forloop.first %}checked{% endif %}><span class="bl-chip">{{ label }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="bl-field bl-wide">
+        <label for="bl-paid-ref">Reference (optional)</label>
+        <input id="bl-paid-ref" type="text" name="reference" maxlength="120" placeholder="Bank or EcoCash reference">
+      </div>
+    </div>
+    <label class="bl-dialog__check">
+      <input type="checkbox" name="email_receipt" value="1" id="bl-paid-email" checked>
+      <span>Email the receipt to <strong data-f="email"></strong> now</span>
+    </label>
+    <p class="bl-hint" id="bl-paid-noemail" style="display:none; margin:6px 0 0;">This invoice has no billing email, so the receipt cannot be emailed. It is still issued and can be downloaded.</p>
+    <div class="bl-actions" style="justify-content:flex-end; margin-top:20px;">
+      <button type="button" class="bl-btn" data-close>Cancel</button>
+      <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-check"></i> Done</button>
+    </div>
+  </form>
+</dialog>
+<script>
+/* Mark as paid: fill the dialog from the pressed button, then open it. The
+   buttons can sit inside clickable table rows, so the click stops there. */
+(function () {
+  const dialog = document.getElementById('bl-paid-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+  const form = document.getElementById('bl-paid-form');
+  const set = (key, text) => dialog.querySelectorAll('[data-f="' + key + '"]').forEach((el) => { el.textContent = text; });
+  document.querySelectorAll('[data-mark-paid]').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const d = btn.dataset;
+      form.action = d.url;
+      set('number', d.number); set('name', d.name); set('currency', d.currency);
+      set('balance-label', d.currency + Number(d.balance).toFixed(2));
+      set('email', d.email || '');
+      const amount = document.getElementById('bl-paid-amount');
+      amount.value = Number(d.balance).toFixed(2);
+      amount.max = d.balance;
+      const box = document.getElementById('bl-paid-email');
+      box.checked = !!d.email;
+      box.disabled = !d.email;
+      box.closest('label').style.display = d.email ? '' : 'none';
+      document.getElementById('bl-paid-noemail').style.display = d.email ? 'none' : '';
+      dialog.showModal();
+    });
+  });
+  dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+})();
+</script>
