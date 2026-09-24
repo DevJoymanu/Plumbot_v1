@@ -12942,6 +12942,16 @@ class BillingPdfTests(TestCase):
         self.assertEqual(other.contact_lines(), ['billing@homexmedia.com'])
         self.assertNotIn('gmail', ' '.join(other.contact_lines()))
 
+    def test_a_new_invoice_is_made_out_to_the_account_name_not_the_letterhead(self):
+        # Owner, 2026-09-24: Barmak's quote letterhead says ROYAL HARDWARE;
+        # invoices go to the account, Barmak Plumbing.
+        profile, _ = TenantProfile.objects.get_or_create(tenant=self.acme)
+        profile.letterhead = {'trading_name': 'ROYAL HARDWARE'}
+        profile.save()
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertIn('value="Acme Plumbing"', body)
+        self.assertNotIn('ROYAL HARDWARE', body)
+
     def test_the_zimbabwe_box_defaults_from_the_tenants_records(self):
         from .models import TenantWhatsAppChannel, is_zimbabwean_tenant
         self.assertFalse(is_zimbabwean_tenant(self.acme))

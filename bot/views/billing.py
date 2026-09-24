@@ -188,9 +188,12 @@ def _bill_to_defaults(tenant):
                 'currency': last.currency,
                 'zimbabwe_client': last.zimbabwe_client}
     profile = TenantProfile.objects.filter(tenant=tenant).first()
-    letterhead = (getattr(profile, 'letterhead', None) or {}) if profile else {}
     return {
-        'bill_to_name': (letterhead.get('trading_name') or tenant.name),
+        # The tenant's account name, NOT their quote letterhead's trading
+        # name (owner, 2026-09-24): Barmak Plumbing's letterhead says "ROYAL
+        # HARDWARE", the name on their quotes to their own customers, and the
+        # owner bills the account. Any name can still be typed on the form.
+        'bill_to_name': tenant.name,
         'bill_to_email': getattr(profile, 'email_sender', '') or '',
         'bill_to_address': getattr(profile, 'location_line', '') or '',
         # First invoice: a +263 number or a Zimbabwean place on their records.
