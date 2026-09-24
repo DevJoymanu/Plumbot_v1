@@ -53,17 +53,28 @@ def _html(paragraphs):
 
 # ── The document email (owner, 2026-09-24) ──────────────────────────────────
 #
-# The invoice and receipt emails copy the Stripe receipt email Anthropic
-# sends, which the owner sent as the model: the issuer's mark and name on a
-# soft background, a white card with "Receipt from <name>", the amount large,
-# "Paid <date>", download links and a few label/value facts, then a second
-# card with the numbered document, its lines and totals, and a "Questions?"
-# line. Built with tables and inline styles, because Gmail and Outlook strip
-# <style> blocks and most layout CSS. The mark is the hosted static file
-# (Gmail does not show data: images). Every value is escaped.
+# A replica of the Stripe receipt email Anthropic sends, which the owner sent
+# twice as the model ("replicate this layout and design, just use my colours,
+# theme and logo"), block for block:
+#   the whole email on the brand colour (Stripe: the seller's accent colour;
+#   here the logo's charcoal), the mark and name at the top in white;
+#   card one: "Receipt from <name>" muted, the amount large and bold, "Paid
+#   <date>", a document illustration top right, a hairline that stops short
+#   of the illustration, download links with a tray icon, then label/value
+#   facts (Receipt number, Invoice number, Payment method);
+#   card two: "Receipt #<number>", the period, each line with "Qty 1" under
+#   it, then Subtotal / Total / Amount paid in dark labels separated by thick
+#   light-grey bars, and "Questions? ..." with the link in the brand blue;
+#   the footer line where Stripe has "Powered by stripe".
+# Tables and inline styles only: Gmail and Outlook drop <style> blocks and
+# most layout CSS. Images are hosted static files (Gmail hides data: images):
+# the HX emblem, and email_document.png / email_download.png drawn in the
+# HomeX blues. Every value is escaped. Pinned by BillingEmailDesignTests.
 
-_BG, _CARD, _LINE = '#F4F6F7', '#FFFFFF', '#E5EAED'
-_INK, _MUTED, _LINK = '#0F1A1F', '#5E6E76', '#0A8FD8'
+_BG = '#1A2225'                       # the logo's charcoal, as the page colour
+_CARD, _HAIR, _BAR = '#FFFFFF', '#E3E8EB', '#EEF1F3'
+_INK, _MUTED, _LINK = '#1A1F23', '#6B7479', '#0AA0F0'
+_ON_BG, _ON_BG_MUTED = '#FFFFFF', '#9FB0B8'
 _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 
@@ -80,104 +91,138 @@ def _short_period(invoice):
     return f'{short(invoice.period_start)} to {short(invoice.period_end)}'
 
 
-def _logo_url():
-    """Absolute URL of the HX emblem, or '' if static cannot resolve it."""
+def _static_url(path):
+    """Absolute URL of a static file, or '' if static cannot resolve it (an
+    email without an image still reads; one that fails to build does not)."""
     try:
         from django.templatetags.static import static
         base = (getattr(settings, 'SITE_URL', '') or '').rstrip('/')
-        return f"{base}{static('billing/homex_emblem.png')}"
-    except Exception:  # noqa: BLE001 - a missing logo never stops an email
+        return f'{base}{static(path)}'
+    except Exception:  # noqa: BLE001
         return ''
 
 
-def _row(label, value, *, strong=False, muted_value=False, top_rule=False):
-    """One label/value row across the card."""
-    weight = '600' if strong else '400'
-    colour = _MUTED if muted_value else _INK
-    rule = f'border-top:1px solid {_LINE};' if top_rule else ''
-    # The label never wraps ("Invoice number" broke onto two lines at phone
-    # width); a long value wraps on its own side instead.
-    return (f'<tr><td style="padding:9px 12px 9px 0;{rule}font-size:14px;color:{_MUTED if not strong else _INK};'
-            f'font-weight:{weight};white-space:nowrap;vertical-align:top;">{escape(label)}</td>'
-            f'<td align="right" style="padding:9px 0;{rule}font-size:14px;color:{colour};'
-            f'font-weight:{weight};">{escape(value)}</td></tr>')
+def _logo_url():
+    return _static_url('billing/homex_emblem.png')
+
+
+def _fact(label, value):
+    """A card-one fact: muted label left, dark value right. The label never
+    wraps ("Invoice number" broke onto two lines at phone width)."""
+    return (f'<tr><td style="padding:7px 12px 7px 0;font-size:15px;color:{_MUTED};'
+            f'white-space:nowrap;vertical-align:top;">{escape(label)}</td>'
+            f'<td align="right" style="padding:7px 0;font-size:15px;color:{_INK};">{escape(value)}</td></tr>')
+
+
+def _bar():
+    """The thick light-grey separator between Stripe's total rows."""
+    return (f'<tr><td colspan="2" style="padding:0;"><div style="height:10px;line-height:10px;'
+            f'background:{_BAR};font-size:1px;">&nbsp;</div></td></tr>')
+
+
+def _total(label, value, strong=False):
+    """A totals row: dark label and value, as Stripe prints Subtotal / Total /
+    Amount paid (semibold when `strong`)."""
+    weight = '600' if strong else '500'
+    return (f'<tr><td style="padding:16px 12px 16px 0;font-size:16px;font-weight:{weight};color:{_INK};'
+            f'white-space:nowrap;">{escape(label)}</td>'
+            f'<td align="right" style="padding:16px 0;font-size:16px;font-weight:{weight};color:{_INK};">'
+            f'{escape(value)}</td></tr>')
 
 
 def _document_email(*, issuer, eyebrow, amount, subline, note='', links=(), facts=(),
                     title, period='', items=(), totals=(), pay_rows=(), subline_colour=None):
-    """The HTML for an invoice / receipt / reminder email.
+    """The HTML for an invoice / receipt / reminder email (the Stripe replica).
 
-    eyebrow   "Invoice from HomeX Media"      amount  "US$160.00"
-    subline   "Due 1 October 2026"            note    an optional short paragraph
+    eyebrow   "Receipt from HomeX Media"      amount  "US$160.00"
+    subline   "Paid 28 September 2026"        note    an optional short paragraph
     links     [(label, url)]                  facts   [(label, value)]
-    title     "Invoice HMX-2026-0001"         period  "1 Sep 2026 to 30 Sep 2026"
+    title     "Receipt #HMX-R-2026-0001"      period  "1 Sep 2026 to 30 Sep 2026"
     items     [(description, qty, amount)]    totals  [(label, value, strong)]
-    pay_rows  payment_lines(): "Label: value" strings, '' for a gap
+    pay_rows  payment_lines(): "Label: value" strings ('' is a gap)
     """
     name = escape(issuer.get('business_name') or '')
+    tagline = escape(issuer.get('tagline') or '')
     logo = _logo_url()
-    mark = (f'<img src="{escape(logo)}" width="32" height="32" alt="" '
-            f'style="display:block;border-radius:8px;border:0;">' if logo else '')
+    doc_icon = _static_url('billing/email_document.png')
+    dl_icon = _static_url('billing/email_download.png')
     contact = (issuer.get('contact_email') or issuer.get('email') or '').strip()
 
+    mark = (f'<img src="{escape(logo)}" width="34" height="34" alt="" '
+            f'style="display:block;border-radius:8px;border:0;">' if logo else '')
+    icon_img = (f'<img src="{escape(doc_icon)}" width="60" height="72" alt="" '
+                f'style="display:block;border:0;">' if doc_icon else '')
+    dl = (f'<img src="{escape(dl_icon)}" width="16" height="16" alt="" '
+          f'style="display:inline-block;vertical-align:-2px;border:0;margin-right:7px;">' if dl_icon else '')
     link_html = ''.join(
-        f'<a href="{escape(url)}" style="color:{_INK};text-decoration:none;font-size:14px;'
-        f'margin-right:22px;white-space:nowrap;">&#8595;&nbsp;{escape(label)}</a>'
+        f'<a href="{escape(url)}" style="color:{_INK};text-decoration:none;font-size:15px;'
+        f'font-weight:500;white-space:nowrap;display:inline-block;margin:0 22px 6px 0;">{dl}{escape(label)}</a>'
         for label, url in links if url)
-    facts_html = ''.join(_row(k, v) for k, v in facts if v)
-    items_html = ''.join(
-        f'<tr><td style="padding:10px 0 2px;font-size:14px;color:{_INK};">{escape(desc)}'
-        f'<div style="font-size:12px;color:{_MUTED};padding-top:2px;">Qty {escape(qty)}</div></td>'
-        f'<td align="right" valign="top" style="padding:10px 0 2px;font-size:14px;color:{_INK};">'
-        f'{escape(amt)}</td></tr>'
-        for desc, qty, amt in items)
-    totals_html = ''.join(_row(label, value, strong=strong, top_rule=True)
-                          for label, value, strong in totals)
-    pay_html = ''
-    if pay_rows:
-        rows = []
-        for line in pay_rows:
-            if not line.strip():
-                continue
-            key, sep, value = line.partition(':')
-            rows.append(_row(key.strip(), value.strip()) if sep else
-                        f'<tr><td colspan="2" style="padding:6px 0;font-size:14px;color:{_INK};">'
-                        f'{escape(line)}</td></tr>')
-        pay_html = (f'<tr><td colspan="2" style="padding:22px 0 4px;font-size:15px;font-weight:600;'
-                    f'color:{_INK};">How to pay</td></tr>' + ''.join(rows))
+    facts_html = ''.join(_fact(k, v) for k, v in facts if v)
+    note_html = (f'<div style="font-size:15px;color:{_INK};line-height:1.5;padding-top:14px;">'
+                 f'{escape(note)}</div>' if note else '')
 
-    card = (f'background:{_CARD};border:1px solid {_LINE};border-radius:12px;')
+    items_html = ''.join(
+        f'<tr><td style="padding:8px 12px 12px 0;font-size:16px;color:{_INK};">{escape(desc)}'
+        f'<div style="font-size:14px;color:{_MUTED};padding-top:3px;">Qty {escape(qty)}</div></td>'
+        f'<td align="right" valign="top" style="padding:8px 0 12px;font-size:16px;color:{_INK};'
+        f'white-space:nowrap;">{escape(amt)}</td></tr>'
+        for desc, qty, amt in items)
+    totals_html = ''
+    for label, value, strong in totals:
+        totals_html += _total(label, value, strong) + _bar()
+    pay_html = ''
+    rows = [line for line in pay_rows if line.strip()]
+    if rows:
+        pay_html = (f'<tr><td colspan="2" style="padding:20px 0 6px;font-size:16px;font-weight:600;'
+                    f'color:{_INK};">How to pay</td></tr>')
+        for line in rows:
+            key, sep, value = line.partition(':')
+            pay_html += (_fact(key.strip(), value.strip()) if sep else
+                         f'<tr><td colspan="2" style="padding:7px 0;font-size:15px;color:{_INK};">'
+                         f'{escape(line)}</td></tr>')
+    period_html = (f'<div style="font-size:15px;color:{_MUTED};padding:18px 0 4px;">{escape(period)}</div>'
+                   if period else '')
+    questions = (f'<div style="font-size:15px;color:{_MUTED};padding-top:22px;">Questions? Contact '
+                 f'<a href="mailto:{escape(contact)}" style="color:{_LINK};font-weight:600;'
+                 f'text-decoration:none;">{escape(contact)}</a>.</div>' if contact else '')
+    card = f'background:{_CARD};border-radius:14px;'
+
     return f'''<!doctype html><html><body style="margin:0;padding:0;background:{_BG};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{_BG};font-family:{_FONT};">
-<tr><td align="center" style="padding:28px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-<tr><td style="padding:0 4px 20px;">
+<tr><td align="center" style="padding:32px 14px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:540px;">
+<tr><td style="padding:0 6px 26px;">
   <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-    <td valign="middle" style="padding-right:12px;">{mark}</td>
-    <td valign="middle" style="font-size:17px;font-weight:600;color:{_INK};">{name}</td>
+    <td valign="middle" style="padding-right:14px;">{mark}</td>
+    <td valign="middle" style="font-size:18px;font-weight:500;color:{_ON_BG};">{name}</td>
   </tr></table>
 </td></tr>
-<tr><td style="{card}padding:28px 28px 22px;">
-  <div style="font-size:15px;color:{_MUTED};">{escape(eyebrow)}</div>
-  <div style="font-size:34px;font-weight:700;color:{_INK};padding:6px 0 4px;">{escape(amount)}</div>
-  <div style="font-size:15px;color:{subline_colour or _MUTED};">{escape(subline)}</div>
-  {f'<div style="font-size:14px;color:{_INK};padding-top:14px;line-height:1.5;">{escape(note)}</div>' if note else ''}
-  {f'<div style="border-top:1px solid {_LINE};margin-top:18px;padding-top:16px;">{link_html}</div>' if link_html else ''}
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">{facts_html}</table>
+<tr><td style="{card}padding:30px 28px 22px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td valign="top">
+      <div style="font-size:16px;color:{_MUTED};">{escape(eyebrow)}</div>
+      <div style="font-size:38px;font-weight:700;color:{_INK};padding:6px 0 6px;letter-spacing:-0.5px;">{escape(amount)}</div>
+      <div style="font-size:16px;color:{subline_colour or _MUTED};">{escape(subline)}</div>
+      {note_html}
+      {f'<div style="border-top:1px solid {_HAIR};margin-top:20px;padding-top:16px;">{link_html}</div>' if link_html else ''}
+    </td>
+    <td valign="top" align="right" width="76" style="padding-left:12px;">{icon_img}</td>
+  </tr></table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px;">{facts_html}</table>
 </td></tr>
-<tr><td style="height:16px;line-height:16px;">&nbsp;</td></tr>
-<tr><td style="{card}padding:26px 28px 22px;">
-  <div style="font-size:18px;font-weight:600;color:{_INK};">{escape(title)}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;">
-    {f'<tr><td colspan="2" style="padding:4px 0 0;font-size:13px;color:{_MUTED};">{escape(period)}</td></tr>' if period else ''}
+<tr><td style="height:18px;line-height:18px;font-size:1px;">&nbsp;</td></tr>
+<tr><td style="{card}padding:30px 28px 26px;">
+  <div style="font-size:20px;font-weight:600;color:{_INK};">{escape(title)}</div>
+  {period_html}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:6px;">
     {items_html}
-    <tr><td colspan="2" style="height:10px;line-height:10px;">&nbsp;</td></tr>
     {totals_html}
     {pay_html}
   </table>
-  {f'<div style="font-size:14px;color:{_MUTED};padding-top:20px;">Questions? Contact <a href="mailto:{escape(contact)}" style="color:{_LINK};text-decoration:none;">{escape(contact)}</a>.</div>' if contact else ''}
+  {questions}
 </td></tr>
-<tr><td align="center" style="padding:20px 0 0;font-size:12px;color:{_MUTED};">{name}{' &middot; ' + escape(issuer.get('tagline') or '') if issuer.get('tagline') else ''}</td></tr>
+<tr><td align="center" style="padding:24px 0 4px;font-size:13px;color:{_ON_BG_MUTED};">{name}{' &middot; ' + tagline if tagline else ''}</td></tr>
 </table>
 </td></tr></table></body></html>'''
 
@@ -197,7 +242,7 @@ def _invoice_card(invoice, *, eyebrow, amount, subline, note='', subline_colour=
         facts=[('Invoice number', invoice.number), ('Due date', _long_day(invoice.due_date))],
         # The period heads the lines in the second card, as on the Stripe
         # receipt; short months, or it wrapped in the facts at phone width.
-        title=f'Invoice {invoice.number}', period=_short_period(invoice),
+        title=f'Invoice #{invoice.number}', period=_short_period(invoice),
         items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
                for i in invoice.items.all()],
         totals=totals, pay_rows=invoice.payment_lines() if pay else ())
@@ -452,7 +497,7 @@ def send_receipt_email(payment):
                ('Download receipt', receipt_pdf_url(payment))],
         facts=[('Receipt number', payment.receipt_number), ('Invoice number', invoice.number),
                ('Payment method', method)],
-        title=f'Receipt {payment.receipt_number}', period=period,
+        title=f'Receipt #{payment.receipt_number}', period=period,
         items=[(i.description, f'{i.quantity.normalize():f}', _money(cur, i.line_total))
                for i in invoice.items.all()],
         totals=totals)
