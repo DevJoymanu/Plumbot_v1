@@ -367,8 +367,34 @@ def work_already_shown(appointment) -> bool:
     never from the model's `state_update.work_shown`. The model reports what it
     believes; this reports what happened. When the two disagree the gallery
     either goes twice or never, and both are visible to the customer.
+
+    ANY picture or portfolio we already sent counts, not only the proof
+    gallery (owner, 2026-09-23: "if lead has already been sent pictures, do
+    not send pictures again when asking for area"). Barmak 1217 had the
+    portfolio PDF from staff at 12:32 and still got three work photos with
+    the next question at 13:44, because the dashboard's PDF send stamps
+    neither `previous_work_photos_sent_at` nor [LEAD_MAGNET_WA_SENT]. So the
+    transcript is read too, for the markers every send path writes:
+    "[MEDIA] Sent" (gallery, catalogue, portfolio item), "[PDF SENT]" (the
+    portfolio, bot or staff) and "[IMAGE SENT]" (staff image send). Pinned by
+    the "proof: not after" cases in TEST 0.
     """
-    return bool(getattr(appointment, 'previous_work_photos_sent_at', None))
+    if getattr(appointment, 'previous_work_photos_sent_at', None):
+        return True
+    if '[LEAD_MAGNET_WA_SENT]' in (getattr(appointment, 'internal_notes', '') or ''):
+        return True
+    for turn in (getattr(appointment, 'conversation_history', None) or []):
+        if not isinstance(turn, dict) or turn.get('role') != 'assistant':
+            continue
+        content = str(turn.get('content') or '')
+        if content.startswith(_SENT_PICTURE_MARKERS):
+            return True
+    return False
+
+
+# Transcript prefixes of a picture or portfolio WE sent (see work_already_shown).
+# A contact card is recorded without "[MEDIA]" and is deliberately not here.
+_SENT_PICTURE_MARKERS = ('[MEDIA] Sent', '[PDF SENT]', '[IMAGE SENT]')
 
 
 def description_captured(appointment) -> bool:

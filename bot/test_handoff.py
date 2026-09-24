@@ -983,8 +983,9 @@ class NearDateContactTests(OfflineTestCase):
 
     Type 1 "I'll contact you on Monday": we wait; if the day passes with no
     word, no quote and no visit, the plumber gets a call email the morning
-    after. Type 2 "Contact me on Monday": we ask for the email; with none, the
-    plumber gets the call email that morning and the lead is told we'll call."""
+    after. Type 2 "Contact me on Monday": we ask for the email, and the plumber
+    gets the call email that morning either way; with no email the lead is
+    told we'll call."""
 
     def setUp(self):
         super().setUp()
@@ -1073,16 +1074,20 @@ class NearDateContactTests(OfflineTestCase):
         send.assert_not_called()
         self.assertEqual(stats['skipped'], 1)
 
-    def test_type_2_plumber_is_emailed_that_morning_only_without_an_email(self):
+    def test_type_2_plumber_is_emailed_that_morning_with_or_without_an_email(self):
+        # Owner, 2026-09-23: "yes, plumber should call as well" for a type 2
+        # lead who gave an email (it used to be the email check-back only).
         lead = make_lead(9106)
         self._answer(lead, 'Contact me on Monday')
         stats, send = self._tick(self._at(self.day, 9))
         send.assert_called_once()
         self.assertIn('asked us to call them today', send.call_args[0][1])
+        self.assertIn('did not give an email', send.call_args[0][2])
         mailed = make_lead(9107, customer_email='rudo@example.com')
         self._answer(mailed, 'Contact me on Monday')
         stats, send = self._tick(self._at(self.day, 10))
-        send.assert_not_called()
+        send.assert_called_once()
+        self.assertIn('check-back email today', send.call_args[0][2])
 
     @patch('bot.customer_emails.send_delay_quote_email_async')
     def test_type_1_email_gets_the_portfolio_and_no_check_back(self, portfolio):

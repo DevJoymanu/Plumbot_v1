@@ -9146,6 +9146,21 @@ try:
                 _ctl.should_show_work(
                     _FakeLead(project_description='x', photos_at='2026-09-07',
                               history=_two_turns)) is False)
+    # Any picture or portfolio already sent counts as shown (barmak 1217: the
+    # staff-sent portfolio PDF, then three work photos with the next question).
+    for _label, _sent in (("the portfolio PDF", '[PDF SENT] barmak-plumbing_portfolio.pdf'),
+                          ("a staff image", '[IMAGE SENT] URL: x | Caption: y'),
+                          ("catalogue images", '[MEDIA] Sent 3 catalogue image(s)')):
+        results.log(f"proof: not after {_label}",
+                    _ctl.should_show_work(
+                        _FakeLead(project_description='x',
+                                  history=_two_turns + [{'role': 'assistant',
+                                                         'content': _sent}])) is False)
+    results.log("proof: a lead who SENT us a picture still gets ours",
+                _ctl.should_show_work(
+                    _FakeLead(project_description='x',
+                              history=_two_turns + [{'role': 'user',
+                                                     'content': '[MEDIA] Sent 1 image'}])) is True)
     results.log("proof: show_work is a move the controller can actually take",
                 'show_work' in _ctl.DRIVABLE_MOVES)
 

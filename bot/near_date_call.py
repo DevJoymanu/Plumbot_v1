@@ -11,10 +11,11 @@ WHAT (owner, 2026-09-23), two kinds of lead, tagged by the delay flow
       and no visit booked, the plumber gets a call email: what they said, and
       a script ready to read.
   [NEAR_CALL]  <day> <set at>  "Contact me on Monday". They were asked for an
-      email; the check-back goes by email if they gave one. With NO email, the
-      plumber gets the call email on the MORNING OF the day (they asked to be
-      contacted, so no permission question), and the lead was told we would
-      call.
+      email. The plumber gets the call email on the MORNING OF the day either
+      way (they asked to be contacted, so no permission question). With no
+      email the lead was told we would call; with one, the dated check-back
+      email goes too and the call is on top of it (owner, 2026-09-23: "yes,
+      plumber should call as well"; it used to be email only).
 
 WHY: a lead who names a day inside the week is usually out of the free
 WhatsApp window by then (24h from their last message), so with no email the
@@ -88,8 +89,8 @@ def _why_not(appointment, kind, set_at):
                or getattr(appointment, 'last_inbound_at', None))
     if last_in and set_at and last_in > set_at:
         return 'the lead wrote to us since'
-    if kind == 'call' and (getattr(appointment, 'customer_email', '') or '').strip():
-        return 'they gave an email, so the check-back goes by email'
+    # A type 2 lead who gave an email is still called (owner, 2026-09-23).
+    # This line used to skip them ("the check-back goes by email").
     return ''
 
 
@@ -136,10 +137,16 @@ def build_brief(appointment, kind, day, set_at, now=None):
                    "a quick call. Are you still keen to get it sorted, or has the timing moved?")
         subject = f"{CALL_SUBJECT_PREFIX}{name or '+' + phone}, said they'd contact us {day_name}"
     else:
+        # The why-this-call line depends on the email: without one the call
+        # is our only way to reach them; with one it follows our email.
+        has_email = bool((getattr(appointment, 'customer_email', '') or '').strip())
+        reach = ('They also have our check-back email today, so this call follows it up.'
+                 if has_email else
+                 'They did not give an email, so this call is how we reach them, and they '
+                 'were told to expect it.')
         intro = (f'Hi {pf or "there"}, please call {name or "this lead"} today and read the '
                  f'script below. On {told_on} they asked us to contact them today about '
-                 f'the {service}. They did not give an email, so this call is how we reach '
-                 'them, and they were told to expect it.')
+                 f'the {service}. {reach}')
         opening = (f"Hi {first}, {who}. You asked us to get in touch today about the "
                    f"{service}. Are you still keen to get it sorted, or has the timing moved?")
         subject = f"{CALL_SUBJECT_PREFIX}{name or '+' + phone}, asked us to call them today"
