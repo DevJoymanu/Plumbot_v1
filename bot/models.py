@@ -4277,13 +4277,39 @@ class PlatformBillingProfile(models.Model):
     email = models.EmailField(
         blank=True, default='',
         help_text="Where tenants reply about billing. Also gets a Bcc copy of every invoice and receipt sent.")
-    phone = models.CharField(max_length=40, blank=True, default='')
+    # The address PRINTED on invoices and receipts (From block and footer),
+    # on the owner's own domain rather than the reply inbox above, which is a
+    # personal Gmail (owner, 2026-09-24). billing@ is the address the billing
+    # mail is sent from, the usual choice for invoice queries. It can only
+    # receive once it forwards somewhere (Cloudflare Email Routing).
+    contact_email = models.EmailField(
+        blank=True, default='billing@homexmedia.com',
+        help_text='Printed on invoices and receipts. Blank prints the billing email instead.')
+    phone = models.CharField(
+        max_length=40, blank=True, default='',
+        help_text='Printed on every invoice. Leave blank for none.')
+    # Printed in the From block of ZIMBABWEAN clients' invoices only (owner,
+    # 2026-09-24: the same number as EcoCash). Other clients see no phone.
+    zimbabwe_phone = models.CharField(
+        max_length=40, blank=True, default='+263 78 631 8169',
+        help_text='Printed on invoices to Zimbabwean clients only.')
     currency = models.CharField(max_length=8, default='US$')
-    default_monthly_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    # The Plumbot subscription price (owner, 2026-09-24: US$150, the same as
+    # the Plumbot Standard template). Used when an invoice starts with no
+    # template. Migration 0096 lifts an existing row still on the old US$0
+    # default; a fee set on the Billing details page is never overwritten.
+    default_monthly_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('150.00'))
     payment_terms_days = models.PositiveIntegerField(default=7)
+    # Two payment blocks, because WHO the client is decides which appear
+    # (owner, 2026-09-24): a Zimbabwean client gets EcoCash first, then the
+    # bank; every other client gets the bank only. PlatformInvoice.payment_lines
+    # is the one place that orders them.
     payment_details = models.TextField(
         blank=True, default='',
-        help_text='Bank account, EcoCash number and so on. Printed on every invoice.')
+        help_text='Bank details. Printed on every invoice.')
+    ecocash_details = models.TextField(
+        blank=True, default='',
+        help_text='EcoCash details. Printed first, above the bank details, on invoices to Zimbabwean clients only.')
     footer_note = models.CharField(max_length=255, blank=True, default='')
     # Automatic reminders (bot/billing_reminders.py). Days BEFORE the due date
     # a tenant is reminded, as "14,7"; the due day itself always gets one too.
@@ -4299,6 +4325,10 @@ class PlatformBillingProfile(models.Model):
     # printed under a line whose "feature breakdown" box is ticked (owner,
     # 2026-09-24). One "Feature | detail | percent" per line; percents must
     # total 100. Parsed by parse_breakdown, applied by allocate_breakdown.
+    # No line names the WhatsApp number: the client brings their own, so the
+    # invoice must not read as charging for one (owner, 2026-09-24). The last
+    # line was "Hosting, WhatsApp number and support"; migration 0097 renames
+    # it in a saved split that still holds the untouched old default.
     subscription_breakdown = models.TextField(
         blank=True, default=(
             'WhatsApp AI sales assistant | answers 24/7, qualifies leads | 40\n'
@@ -4306,7 +4336,7 @@ class PlatformBillingProfile(models.Model):
             'Automated follow-ups | WhatsApp and email | 15\n'
             'Quotes and documents | quote builder, PDFs, templates | 10\n'
             'Dashboard and lead management | | 10\n'
-            'Hosting, WhatsApp number and support | | 10'),
+            'Hosting, updates and support | | 10'),
         help_text='One per line: Feature | what it covers | percent. The percents must add up to 100.')
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -4331,7 +4361,8 @@ class PlatformBillingProfile(models.Model):
         from .plumber_notifications import PLATFORM_NOTIFICATION_EMAIL
         obj, _ = cls.objects.get_or_create(
             pk=1, defaults={'email': PLATFORM_NOTIFICATION_EMAIL,
-                            'payment_details': DEFAULT_PAYMENT_DETAILS})
+                            'payment_details': DEFAULT_PAYMENT_DETAILS,
+                            'ecocash_details': DEFAULT_ECOCASH_DETAILS})
         return obj
 
     def breakdown_rows(self):
@@ -4344,22 +4375,80 @@ class PlatformBillingProfile(models.Model):
             'tagline': self.tagline,
             'address': self.address,
             'email': self.email,
+            'contact_email': self.contact_email,
             'phone': self.phone,
+            'zimbabwe_phone': self.zimbabwe_phone,
             'payment_details': self.payment_details,
+            'ecocash_details': self.ecocash_details,
             'footer_note': self.footer_note,
         }
 
 
-# The operator's own bank details (owner, 2026-09-24), the starting value of
-# Billing details > How to pay. Printed on every invoice, so not a secret; kept
-# here so a fresh database issues payable invoices. FNB's universal branch
-# code and SWIFT are FNB's public codes. Edit on the page, not here.
-DEFAULT_PAYMENT_DETAILS = (
+# The operator's own payment details (owner, 2026-09-24), the starting values
+# of Billing details. Printed on invoices, so not a secret; kept here so a
+# fresh database issues payable invoices. FNB's universal branch code and
+# SWIFT are FNB's public codes. Edit on the page, not here.
+#
+# Bank: named by bank only. "Business Zero Account" is FNB's product name,
+# which no payer needs (owner asked, 2026-09-24): an EFT needs the bank, the
+# account holder, the account number and the branch code; SWIFT only from
+# outside South Africa. Migration 0098 updates a saved row still holding the
+# first text (FNB_ONLY_PAYMENT_DETAILS, kept verbatim for that match).
+#
+# EcoCash (Zimbabwean clients only): a person-to-person Send Money needs only
+# the number, and EcoCash shows the payer the name the line is REGISTERED to
+# before they confirm, so the name printed must be that exact registered
+# name. The sender pays EcoCash's fee and the 2% IMTT, so the full amount
+# arrives.
+#
+# FORMAT: one "Label: value" per line, printed as two columns. The owner found
+# full-sentence instructions ("Use HMX-... as your payment reference", "After
+# paying, send us the approval code...") too wordy and generic (2026-09-24).
+# Stripe (Anthropic's and OpenAI's invoices) prints transfer instructions as
+# labelled rows with a Reference field, and enterprise "remit to" blocks do
+# the same, so the lines are terse facts, no sentences.
+FNB_ONLY_PAYMENT_DETAILS = (
     'Bank transfer to HomeX Media\n'
     'FNB (First National Bank), Business Zero Account\n'
     'Account number: 63222994055\n'
     'Branch code: 250655\n'
     'SWIFT, for payments from outside South Africa: FIRNZAJJ')
+DEFAULT_PAYMENT_DETAILS = (
+    'Account name: HomeX Media\n'
+    'Bank: FNB (First National Bank)\n'
+    'Account number: 63222994055\n'
+    'Branch code: 250655\n'
+    'SWIFT code: FIRNZAJJ (from outside South Africa)')
+DEFAULT_ECOCASH_DETAILS = (
+    'EcoCash: +263 78 631 8169\n'
+    'Registered name: Joymanu Musabayana\n'
+    'EcoCash fees: Paid by the sender')
+
+# Zimbabwe, recognised from a tenant's own records for the EcoCash default
+# (`is_zimbabwean_tenant`): a +263 number, or a Zimbabwean place in their
+# location. A starting guess only; the invoice form's box is the decision.
+ZIMBABWE_PLACES = ('zimbabwe', 'harare', 'bulawayo', 'chitungwiza', 'mutare',
+                   'gweru', 'kwekwe', 'masvingo', 'kadoma', 'marondera',
+                   'victoria falls', 'hwange', 'beitbridge', 'chinhoyi', 'bindura')
+
+
+def is_zimbabwean_tenant(tenant):
+    """Whether a new invoice to `tenant` should default to the Zimbabwe
+    payment block (EcoCash first). True when any of their numbers (business
+    WhatsApp, plumber line, WhatsApp channel) starts 263, or their location
+    names a Zimbabwean place. Absent evidence means False: the bank only."""
+    if tenant is None:
+        return False
+    profile = TenantProfile.objects.filter(tenant=tenant).first()
+    numbers = [getattr(profile, 'business_whatsapp', ''), getattr(profile, 'plumber_contact', '')]
+    numbers += list(TenantWhatsAppChannel.objects.filter(tenant=tenant)
+                    .values_list('display_number', flat=True))
+    for number in numbers:
+        if re.sub(r'\D', '', number or '').startswith('263'):
+            return True
+    place = ' '.join((getattr(profile, f, '') or '') for f in
+                     ('location_line', 'location_area', 'location_city')).lower()
+    return any(name in place for name in ZIMBABWE_PLACES)
 
 # Document numbers: HMX-<year>-<nnnn> for invoices, HMX-R-<year>-<nnnn> for
 # receipts (owner chose the HMX prefix, 2026-09-24). The email subjects carry
@@ -4500,6 +4589,11 @@ class PlatformInvoice(models.Model):
     bill_to_address = models.TextField(blank=True, default='')
     notes = models.TextField(blank=True, default='')
     issuer = models.JSONField(default=dict, blank=True)
+    # A Zimbabwean client pays by EcoCash first, then bank; anyone else by
+    # bank only (owner, 2026-09-24). Defaulted from the tenant's records on the
+    # form (is_zimbabwean_tenant), then the operator's call. Read through
+    # payment_lines, never by hand.
+    zimbabwe_client = models.BooleanField(default=False)
     # Automatic reminders for this invoice (bot/billing_reminders.py). Off
     # stops every scheduled email for it; blank reminder_days means the
     # Billing details default.
@@ -4545,6 +4639,9 @@ class PlatformInvoice(models.Model):
 
     @property
     def total(self) -> Decimal:
+        """What is owed: every line. There are no optional lines: the owner
+        had the website shown as an optional add-on, then asked for it to be
+        an ordinary line the client pays (2026-09-24), so every line counts."""
         return _money(sum((item.line_total for item in self.items.all()), Decimal('0')))
 
     @property
@@ -4558,6 +4655,39 @@ class PlatformInvoice(models.Model):
     @property
     def is_editable(self) -> bool:
         return self.status == self.Status.DRAFT
+
+    def payment_lines(self):
+        """The "How to pay" lines for THIS invoice, the one reader the PDF,
+        the invoice email and the reminder emails share (owner, 2026-09-24):
+        "Reference: <invoice number>" first, then for a Zimbabwean client
+        EcoCash, then the bank; every other client gets the bank only, with
+        no EcoCash at all. Blocks are separated by a blank line. Each line is
+        "Label: value" (the PDF prints two columns). Read from the issuer
+        snapshot, so an issued invoice keeps what it said. [] when there are
+        no payment details at all."""
+        issuer = self.issuer or {}
+        bank = (issuer.get('payment_details') or '').strip()
+        ecocash = (issuer.get('ecocash_details') or '').strip() if self.zimbabwe_client else ''
+        blocks = [b for b in (ecocash, bank) if b]
+        if not blocks:
+            return []
+        lines = [f'Reference: {self.number}']
+        for block in blocks:
+            lines.append('')
+            lines.extend(block.splitlines())
+        return lines
+
+    def contact_lines(self):
+        """The issuer's contact lines under their name in the From block:
+        the phone (the general one, else for a Zimbabwean client the Zimbabwe
+        number, owner 2026-09-24), then the printed contact email on the
+        owner's domain, falling back to the billing inbox."""
+        issuer = self.issuer or {}
+        phone = (issuer.get('phone') or '').strip()
+        if not phone and self.zimbabwe_client:
+            phone = (issuer.get('zimbabwe_phone') or '').strip()
+        email = (issuer.get('contact_email') or issuer.get('email') or '').strip()
+        return [v for v in (phone, email) if v]
 
     def reminder_offsets(self):
         """This invoice's days-before list: its own override, else the
@@ -4617,6 +4747,79 @@ class PlatformInvoiceItem(models.Model):
     @property
     def line_total(self) -> Decimal:
         return _money((self.quantity or 0) * (self.unit_price or 0))
+
+
+class PlatformInvoiceTemplate(models.Model):
+    """A named, saved set of invoice lines to start an invoice from (owner,
+    2026-09-24: "Plumbot Standard", the US$150 subscription with the feature
+    breakdown plus the US$10 website as an ordinary line, US$160 in all).
+
+    WHY lines as JSON, not rows: a template is never billed, paid or
+    numbered; it is only ever read whole into a new invoice's form, so a
+    list on one row is the whole job. Each line is
+    {description, quantity, unit_price, with_breakdown};
+    `{month}` in a description becomes the new invoice's month ("September
+    2026"), so a template stays right every month.
+
+    One template is the DEFAULT: New invoice starts from it. Saving another
+    as default clears the flag on the rest (`save`), so there is never more
+    than one. "Plumbot Standard" is seeded by migration 0095.
+    Pinned by `BillingTemplateTests`.
+    """
+    name = models.CharField(max_length=80, unique=True)
+    is_default = models.BooleanField(default=False)
+    lines = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_default:
+            type(self).objects.exclude(pk=self.pk).filter(is_default=True).update(is_default=False)
+
+    @classmethod
+    def default(cls):
+        return cls.objects.filter(is_default=True).first() or cls.objects.first()
+
+    def form_lines(self, month_label):
+        """The lines as formset `initial` for a new invoice, {month} filled."""
+        rows = []
+        for line in self.lines or []:
+            rows.append({
+                'description': str(line.get('description', '')).replace('{month}', month_label),
+                'quantity': line.get('quantity', 1),
+                'unit_price': line.get('unit_price', 0),
+                'with_breakdown': bool(line.get('with_breakdown')),
+            })
+        return rows
+
+    @property
+    def total(self) -> Decimal:
+        """What an invoice from this template owes: every line."""
+        return _money(sum((Decimal(str(l.get('quantity') or 0)) * Decimal(str(l.get('unit_price') or 0))
+                           for l in self.lines or []), Decimal('0')))
+
+
+# The template the owner asked for on 2026-09-24, seeded by migration 0095 and
+# used by the tests: the generic Plumbot invoice. The website is an ordinary
+# line the client pays (owner: "that should just be a line item"), so the
+# template totals US$160.
+PLUMBOT_STANDARD_TEMPLATE = {
+    'name': 'Plumbot Standard',
+    'is_default': True,
+    'lines': [
+        {'description': 'Plumbot monthly subscription, {month}', 'quantity': '1',
+         'unit_price': '150.00', 'with_breakdown': True},
+        {'description': 'Business website, hosting and upkeep', 'quantity': '1',
+         'unit_price': '10.00', 'with_breakdown': False},
+    ],
+}
 
 
 class PlatformPayment(models.Model):

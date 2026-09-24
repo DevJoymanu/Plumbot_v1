@@ -1,0 +1,114 @@
+{% extends "bot/layouts/base.html" %}
+
+{% block title %}{% if template %}Edit {{ template.name }}{% else %}New template{% endif %} · Billing{% endblock %}
+
+{% block extra_css %}{% include "bot/includes/billing_css.html" %}{% endblock %}
+
+{% block content %}
+{% comment %}
+Invoice template editor (billing.py _template_page). Same line markup and classes as the
+invoice form, so a template is built the way an invoice is and stacks the same way on a phone.
+{% endcomment %}
+<form method="post" class="bl-wrap" novalidate>
+  {% csrf_token %}
+  <div class="bl-head">
+    <div>
+      <div class="bl-eyebrow"><a href="{% url 'billing_home' %}">Billing</a> · Templates</div>
+      <h1>{% if template %}Edit {{ template.name }}{% else %}New template{% endif %}</h1>
+    </div>
+    <div class="bl-actions">
+      <a class="bl-btn" href="{% url 'billing_home' %}">Cancel</a>
+      {% if template %}<a class="bl-btn" href="{% url 'billing_template_preview' template.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> Preview</a>{% endif %}
+      <button type="submit" class="bl-btn bl-btn--solid"><i class="fas fa-check"></i> Save template</button>
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Template</div>
+    <div class="bl-grid">
+      <div class="bl-field">
+        <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+        {{ form.name }}{{ form.name.errors }}
+      </div>
+      <div class="bl-field" style="align-self:end;">
+        <label style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font-size:14px;">
+          {{ form.is_default }} {{ form.is_default.label }}
+        </label>
+      </div>
+      <div class="bl-field bl-wide">
+        <label for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+        {{ form.notes }}
+      </div>
+    </div>
+  </div>
+
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Lines</div>
+    {{ formset.management_form }}
+    <div class="bl-lines">
+      <div class="bl-line-head"><span>Description</span><span>Qty</span><span>Unit price</span><span class="bl-num">Amount</span><span>Options</span></div>
+      <div id="bl-line-list">
+        {% for line in formset %}
+        <div class="bl-line">
+          {{ line.description }}
+          {{ line.quantity }}
+          {{ line.unit_price }}
+          <span class="bl-num bl-line-total">0.00</span>
+          <span class="bl-line__opts"><label class="bl-line__del" title="Print the subscription feature split under this line">{{ line.with_breakdown }} Breakdown</label><label class="bl-line__del">{{ line.DELETE }} Remove</label></span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <template id="bl-line-template">
+      <div class="bl-line">
+        {{ formset.empty_form.description }}
+        {{ formset.empty_form.quantity }}
+        {{ formset.empty_form.unit_price }}
+        <span class="bl-num bl-line-total">0.00</span>
+        <span class="bl-line__opts"><label class="bl-line__del">{{ formset.empty_form.with_breakdown }} Breakdown</label><label class="bl-line__del">{{ formset.empty_form.DELETE }} Remove</label></span>
+      </div>
+    </template>
+    <div class="bl-actions" style="margin-top:14px; justify-content:space-between;">
+      <button type="button" class="bl-btn" id="bl-add-line"><i class="fas fa-plus"></i> Add line</button>
+      <div class="bl-totals">
+        <span class="bl-strong">Amount due</span><span class="bl-strong bl-num" id="bl-grand">0.00</span>
+      </div>
+    </div>
+    <p class="bl-hint" style="margin:12px 0 0;">Write {month} in a description and each invoice fills in its own month, for example "Plumbot monthly subscription, {month}".</p>
+  </div>
+</form>
+
+<script>
+/* Template editor: live line totals and the Add line button. The saved figures are the
+   ones the invoice computes; these are a preview. */
+(function () {
+  const list = document.getElementById('bl-line-list');
+  const totalForms = document.querySelector('[name$="-TOTAL_FORMS"]');
+  const money = (n) => (Math.round(n * 100) / 100).toFixed(2);
+  function recalc() {
+    let due = 0;
+    list.querySelectorAll('.bl-line').forEach((row) => {
+      const q = parseFloat(row.querySelector('[name$="-quantity"]').value) || 0;
+      const u = parseFloat(row.querySelector('[name$="-unit_price"]').value) || 0;
+      const del = row.querySelector('[name$="-DELETE"]');
+      const line = q * u;
+      row.querySelector('.bl-line-total').textContent = money(line);
+      row.style.opacity = del && del.checked ? 0.45 : 1;
+      if (!(del && del.checked)) due += line;
+    });
+    document.getElementById('bl-grand').textContent = money(due);
+  }
+  document.getElementById('bl-add-line').addEventListener('click', () => {
+    const index = parseInt(totalForms.value, 10);
+    const html = document.getElementById('bl-line-template').innerHTML.replace(/__prefix__/g, index);
+    list.insertAdjacentHTML('beforeend', html);
+    totalForms.value = index + 1;
+    list.lastElementChild.querySelector('[name$="-description"]').focus();
+    recalc();
+  });
+  list.addEventListener('input', recalc);
+  list.addEventListener('change', recalc);
+  recalc();
+})();
+</script>
+{% endblock %}

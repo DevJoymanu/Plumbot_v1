@@ -23,7 +23,7 @@
     <p class="bl-hint">Printed at the top of every invoice and receipt. Changes apply to invoices raised from now on; invoices already raised keep the details they were issued with.</p>
     <div class="bl-grid">
       {% for field in form %}
-      <div class="bl-field {% if field.name == 'address' or field.name == 'payment_details' or field.name == 'footer_note' %}bl-wide{% endif %}">
+      <div class="bl-field {% if field.name == 'address' or field.name == 'payment_details' or field.name == 'ecocash_details' or field.name == 'footer_note' %}bl-wide{% endif %}">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}

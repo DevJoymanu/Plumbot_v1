@@ -57,6 +57,43 @@
     </div>
   </div>
 
+  {# Invoice templates: New invoice starts from the default one; each can be previewed as the PDF it produces. #}
+  <div class="bl-glass bl-card">
+    <div class="bl-head" style="margin-bottom:14px;">
+      <div class="bl-title" style="margin:0;">Invoice templates</div>
+      <a class="bl-btn" href="{% url 'billing_template_new' %}"><i class="fas fa-plus"></i> New template</a>
+    </div>
+    {% if invoice_templates %}
+    <div class="pb-table-scroll">
+      <table class="bl-table">
+        <thead><tr><th>Template</th><th class="bl-num">Amount due</th><th class="bl-num">Actions</th></tr></thead>
+        <tbody>
+          {% for t in invoice_templates %}
+          <tr>
+            <td><strong>{{ t.name }}</strong>{% if t.is_default %} <span class="bl-pill bl-pill--sent">Default</span>{% endif %}</td>
+            <td class="bl-num">{{ profile.currency }}{{ t.total|floatformat:2 }}</td>
+            <td class="bl-num">
+              <div class="bl-actions" style="justify-content:flex-end;">
+                <a class="bl-btn bl-btn--solid" href="{% url 'billing_invoice_new' %}?template={{ t.pk }}">Use</a>
+                <a class="bl-btn" href="{% url 'billing_template_preview' t.pk %}" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i> Preview</a>
+                <a class="bl-btn" href="{% url 'billing_template_preview' t.pk %}?zimbabwe=1" target="_blank" rel="noopener" title="As a Zimbabwean client sees it: EcoCash first, then bank">Preview (Zimbabwe)</a>
+                <a class="bl-btn" href="{% url 'billing_template_edit' t.pk %}">Edit</a>
+                <form method="post" action="{% url 'billing_template_delete' t.pk %}" onsubmit="return confirm('Delete the template {{ t.name|escapejs }}? Invoices already raised from it are not affected.');">
+                  {% csrf_token %}
+                  <button type="submit" class="bl-btn bl-btn--danger" aria-label="Delete {{ t.name }}"><i class="fas fa-trash"></i></button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="bl-empty"><i class="fas fa-layer-group"></i>No templates yet. New invoices start with one subscription line at your default fee.</div>
+    {% endif %}
+  </div>
+
   <div class="bl-glass bl-card">
     <div class="bl-title">Invoices</div>
     {% if any_invoices %}

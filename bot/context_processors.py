@@ -41,6 +41,8 @@ NAV_MAP = {
     "billing_invoice_new": "billing",
     "billing_invoice_detail": "billing",
     "billing_invoice_edit": "billing",
+    "billing_template_new": "billing",
+    "billing_template_edit": "billing",
 }
 
 # Quotes, templates and the tenant's own offer are one job - raising and

@@ -104,8 +104,8 @@ def send_billing_notice(invoice, kind, days):
                    paid, PDF attached
       'pause'      operator: switch-off day, link to the page to pause them
 
-    Every tenant subject carries "invoice INV-..." so a reply is left for the
-    operator by process_inbound_emails (the "invoice inv-" subject hint), and
+    Every tenant subject carries "invoice HMX-..." so a reply is left for the
+    operator by process_inbound_emails (the "invoice hmx-" subject hint), and
     operator mail is from billing@, which the same reader skips.
     """
     issuer = invoice.issuer or {}
@@ -113,7 +113,10 @@ def send_billing_notice(invoice, kind, days):
     owed = _money(invoice.currency, invoice.balance)
     due = f'{invoice.due_date:%d %b %Y}'
     sign_off = f'Thank you,\n{business}' if business else 'Thank you'
-    how_to_pay = f'How to pay:\n{issuer["payment_details"]}' if issuer.get('payment_details') else ''
+    # EcoCash first for a Zimbabwean client, bank only otherwise: the same
+    # PlatformInvoice.payment_lines the PDF prints (owner, 2026-09-24).
+    pay_lines = invoice.payment_lines()
+    how_to_pay = ('How to pay:\n' + '\n'.join(pay_lines)) if pay_lines else ''
 
     if kind == 'remind':
         when = 'is due today' if days <= 0 else f'is due on {due}, {_days_phrase(days)}'
@@ -124,8 +127,7 @@ def send_billing_notice(invoice, kind, days):
             f'A quick reminder that invoice {invoice.number} for {owed} {when}. '
             'A copy is attached.',
             how_to_pay,
-            f'Please use {invoice.number} as your payment reference. '
-            'If you have already paid, thank you, and please reply so we can match it.',
+            'If you have already paid, thank you. Reply to this email so we can match it.',
             sign_off,
         ]
         return _send(to=invoice.bill_to_email, subject=subject, paragraphs=paragraphs,
@@ -146,8 +148,7 @@ def send_billing_notice(invoice, kind, days):
             f'Your Plumbot service will be switched off {when} unless it is paid. '
             'While it is off, the bot stops answering your customers on WhatsApp.',
             how_to_pay,
-            f'Please use {invoice.number} as your payment reference. '
-            'If you have already paid, please reply so we can match it.',
+            'If you have already paid, reply to this email so we can match it.',
             sign_off,
         ]
         return _send(to=invoice.bill_to_email, subject=subject, paragraphs=paragraphs,
@@ -207,8 +208,10 @@ def send_invoice_email(invoice):
         f'Hi {invoice.bill_to_name},',
         f'Please find attached invoice {invoice.number} for '
         f'{_money(invoice.currency, total)}, due on {invoice.due_date:%d %b %Y}.',
-        f'How to pay:\n{issuer["payment_details"]}' if issuer.get('payment_details') else '',
-        f'Please use {invoice.number} as your payment reference. '
+        # Reference first, then EcoCash (Zimbabwean clients) and the bank, as
+        # short "Label: value" lines: the owner found sentence instructions
+        # too wordy (2026-09-24), so no "Please use ... as your reference".
+        ('How to pay:\n' + '\n'.join(invoice.payment_lines())) if invoice.payment_lines() else '',
         'Reply to this email if you have any questions.',
         f'Thank you,\n{business}' if business else 'Thank you',
     ]

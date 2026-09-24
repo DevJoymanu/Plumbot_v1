@@ -243,6 +243,10 @@ urlpatterns = [
     # state change is POST). docs/current-state/billing.md
     path('platform/billing/', billing_views.billing_home, name='billing_home'),
     path('platform/billing/settings/', billing_views.billing_settings, name='billing_settings'),
+    path('platform/billing/templates/new/', billing_views.billing_template_new, name='billing_template_new'),
+    path('platform/billing/templates/<int:pk>/edit/', billing_views.billing_template_edit, name='billing_template_edit'),
+    path('platform/billing/templates/<int:pk>/delete/', billing_views.billing_template_delete, name='billing_template_delete'),
+    path('platform/billing/templates/<int:pk>/preview/', billing_views.billing_template_preview, name='billing_template_preview'),
     path('platform/billing/invoices/new/', billing_views.billing_invoice_new, name='billing_invoice_new'),
     path('platform/billing/invoices/<int:pk>/', billing_views.billing_invoice_detail, name='billing_invoice_detail'),
     path('platform/billing/invoices/<int:pk>/edit/', billing_views.billing_invoice_edit, name='billing_invoice_edit'),

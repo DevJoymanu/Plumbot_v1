@@ -19,6 +19,18 @@
     </div>
   </div>
 
+  {% if mode == 'new' and templates %}
+  {# Start from a template: tap-chips, the chosen one (default: the Default template) already filled in below. #}
+  <div class="bl-glass bl-card">
+    <div class="bl-title">Start from a template</div>
+    <div class="bl-chips">
+      {% for t in templates %}
+      <a class="bl-chip {% if template and t.pk == template.pk %}on{% endif %}" href="{% url 'billing_invoice_new' %}?template={{ t.pk }}{% if tenant_slug %}&tenant={{ tenant_slug }}{% endif %}">{{ t.name }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if form.non_field_errors %}<div class="bl-glass bl-card" style="color:var(--color-error);">{{ form.non_field_errors }}</div>{% endif %}
 
   <div class="bl-glass bl-card">
@@ -26,12 +38,22 @@
     {% if mode == 'new' %}<p class="bl-hint">Picking a tenant fills in who to bill from their last invoice, or from their profile if this is their first.</p>{% endif %}
     <div class="bl-grid">
       {% for field in form %}
+      {% if field.name == 'zimbabwe_client' %}
+      {# Which payment details print: ticked = EcoCash first then bank, unticked = bank only (PlatformInvoice.payment_lines). #}
+      <div class="bl-field" style="align-self:end;">
+        <label style="display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font-size:14px;">
+          {{ field }} {{ field.label }}
+        </label>
+        <span class="helptext">{{ field.help_text }}</span>
+      </div>
+      {% else %}
       <div class="bl-field {% if field.name == 'bill_to_address' or field.name == 'notes' %}bl-wide{% endif %}">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}
         {{ field.errors }}
       </div>
+      {% endif %}
       {% endfor %}
     </div>
   </div>
@@ -118,7 +140,7 @@
   if (tenant) {
     tenant.addEventListener('change', () => {
       if (tenant.value) {
-        window.location = '{% url "billing_invoice_new" %}?tenant_id=' + encodeURIComponent(tenant.value);
+        window.location = '{% url "billing_invoice_new" %}?tenant_id=' + encodeURIComponent(tenant.value){% if template %} + '&template={{ template.pk }}'{% endif %};
       }
     });
   }

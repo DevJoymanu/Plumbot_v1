@@ -8,10 +8,14 @@ THE DESIGN is "HomeX signature" (design C, chosen by the owner 2026-09-24 from
 three drafts modelled on the Stripe layout Anthropic and OpenAI send and on
 NVIDIA-style enterprise billing): a thin charcoal and electric-blue band, the
 HX emblem on its own charcoal tile beside "HomeX Media / Unmatched Velocity",
-the amount in a large tinted panel, From and Bill to columns, the lines with
-the subscription's feature breakdown under them, a "How to pay" panel, and a
-charcoal footer carrying the tagline and "Page x of y". Receipts get a PAID
-stamp; a void document gets VOID. The palette is sampled from the logo:
+a quiet summary row (amount, dates) between hairlines, From and Bill to
+columns, the lines with the subscription's feature breakdown under them, a
+"How to pay" panel, and a charcoal footer carrying the tagline and "Page x of
+y". Status (Paid, Part paid, Overdue, Void) is a small label under the
+number. The amount is deliberately NOT a headline: the owner found a tinted
+amount panel too loud at 28pt and again at 18pt, and top companies' invoices
+(Stripe, Xero, QuickBooks) print it at body size among the dates, bold only
+in the totals. The palette is sampled from the logo:
 charcoal #1A2225 (its background), electric blue #0AA0F0 (its wordmark), neon
 cyan #5FE3FF (its glow).
 
@@ -49,7 +53,6 @@ BOTTOM = FOOTER_H + 40   # lowest y content may reach before a page break
 CHARCOAL = colors.HexColor('#1A2225')
 BLUE = colors.HexColor('#0AA0F0')
 CYAN = colors.HexColor('#5FE3FF')
-TINT = colors.HexColor('#EAF6FE')
 SOFT = colors.HexColor('#F5F9FB')
 INK = colors.HexColor('#0F1A1F')
 MUTED = colors.HexColor('#5E6E76')
@@ -125,7 +128,9 @@ class _Doc:
         name = issuer.get('business_name') or ''
         tagline = issuer.get('tagline') or ''
         self.c.footer_left = ' · '.join(p for p in (name, tagline) if p)
-        email = issuer.get('email') or ''
+        # The printed address is the one on the owner's domain (billing@),
+        # falling back to the billing inbox for an old snapshot without it.
+        email = issuer.get('contact_email') or issuer.get('email') or ''
         self.c.footer_right = f'Questions? {email}' if email else ''
         self.c.setTitle(f'{doc_title.title()} {doc_number}')
         self.c.setAuthor(name)
@@ -157,20 +162,6 @@ class _Doc:
         self.c.drawImage(self.emblem, x, y, size, size)
         self.c.restoreState()
 
-    def stamp(self, x, y, word, color):
-        """A rotated outline stamp (PAID, VOID)."""
-        self.c.saveState()
-        self.c.translate(x, y)
-        self.c.rotate(12)
-        self.c.setStrokeColor(color)
-        self.c.setLineWidth(2)
-        width = 30 + len(word) * 13
-        self.c.roundRect(-width / 2, -16, width, 32, 6, stroke=1, fill=0)
-        self.c.setFont('Helvetica-Bold', 18)
-        self.c.setFillColor(color)
-        self.c.drawCentredString(0, -7, word)
-        self.c.restoreState()
-
     # -- page furniture ----------------------------------------------------
 
     def _band(self):
@@ -179,8 +170,12 @@ class _Doc:
         self.c.setFillColor(BLUE)
         self.c.rect(0, H - 12, W, 2, fill=1, stroke=0)
 
-    def masthead(self):
-        """First page: emblem tile, name and tagline, document title and number."""
+    def masthead(self, status=None):
+        """First page: emblem tile, name and tagline, document title and
+        number, and under the number an optional status label (`status` is
+        (word, colour), e.g. ('Paid', BLUE)). A small label in words, the way
+        Stripe, Xero and QuickBooks show status, replaced a rotated PAID/VOID
+        stamp that read as loud and unprofessional (owner, 2026-09-24)."""
         self._band()
         top = H - 44
         name = self.issuer.get('business_name') or ''
@@ -191,7 +186,20 @@ class _Doc:
             self.text(M + 62, top - 36, tagline, 9, False, BLUE)
         self.text(W - M, top - 20, self.title, 18, True, right=True)
         self.text(W - M, top - 36, self.number, 9.5, False, MUTED, right=True)
-        self.y = top - 78
+        if status:
+            self.pill(W - M, top - 54, *status)
+        self.y = top - 76
+
+    def pill(self, right_x, y, word, color):
+        """A small outlined status label, right-aligned at `right_x`."""
+        word = word.upper()
+        self.c.setFont('Helvetica-Bold', 7)
+        width = self.c.stringWidth(word, 'Helvetica-Bold', 7) + 14
+        self.c.setStrokeColor(color)
+        self.c.setLineWidth(0.8)
+        self.c.roundRect(right_x - width, y - 4, width, 13, 6.5, stroke=1, fill=0)
+        self.c.setFillColor(color)
+        self.c.drawCentredString(right_x - width / 2, y, word)
 
     def continuation(self):
         """Later pages: the band, a small tile and the document number."""
@@ -211,33 +219,55 @@ class _Doc:
 
     # -- blocks ------------------------------------------------------------
 
-    def amount_panel(self, label, amount, sub, facts, sub_color=MUTED, stamp=None):
-        """The tinted panel: label, the big figure, one line under it, and up
-        to three label/value facts on the right."""
-        h = 78 if len(facts) <= 2 else 96
-        top = self.y
-        self.panel(M, top - h, W - 2 * M, h, TINT, 12)
-        self.c.setFillColor(BLUE)
-        self.c.rect(M, top - h + 12, 4, h - 24, fill=1, stroke=0)
-        self.label(M + 22, top - 22, label, BLUE)
-        self.text(M + 22, top - 52, amount, 28, True)
-        self.text(M + 22, top - 68, sub, 9, False, sub_color)
-        fy = top - 24
-        for key, value in facts:
-            self.label(W - M - 20, fy, key, MUTED, right=True)
-            self.text(W - M - 20, fy - 12, value, 9.5, True, right=True)
-            fy -= 26 if len(facts) > 2 else 30
-        if stamp:
-            self.stamp(W - M - 215, top - h / 2, *stamp)
-        self.y = top - h - 30
+    def summary(self, facts, note=None):
+        """The key facts in ONE quiet row between two hairlines, every value
+        the same 10pt so the amount sits among the dates instead of above them.
 
-    def parties(self, left_title, right_title, bill_to):
-        """From (the issuer) and Bill to / Received from, side by side."""
+        `facts` is [(label, value, emphasis)]; emphasis None, 'bold' (the
+        amount) or 'red' (an overdue date). `note` is an optional small line
+        under the row (a payment reference).
+
+        WHY this and not a panel: the owner found the tinted amount panel too
+        loud twice (28pt, then 18pt; 2026-09-24) and asked to match top
+        companies. None of them boxes the amount: Stripe (Anthropic's and
+        OpenAI's invoices) prints a meta table and one body-sized "US$150.00
+        due 1 October 2026" line; Xero and QuickBooks give "Amount due" one
+        column in a row with the dates. The amount due is bold again in the
+        totals, where readers look for it. Column widths are weighted so a
+        billing period ("1 Sep 2026 to 30 Sep 2026") fits on one line.
+        """
+        weights = [1.0] * len(facts)
+        if facts and len(str(facts[-1][1])) > 16:
+            weights[-1] = 1.6
+        unit = (W - 2 * M) / sum(weights)
+        top = self.y
+        self.c.setStrokeColor(RULE)
+        self.c.setLineWidth(0.8)
+        self.c.line(M, top, W - M, top)
+        x = M
+        for (key, value, emphasis), weight in zip(facts, weights):
+            self.label(x, top - 16, key)
+            self.text(x, top - 31, value, 10, emphasis == 'bold',
+                      RED if emphasis == 'red' else INK)
+            x += unit * weight
+        bottom = top - 43
+        self.c.line(M, bottom, W - M, bottom)
+        self.y = bottom - 14
+        if note:
+            self.text(M, self.y, note, 8.5, False, MUTED)
+            self.y -= 12
+        self.y -= 12
+
+    def parties(self, left_title, right_title, bill_to, contact):
+        """From (the issuer) and Bill to / Received from, side by side.
+        `contact` is invoice.contact_lines(): the phone this client should
+        see (the Zimbabwe number only for Zimbabwean clients) and the printed
+        email on the owner's domain."""
         col2 = M + (W - 2 * M) / 2
         issuer = self.issuer
         left = [issuer.get('business_name') or '']
         left += [l for l in (issuer.get('address') or '').splitlines() if l.strip()]
-        left += [v for v in (issuer.get('phone'), issuer.get('email')) if v]
+        left += list(contact)
         self.label(M, self.y, left_title)
         self.label(col2, self.y, right_title)
         y1 = y2 = self.y - 15
@@ -298,8 +328,9 @@ class _Doc:
         self.c.line(M, self.y + 6, W - M, self.y + 6)
         self.y -= 12
 
-    def totals(self, rows, strong=BLUE):
-        """Right-aligned figures; the last row is the bold one."""
+    def totals(self, rows, strong=INK):
+        """Right-aligned figures; the last row is the bold one, in ink, not
+        brand blue: business invoices print the amount due in black."""
         self.need(18 * len(rows) + 10)
         x = W - M - 200
         for i, (key, value) in enumerate(rows):
@@ -326,6 +357,45 @@ class _Doc:
             y -= 13
         self.y = top - h - 16
 
+    def fact_panel(self, title, lines):
+        """The soft panel as two columns: "Label: value" lines print the
+        label muted on the left and the value on the right, the way Stripe
+        prints transfer instructions (Reference, Account number...) and
+        enterprise invoices print "remit to" blocks. The owner found sentence
+        instructions too wordy (2026-09-24). A blank line is a small gap
+        between blocks; a line with no colon prints across the full width."""
+        label_w = 118
+        value_w = W - 2 * M - 32 - label_w
+        rows = []
+        for line in lines:
+            if not line.strip():
+                rows.append(None)
+                continue
+            key, sep, value = line.partition(':')
+            if sep and key.strip() and len(key) <= 24:
+                parts = simpleSplit(value.strip(), 'Helvetica', 9, value_w) or ['']
+                rows.append((key.strip(), parts))
+            else:
+                rows.append(('', simpleSplit(line, 'Helvetica', 9, W - 2 * M - 32) or ['']))
+        h = 30 + sum(6 if r is None else 13 * len(r[1]) for r in rows)
+        self.need(h + 12)
+        top = self.y
+        self.panel(M, top - h, W - 2 * M, h, SOFT, 10)
+        self.label(M + 16, top - 16, title, BLUE)
+        y = top - 31
+        for row in rows:
+            if row is None:
+                y -= 6
+                continue
+            key, parts = row
+            x_value = M + 16 + (label_w if key else 0)
+            if key:
+                self.text(M + 16, y, key, 9, False, MUTED)
+            for part in parts:
+                self.text(x_value, y, part, 9)
+                y -= 13
+        self.y = top - h - 16
+
     def small_print(self, value):
         for line in simpleSplit(value, 'Helvetica', 8, W - 2 * M):
             self.need(12)
@@ -348,39 +418,38 @@ def _bill_to_lines(invoice):
 def build_invoice_pdf(invoice) -> bytes:
     """Render one PlatformInvoice in the HomeX signature design. Returns bytes.
 
-    The amount panel says what the tenant needs to know NOW: the amount due;
-    the balance, once part is paid; "Paid in full" with a PAID stamp once it
-    is; "Overdue" in red after the due date; VOID on a void invoice so a stray
-    copy cannot be paid. How to pay is left off once nothing is owed.
+    The summary row says what the tenant needs to know NOW, in body-sized
+    type: the amount due (the balance once part is paid, the total once paid
+    or void), the issue and due dates, and the billing period. The status is
+    a small label under the number: Paid, Part paid, Overdue (and the due
+    date turns red), or Void, so a stray copy cannot be paid. How to pay is
+    left off once nothing is owed.
     """
     issuer = invoice.issuer or {}
     currency = invoice.currency
-    buffer = io.BytesIO()
-    doc = _Doc(buffer, issuer, 'INVOICE', invoice.number)
-    doc.masthead()
-
     total, paid, balance = invoice.total, invoice.amount_paid, invoice.balance
     status = invoice.display_status
-    facts = [('Issued', _day(invoice.issue_date)), ('Due', _day(invoice.due_date))]
-    if invoice.period_start and invoice.period_end:
-        facts.append(('Period', f'{_day(invoice.period_start)} to {_day(invoice.period_end)}'))
-    stamp, sub_color = None, MUTED
-    if status == 'void':
-        label, figure, sub = 'Void', _money(currency, total), 'This invoice was cancelled and is not payable.'
-        stamp, sub_color = ('VOID', RED), RED
-    elif status == 'paid':
-        label, figure, sub = 'Paid in full', _money(currency, total), 'Thank you, nothing is owed on this invoice.'
-        stamp = ('PAID', BLUE)
-    elif paid:
-        label, figure = 'Balance due', _money(currency, balance)
-        sub = f'{_money(currency, paid)} of {_money(currency, total)} paid. Due {_day(invoice.due_date, True)}'
-    else:
-        label, figure, sub = 'Amount due', _money(currency, total), f'Due {_day(invoice.due_date, True)}'
-    if status == 'overdue':
-        sub, sub_color = f'Overdue since {_day(invoice.due_date, True)}', RED
-    doc.amount_panel(label, figure, sub, facts, sub_color, stamp)
+    pills = {'paid': ('Paid', BLUE), 'part_paid': ('Part paid', BLUE),
+             'overdue': ('Overdue', RED), 'void': ('Void', RED)}
+    buffer = io.BytesIO()
+    doc = _Doc(buffer, issuer, 'INVOICE', invoice.number)
+    doc.masthead(pills.get(status))
 
-    doc.parties('From', 'Bill to', _bill_to_lines(invoice))
+    if status in ('paid', 'void'):
+        amount_fact = ('Invoice total', _money(currency, total), 'bold')
+    elif paid:
+        amount_fact = ('Balance due', _money(currency, balance), 'bold')
+    else:
+        amount_fact = ('Amount due', _money(currency, total), 'bold')
+    facts = [amount_fact,
+             ('Issue date', _day(invoice.issue_date), None),
+             ('Due date', _day(invoice.due_date), 'red' if status == 'overdue' else None)]
+    if invoice.period_start and invoice.period_end:
+        facts.append(('Billing period',
+                      f'{_day(invoice.period_start)} to {_day(invoice.period_end)}', None))
+    doc.summary(facts)
+
+    doc.parties('From', 'Bill to', _bill_to_lines(invoice), invoice.contact_lines())
     doc.items(invoice, currency)
     rows = [('Subtotal', _money(currency, total))]
     if paid:
@@ -390,9 +459,15 @@ def build_invoice_pdf(invoice) -> bytes:
         rows.append(('Amount due', _money(currency, total)))
     doc.totals(rows)
 
-    if status not in ('paid', 'void') and issuer.get('payment_details'):
-        doc.info_panel('How to pay', issuer['payment_details'].splitlines()
-                       + [f'Reference: {invoice.number}'])
+    # Every line is part of what is owed. An "Optional add-on" panel for the
+    # website was removed at the owner's request (2026-09-24): it is an
+    # ordinary line item, in the table and the total like the subscription.
+    # How to pay comes from invoice.payment_lines(): Reference first, then
+    # EcoCash and the bank for a Zimbabwean client, the bank only for anyone
+    # else (owner, 2026-09-24), printed as label/value rows (`fact_panel`).
+    pay_lines = invoice.payment_lines()
+    if status not in ('paid', 'void') and pay_lines:
+        doc.fact_panel('How to pay', pay_lines)
     if invoice.notes:
         doc.info_panel('Notes', invoice.notes.splitlines())
     if issuer.get('footer_note'):
@@ -401,33 +476,91 @@ def build_invoice_pdf(invoice) -> bytes:
     return buffer.getvalue()
 
 
+class _Lines(list):
+    """A list that answers `.all()`, standing in for a related manager."""
+
+    def all(self):
+        return self
+
+
+class _TemplatePreview:
+    """A template dressed as an unsaved invoice, so the preview goes through
+    the SAME build_invoice_pdf as a real one and cannot look different from
+    what a tenant will receive. Bill to is a placeholder; numbers and dates
+    are what an invoice raised today would carry. `zimbabwe` previews the
+    Zimbabwe payment block (EcoCash first) instead of bank only."""
+
+    def __init__(self, template, profile, today, zimbabwe=False):
+        from datetime import timedelta
+        from .models import PlatformInvoiceItem, allocate_breakdown
+        self.issuer = profile.snapshot()
+        self.currency = profile.currency
+        self.number = 'HMX-PREVIEW'
+        self.zimbabwe_client = zimbabwe
+        self.notes = template.notes
+        self.issue_date = today
+        self.due_date = today + timedelta(days=profile.payment_terms_days)
+        first = today.replace(day=1)
+        self.period_start = first
+        self.period_end = (first.replace(month=first.month % 12 + 1, year=first.year + first.month // 12)
+                           - timedelta(days=1))
+        self.bill_to_name = '[Client business name]'
+        self.bill_to_email = '[client email]'
+        self.bill_to_address = ''
+        rows = profile.breakdown_rows()
+        items = _Lines()
+        for line in template.form_lines(f'{today:%B %Y}'):
+            item = PlatformInvoiceItem(
+                description=line['description'], quantity=Decimal(str(line['quantity'] or 0)),
+                unit_price=Decimal(str(line['unit_price'] or 0)))
+            item.breakdown = allocate_breakdown(item.line_total, rows) if line['with_breakdown'] else []
+            items.append(item)
+        self.items = items
+        self.payments = _Lines()
+        self.total = sum((i.line_total for i in items), Decimal('0'))
+        self.amount_paid = Decimal('0')
+        self.balance = self.total
+        self.display_status = 'draft'
+
+    def payment_lines(self):
+        # The same rules as a real invoice, not a copy of them.
+        from .models import PlatformInvoice
+        return PlatformInvoice.payment_lines(self)
+
+    def contact_lines(self):
+        from .models import PlatformInvoice
+        return PlatformInvoice.contact_lines(self)
+
+
+def build_template_pdf(template, profile, today, zimbabwe=False) -> bytes:
+    """Preview a PlatformInvoiceTemplate as the invoice it would produce,
+    for a Zimbabwean client (EcoCash first) or any other (bank only)."""
+    return build_invoice_pdf(_TemplatePreview(template, profile, today, zimbabwe))
+
+
 def build_receipt_pdf(payment) -> bytes:
     """Render one PlatformPayment as its receipt. Returns bytes.
 
-    The panel carries THIS payment (its amount never changes); the totals
-    show where the invoice stands now, so a receipt downloaded after a later
-    payment shows the later balance. A voided receipt says VOID.
+    The summary row carries THIS payment (its amount never changes); the
+    totals show where the invoice stands now, so a receipt downloaded after a
+    later payment shows the later balance. A small label under the number
+    says Paid, or Void for a cancelled receipt.
     """
     invoice = payment.invoice
     issuer = invoice.issuer or {}
     currency = invoice.currency
     buffer = io.BytesIO()
     doc = _Doc(buffer, issuer, 'RECEIPT', payment.receipt_number)
-    doc.masthead()
+    doc.masthead(('Void', RED) if payment.is_void else ('Paid', BLUE))
 
-    method = payment.get_method_display()
-    facts = [('Invoice', invoice.number)]
-    if payment.reference:
-        facts.append(('Reference', payment.reference))
-    if payment.is_void:
-        doc.amount_panel('Void', _money(currency, payment.amount),
-                         'This receipt was cancelled.', facts, RED, ('VOID', RED))
-    else:
-        doc.amount_panel('Amount paid', _money(currency, payment.amount),
-                         f'Paid {_day(payment.paid_on, True)} by {method}', facts,
-                         stamp=('PAID', BLUE))
+    doc.summary([
+        ('Amount paid', _money(currency, payment.amount), 'bold'),
+        ('Date paid', _day(payment.paid_on), None),
+        ('Paid by', payment.get_method_display(), None),
+        ('Invoice', invoice.number, None),
+    ], note=f'Payment reference: {payment.reference}' if payment.reference else None)
 
-    doc.parties('From', 'Received from', _bill_to_lines(invoice))
+    doc.parties('From', 'Received from', _bill_to_lines(invoice), invoice.contact_lines())
     doc.items(invoice, currency)
     doc.totals([('Invoice total', _money(currency, invoice.total)),
                 ('Paid to date', _money(currency, invoice.amount_paid)),
@@ -435,8 +568,9 @@ def build_receipt_pdf(payment) -> bytes:
     if payment.note:
         doc.info_panel('Note', payment.note.splitlines())
     if not payment.is_void:
+        # A plain body-sized line, as business receipts close; not a banner.
         doc.need(24)
-        doc.text(M, doc.y, 'Thank you for your payment.', 11, True, BLUE)
+        doc.text(M, doc.y, 'Thank you for your payment.', 10, False, INK)
         doc.y -= 24
     if issuer.get('footer_note'):
         doc.small_print(issuer['footer_note'])

@@ -12895,6 +12895,112 @@ class BillingPdfTests(TestCase):
         # Percents that do not total 100 give no breakdown at all.
         self.assertEqual(parse_breakdown('A | | 60\nB | | 30'), [])
 
+    def test_zimbabwean_clients_get_ecocash_first_everyone_else_bank_only(self):
+        # Owner rule, 2026-09-24: a Zimbabwean client's How to pay is EcoCash
+        # FIRST, then the bank; any other client gets the bank only and no
+        # EcoCash at all. PlatformInvoice.payment_lines is the one reader.
+        from .models import (DEFAULT_ECOCASH_DETAILS, DEFAULT_PAYMENT_DETAILS,
+                             PlatformBillingProfile, PlatformInvoice)
+        for fact in ('FNB (First National Bank)', '63222994055', '250655', 'FIRNZAJJ'):
+            self.assertIn(fact, DEFAULT_PAYMENT_DETAILS)
+        # FNB's product name is not something a payer needs.
+        self.assertNotIn('Business Zero', DEFAULT_PAYMENT_DETAILS)
+        self.assertNotIn('EcoCash', DEFAULT_PAYMENT_DETAILS)
+        for fact in ('EcoCash: +263 78 631 8169', 'Registered name: Joymanu Musabayana',
+                     'Paid by the sender'):
+            self.assertIn(fact, DEFAULT_ECOCASH_DETAILS)
+        # Terse "Label: value" rows, not sentence instructions (owner, 2026-09-24).
+        for line in (DEFAULT_PAYMENT_DETAILS + '\n' + DEFAULT_ECOCASH_DETAILS).splitlines():
+            self.assertIn(': ', line)
+            self.assertNotIn('Please', line)
+        PlatformBillingProfile.objects.all().delete()
+        profile = PlatformBillingProfile.current()
+        self.assertEqual(profile.ecocash_details, DEFAULT_ECOCASH_DETAILS)
+        zim = PlatformInvoice(number='HMX-2026-0009', issuer=profile.snapshot(), zimbabwe_client=True)
+        lines = zim.payment_lines()
+        self.assertEqual(lines[0], 'Reference: HMX-2026-0009')
+        self.assertTrue(lines[2].startswith('EcoCash:'))
+        self.assertLess(lines.index('EcoCash: +263 78 631 8169'),
+                        lines.index('Account name: HomeX Media'))
+        other = PlatformInvoice(number='HMX-2026-0010', issuer=profile.snapshot(), zimbabwe_client=False)
+        self.assertEqual(other.payment_lines(),
+                         ['Reference: HMX-2026-0010', ''] + DEFAULT_PAYMENT_DETAILS.splitlines())
+        self.assertFalse(any('EcoCash' in l for l in other.payment_lines()))
+
+    def test_the_printed_contact_is_the_domain_email_and_the_zimbabwe_phone(self):
+        # Owner, 2026-09-24: invoices print an address on homexmedia.com, not
+        # the Gmail reply inbox, and Zimbabwean clients also see the EcoCash
+        # number as the phone; other clients see no phone.
+        from .models import PlatformBillingProfile, PlatformInvoice
+        PlatformBillingProfile.objects.all().delete()
+        profile = PlatformBillingProfile.current()
+        self.assertEqual(profile.contact_email, 'billing@homexmedia.com')
+        zim = PlatformInvoice(issuer=profile.snapshot(), zimbabwe_client=True)
+        self.assertEqual(zim.contact_lines(), ['+263 78 631 8169', 'billing@homexmedia.com'])
+        other = PlatformInvoice(issuer=profile.snapshot(), zimbabwe_client=False)
+        self.assertEqual(other.contact_lines(), ['billing@homexmedia.com'])
+        self.assertNotIn('gmail', ' '.join(other.contact_lines()))
+
+    def test_the_zimbabwe_box_defaults_from_the_tenants_records(self):
+        from .models import TenantWhatsAppChannel, is_zimbabwean_tenant
+        self.assertFalse(is_zimbabwean_tenant(self.acme))
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertNotRegex(body, r'name="zimbabwe_client"[^>]*checked')
+        TenantWhatsAppChannel.objects.create(tenant=self.acme, phone_number_id='pn-1',
+                                             display_number='+263 77 123 4567')
+        self.assertTrue(is_zimbabwean_tenant(self.acme))
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        self.assertRegex(body, r'name="zimbabwe_client"[^>]*checked')
+        # A South African number stays bank only.
+        sa = Tenant.objects.create(name='Cape Plumbing', slug='cape')
+        TenantProfile.objects.create(tenant=sa, business_whatsapp='+27 82 000 0000',
+                                     location_city='Cape Town')
+        self.assertFalse(is_zimbabwean_tenant(sa))
+        harare = Tenant.objects.create(name='Harare Pipes', slug='harare-pipes')
+        TenantProfile.objects.create(tenant=harare, location_city='Harare')
+        self.assertTrue(is_zimbabwean_tenant(harare))
+
+    def test_the_migration_updates_untouched_payment_details_only(self):
+        import importlib
+        from django.apps import apps
+        from .models import (DEFAULT_ECOCASH_DETAILS, DEFAULT_PAYMENT_DETAILS,
+                             FNB_ONLY_PAYMENT_DETAILS, PlatformBillingProfile)
+        migration = importlib.import_module('bot.migrations.0098_billing_ecocash_contact')
+        self.assertEqual(migration.FNB_ONLY, FNB_ONLY_PAYMENT_DETAILS)
+        self.assertEqual(migration.BANK, DEFAULT_PAYMENT_DETAILS)
+        self.assertEqual(migration.ECOCASH, DEFAULT_ECOCASH_DETAILS)
+        PlatformBillingProfile.objects.filter(pk=1).update(
+            payment_details=FNB_ONLY_PAYMENT_DETAILS, ecocash_details='')
+        migration.update_payment_details(apps, None)
+        row = PlatformBillingProfile.current()
+        self.assertEqual(row.payment_details, DEFAULT_PAYMENT_DETAILS)
+        self.assertEqual(row.ecocash_details, DEFAULT_ECOCASH_DETAILS)
+        PlatformBillingProfile.objects.filter(pk=1).update(
+            payment_details='Cash only', ecocash_details='EcoCash: my own words')
+        migration.update_payment_details(apps, None)
+        row = PlatformBillingProfile.current()
+        self.assertEqual(row.payment_details, 'Cash only')
+        self.assertEqual(row.ecocash_details, 'EcoCash: my own words')
+
+    def test_the_breakdown_never_charges_for_a_whatsapp_number(self):
+        # The client brings their own WhatsApp number (owner, 2026-09-24): no
+        # breakdown line may read as charging for one. Migration 0097 renames
+        # the old default and leaves a split the operator edited alone.
+        import importlib
+        from django.apps import apps
+        from .models import PlatformBillingProfile
+        features = [r['feature'].lower() for r in PlatformBillingProfile().breakdown_rows()]
+        self.assertFalse([f for f in features if 'number' in f], features)
+        self.assertIn('hosting, updates and support', features)
+        migration = importlib.import_module('bot.migrations.0097_billing_breakdown_no_whatsapp_number')
+        PlatformBillingProfile.objects.filter(pk=1).update(subscription_breakdown=migration.OLD_DEFAULT)
+        migration.rename_untouched_default(apps, None)
+        self.assertEqual(PlatformBillingProfile.current().subscription_breakdown, migration.NEW_DEFAULT)
+        edited = 'Everything | | 100'
+        PlatformBillingProfile.objects.filter(pk=1).update(subscription_breakdown=edited)
+        migration.rename_untouched_default(apps, None)
+        self.assertEqual(PlatformBillingProfile.current().subscription_breakdown, edited)
+
     def test_a_split_that_does_not_total_100_is_refused_on_the_page(self):
         data = {f: getattr(self.profile, f) for f in (
             'business_name', 'tagline', 'address', 'email', 'phone', 'currency',
@@ -12976,6 +13082,127 @@ class BillingPdfTests(TestCase):
         invoice.status = 'void'
         for data in (build_invoice_pdf(invoice), build_receipt_pdf(part)):
             self.assertTrue(data.startswith(b'%PDF'))
+
+
+class BillingTemplateTests(TestCase):
+    """Invoice templates (owner, 2026-09-24: the generic "Plumbot Standard"
+    invoice, US$150 with the breakdown plus the US$10 website as an ordinary
+    line, US$160 in all, "on the app"). New invoice starts from the default; any can be picked,
+    previewed, edited and deleted; operator only."""
+
+    def setUp(self):
+        from .models import PLUMBOT_STANDARD_TEMPLATE, PlatformInvoiceTemplate
+        self.acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        self.standard = PlatformInvoiceTemplate.objects.create(**PLUMBOT_STANDARD_TEMPLATE)
+        self.root = get_user_model().objects.create_superuser(
+            username='root', password='pass12345', email='root@example.com')
+        self.client.force_login(self.root)
+
+    def _post_template(self, url, **extra):
+        data = {'name': 'Plumbot Pro', 'notes': '',
+                'lines-TOTAL_FORMS': '3', 'lines-INITIAL_FORMS': '0',
+                'lines-MIN_NUM_FORMS': '0', 'lines-MAX_NUM_FORMS': '1000',
+                'lines-0-description': 'Plumbot Pro, {month}', 'lines-0-quantity': '1',
+                'lines-0-unit_price': '250', 'lines-0-with_breakdown': 'on',
+                'lines-1-description': 'Website', 'lines-1-quantity': '1',
+                'lines-1-unit_price': '10',
+                'lines-2-description': '', 'lines-2-quantity': '1', 'lines-2-unit_price': '0'}
+        data.update(extra)
+        return self.client.post(url, data)
+
+    def test_the_standard_template_is_the_generic_invoice(self):
+        # The website is part of what the client pays, not an add-on box.
+        self.assertEqual(self.standard.total, Decimal('160.00'))
+        body = self.client.get(reverse('billing_invoice_new') + '?tenant=acme').content.decode()
+        month = timezone.localdate().strftime('%B %Y')
+        self.assertIn(f'Plumbot monthly subscription, {month}', body)
+        self.assertIn('value="150.00"', body)
+        self.assertRegex(body, r'name="items-0-with_breakdown"[^>]*checked')
+        self.assertIn('Business website, hosting and upkeep', body)
+        self.assertNotIn('is_optional', body)
+        home = self.client.get(reverse('billing_home')).content.decode()
+        self.assertIn('Plumbot Standard', home)
+        self.assertIn(reverse('billing_template_preview', args=[self.standard.pk]), home)
+
+    def test_create_pick_and_default_a_template(self):
+        from .models import PlatformInvoiceTemplate
+        response = self._post_template(reverse('billing_template_new'), is_default='on')
+        self.assertRedirects(response, reverse('billing_home'))
+        pro = PlatformInvoiceTemplate.objects.get(name='Plumbot Pro')
+        self.assertEqual(len(pro.lines), 2)
+        self.assertTrue(pro.is_default)
+        self.standard.refresh_from_db()
+        self.assertFalse(self.standard.is_default)
+        self.assertEqual(pro.total, Decimal('260.00'))
+        body = self.client.get(reverse('billing_invoice_new') + f'?template={self.standard.pk}').content.decode()
+        self.assertIn('value="150.00"', body)
+        body = self.client.get(reverse('billing_invoice_new')).content.decode()
+        self.assertIn('value="250.00"', body)
+
+    def test_a_template_needs_a_line(self):
+        from .models import PlatformInvoiceTemplate
+        self._post_template(reverse('billing_template_new'), **{
+            'lines-0-description': '', 'lines-1-description': ''})
+        self.assertFalse(PlatformInvoiceTemplate.objects.filter(name='Plumbot Pro').exists())
+
+    def test_edit_preview_and_delete(self):
+        from .models import PlatformInvoiceTemplate
+        self.assertEqual(self.client.get(
+            reverse('billing_template_edit', args=[self.standard.pk])).status_code, 200)
+        self._post_template(reverse('billing_template_edit', args=[self.standard.pk]),
+                            name='Plumbot Standard', is_default='on')
+        self.standard.refresh_from_db()
+        self.assertEqual(self.standard.total, Decimal('260.00'))
+        pdf = self.client.get(reverse('billing_template_preview', args=[self.standard.pk]))
+        self.assertEqual(pdf['Content-Type'], 'application/pdf')
+        self.assertTrue(pdf.content.startswith(b'%PDF'))
+        self.assertEqual(self.client.get(
+            reverse('billing_template_delete', args=[self.standard.pk])).status_code, 405)
+        self.client.post(reverse('billing_template_delete', args=[self.standard.pk]))
+        self.assertFalse(PlatformInvoiceTemplate.objects.exists())
+        # With no template, New invoice still works: one line at the default fee.
+        self.assertEqual(self.client.get(reverse('billing_invoice_new')).status_code, 200)
+
+    def test_the_migration_seeds_plumbot_standard_once(self):
+        # Test runs skip bot's migrations, so the seed is called directly:
+        # it must create exactly the owner's generic invoice, and only once.
+        import importlib
+        from django.apps import apps
+        from .models import PLUMBOT_STANDARD_TEMPLATE, PlatformInvoiceTemplate
+        migration = importlib.import_module('bot.migrations.0095_billing_invoice_templates')
+        PlatformInvoiceTemplate.objects.all().delete()
+        migration.seed_plumbot_standard(apps, None)
+        migration.seed_plumbot_standard(apps, None)
+        seeded = PlatformInvoiceTemplate.objects.get()
+        self.assertEqual(seeded.lines, PLUMBOT_STANDARD_TEMPLATE['lines'])
+        self.assertTrue(seeded.is_default)
+
+    def test_the_default_fee_is_150_and_the_migration_lifts_only_a_zero(self):
+        # With no template at all, a new invoice still starts at US$150.
+        import importlib
+        from django.apps import apps
+        from .models import PlatformBillingProfile, PlatformInvoiceTemplate
+        PlatformInvoiceTemplate.objects.all().delete()
+        PlatformBillingProfile.objects.all().delete()
+        self.assertEqual(PlatformBillingProfile.current().default_monthly_fee, Decimal('150.00'))
+        body = self.client.get(reverse('billing_invoice_new')).content.decode()
+        self.assertIn('value="150.00"', body)
+        migration = importlib.import_module('bot.migrations.0096_billing_default_fee_150')
+        PlatformBillingProfile.objects.filter(pk=1).update(default_monthly_fee=0)
+        migration.lift_zero_fee(apps, None)
+        self.assertEqual(PlatformBillingProfile.current().default_monthly_fee, Decimal('150.00'))
+        PlatformBillingProfile.objects.filter(pk=1).update(default_monthly_fee=Decimal('90.00'))
+        migration.lift_zero_fee(apps, None)
+        self.assertEqual(PlatformBillingProfile.current().default_monthly_fee, Decimal('90.00'))
+
+    def test_staff_cannot_reach_templates(self):
+        staff = get_user_model().objects.create_user(
+            username='plainstaff', password='pass12345', is_staff=True)
+        self.client.force_login(staff)
+        for url in (reverse('billing_template_new'),
+                    reverse('billing_template_edit', args=[self.standard.pk]),
+                    reverse('billing_template_preview', args=[self.standard.pk])):
+            self.assertIn(self.client.get(url).status_code, (302, 403), url)
 
 
 class BillingMobileTests(TestCase):

@@ -39,7 +39,8 @@ from ..billing_emails import send_invoice_email, send_receipt_email
 from ..billing_pdf import build_invoice_pdf, build_receipt_pdf
 from ..models import (
     PlatformBillingProfile, PlatformInvoice, PlatformInvoiceItem,
-    PlatformPayment, Tenant, TenantProfile, allocate_breakdown,
+    PlatformInvoiceTemplate, PlatformPayment, Tenant, TenantProfile, allocate_breakdown,
+    is_zimbabwean_tenant,
 )
 from .platform import superuser_required
 
@@ -51,7 +52,8 @@ class InvoiceForm(forms.ModelForm):
     class Meta:
         model = PlatformInvoice
         fields = ['tenant', 'issue_date', 'due_date', 'period_start', 'period_end',
-                  'currency', 'bill_to_name', 'bill_to_email', 'bill_to_address', 'notes']
+                  'currency', 'zimbabwe_client', 'bill_to_name', 'bill_to_email',
+                  'bill_to_address', 'notes']
         widgets = {
             'issue_date': _DATE, 'due_date': _DATE,
             'period_start': _DATE, 'period_end': _DATE,
@@ -64,7 +66,9 @@ class InvoiceForm(forms.ModelForm):
         }
         labels = {'bill_to_name': 'Bill to', 'bill_to_email': 'Billing email',
                   'bill_to_address': 'Address', 'period_start': 'Period from',
-                  'period_end': 'Period to'}
+                  'period_end': 'Period to',
+                  'zimbabwe_client': 'Zimbabwean client (EcoCash first, then bank)'}
+        help_texts = {'zimbabwe_client': 'Unticked: bank details only, no EcoCash.'}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -123,18 +127,23 @@ def _item_formset(extra):
 class BillingProfileForm(forms.ModelForm):
     class Meta:
         model = PlatformBillingProfile
-        fields = ['business_name', 'tagline', 'address', 'email', 'phone', 'currency',
-                  'default_monthly_fee', 'payment_terms_days', 'payment_details',
+        fields = ['business_name', 'tagline', 'address', 'email', 'contact_email', 'phone',
+                  'zimbabwe_phone', 'currency',
+                  'default_monthly_fee', 'payment_terms_days', 'payment_details', 'ecocash_details',
                   'subscription_breakdown', 'footer_note', 'reminder_days', 'reminder_time']
         widgets = {'address': forms.Textarea(attrs={'rows': 3}),
                    'payment_details': forms.Textarea(attrs={'rows': 5}),
+                   'ecocash_details': forms.Textarea(attrs={'rows': 3}),
                    'subscription_breakdown': forms.Textarea(attrs={'rows': 7}),
                    'currency': forms.Select(choices=CURRENCY_CHOICES),
                    'reminder_time': forms.TimeInput(attrs={'type': 'time'}, format='%H:%M')}
-        labels = {'business_name': 'Business name', 'email': 'Billing email',
+        labels = {'business_name': 'Business name', 'email': 'Reply-to inbox',
+                  'contact_email': 'Email printed on invoices', 'phone': 'Phone (all clients)',
+                  'zimbabwe_phone': 'Phone for Zimbabwean clients',
                   'default_monthly_fee': 'Default monthly fee',
                   'payment_terms_days': 'Days to pay',
-                  'payment_details': 'How to pay', 'footer_note': 'Footer note',
+                  'payment_details': 'Bank details', 'ecocash_details': 'EcoCash (Zimbabwean clients)',
+                  'footer_note': 'Footer note',
                   'reminder_days': 'Reminder days before due',
                   'reminder_time': 'Send reminders from',
                   'subscription_breakdown': 'Subscription feature breakdown',
@@ -170,25 +179,30 @@ def _bill_to_defaults(tenant):
     last = (PlatformInvoice.objects.filter(tenant=tenant)
             .order_by('-issue_date', '-id').first())
     if last:
-        # The currency comes with them: a tenant who pays in rand stays on
-        # rand without being re-picked every month.
+        # The currency and the Zimbabwe payment block come with them: a
+        # tenant who pays in rand, or by EcoCash, is not re-picked every month.
         return {'bill_to_name': last.bill_to_name,
                 'bill_to_email': last.bill_to_email,
                 'bill_to_address': last.bill_to_address,
-                'currency': last.currency}
+                'currency': last.currency,
+                'zimbabwe_client': last.zimbabwe_client}
     profile = TenantProfile.objects.filter(tenant=tenant).first()
     letterhead = (getattr(profile, 'letterhead', None) or {}) if profile else {}
     return {
         'bill_to_name': (letterhead.get('trading_name') or tenant.name),
         'bill_to_email': getattr(profile, 'email_sender', '') or '',
         'bill_to_address': getattr(profile, 'location_line', '') or '',
+        # First invoice: a +263 number or a Zimbabwean place on their records.
+        'zimbabwe_client': is_zimbabwean_tenant(tenant),
     }
 
 
-def _new_invoice_initial(tenant, profile):
+def _new_invoice_initial(tenant, profile, template=None):
     """Starting values for a new invoice: today, due after the issuer's
-    terms, this calendar month as the period, and one subscription line at
-    the default fee. Every value stays editable on the form."""
+    terms, this calendar month as the period, and the lines of `template`
+    (the chosen one, else the default, "Plumbot Standard"). With no template
+    at all it falls back to one subscription line at the default fee. Every
+    value stays editable on the form."""
     today = timezone.localdate()
     start, end = _month_bounds(today)
     initial = {
@@ -200,6 +214,16 @@ def _new_invoice_initial(tenant, profile):
     if tenant is not None:
         initial['tenant'] = tenant.pk
         initial.update(_bill_to_defaults(tenant))
+    template = template or PlatformInvoiceTemplate.default()
+    if template is not None and template.lines:
+        items = template.form_lines(f'{today:%B %Y}')
+        # A template's breakdown tick only holds while a valid split exists.
+        if not profile.breakdown_rows():
+            for item in items:
+                item['with_breakdown'] = False
+        if template.notes:
+            initial['notes'] = template.notes
+        return initial, items
     items = [{
         'description': f'Plumbot monthly subscription, {today:%B %Y}',
         'quantity': 1, 'unit_price': profile.default_monthly_fee,
@@ -315,6 +339,7 @@ def billing_home(request):
         'tenant_slug': tenant_slug,
         'status_choices': list(PlatformInvoice.DISPLAY_LABELS.items()),
         'tenants': Tenant.objects.order_by('name'),
+        'invoice_templates': PlatformInvoiceTemplate.objects.all(),
         'receipts': (PlatformPayment.objects.select_related('invoice')
                      .order_by('-paid_on', '-id')[:10]),
     })
@@ -346,9 +371,19 @@ def billing_invoice_new(request):
             tenant = Tenant.objects.filter(slug=slug).first()
         elif tenant_id.isdigit():
             tenant = Tenant.objects.filter(pk=int(tenant_id)).first()
-        initial, items = _new_invoice_initial(tenant, profile)
+        # ?template=<pk> from the template chips; absent means the default.
+        template_id = request.GET.get('template', '')
+        template = (PlatformInvoiceTemplate.objects.filter(pk=int(template_id)).first()
+                    if template_id.isdigit() else None) or PlatformInvoiceTemplate.default()
+        initial, items = _new_invoice_initial(tenant, profile, template)
         form = InvoiceForm(initial=initial)
         formset = _item_formset(len(items) + 2)(instance=PlatformInvoice(), initial=items)
+        return render(request, 'bot/pages/billing_invoice_form.html', {
+            'active_nav': 'billing', 'form': form, 'formset': formset,
+            'mode': 'new', 'profile': profile,
+            'templates': PlatformInvoiceTemplate.objects.all(),
+            'template': template, 'tenant_slug': tenant.slug if tenant else '',
+        })
     return render(request, 'bot/pages/billing_invoice_form.html', {
         'active_nav': 'billing', 'form': form, 'formset': formset,
         'mode': 'new', 'profile': profile,
@@ -714,3 +749,114 @@ def billing_payment_void(request, pk):
         payment.save(update_fields=['is_void', 'voided_at'])
         messages.success(request, f'Receipt {payment.receipt_number} voided.')
     return redirect('billing_invoice_detail', pk=payment.invoice_id)
+
+
+# ── Invoice templates ────────────────────────────────────────────────────────
+#
+# Named, saved line sets a new invoice starts from (owner, 2026-09-24: the
+# generic "Plumbot Standard" invoice, US$150 with the breakdown plus the US$10
+# website, "on the app"). See PlatformInvoiceTemplate.
+# The editor uses the invoice form's own line markup and classes, so a
+# template is built the way an invoice is.
+
+class TemplateForm(forms.ModelForm):
+    class Meta:
+        model = PlatformInvoiceTemplate
+        fields = ['name', 'is_default', 'notes']
+        labels = {'is_default': 'Start new invoices from this template',
+                  'notes': 'Notes printed on the invoice'}
+        widgets = {'notes': forms.Textarea(attrs={'rows': 2})}
+
+
+class TemplateLineForm(forms.Form):
+    """One template line; blank ones are skipped on save."""
+    description = forms.CharField(
+        required=False, max_length=255,
+        widget=forms.TextInput(attrs={'placeholder': 'What this line is for (use {month} for the month)',
+                                      'aria-label': 'Description'}))
+    quantity = forms.DecimalField(
+        required=False, initial=1, max_digits=10, decimal_places=2,
+        widget=forms.NumberInput(attrs={'placeholder': 'Qty', 'aria-label': 'Quantity', 'inputmode': 'decimal'}))
+    unit_price = forms.DecimalField(
+        required=False, initial=0, max_digits=10, decimal_places=2,
+        widget=forms.NumberInput(attrs={'placeholder': 'Unit price', 'aria-label': 'Unit price',
+                                        'inputmode': 'decimal'}))
+    with_breakdown = forms.BooleanField(required=False)
+
+
+TemplateLineFormSet = forms.formset_factory(TemplateLineForm, extra=2, can_delete=True)
+
+
+def _template_lines(formset):
+    """The formset as the template's JSON lines, in order, blank and removed
+    rows dropped. Money is kept as strings so JSON never rounds it."""
+    lines = []
+    for form in formset.forms:
+        data = getattr(form, 'cleaned_data', None) or {}
+        if data.get('DELETE') or not (data.get('description') or '').strip():
+            continue
+        lines.append({
+            'description': data['description'].strip(),
+            'quantity': str(data.get('quantity') or 1),
+            # To the cent: a typed "250" is stored "250.00", like a real line.
+            'unit_price': str(Decimal(data.get('unit_price') or 0).quantize(Decimal('0.01'))),
+            'with_breakdown': bool(data.get('with_breakdown')),
+        })
+    return lines
+
+
+def _template_page(request, template=None):
+    """Create (template=None) or edit a template: GET shows the editor, a
+    valid POST saves and returns to Billing. A template needs one line."""
+    if request.method == 'POST':
+        form = TemplateForm(request.POST, instance=template)
+        formset = TemplateLineFormSet(request.POST, prefix='lines')
+        if form.is_valid() and formset.is_valid():
+            lines = _template_lines(formset)
+            if lines:
+                saved = form.save(commit=False)
+                saved.lines = lines
+                saved.save()
+                messages.success(request, f'Template "{saved.name}" saved.')
+                return redirect('billing_home')
+            messages.error(request, 'A template needs at least one line.')
+    else:
+        form = TemplateForm(instance=template)
+        formset = TemplateLineFormSet(prefix='lines', initial=list(template.lines) if template else None)
+    return render(request, 'bot/pages/billing_template_form.html', {
+        'active_nav': 'billing', 'form': form, 'formset': formset, 'template': template,
+    })
+
+
+@superuser_required
+def billing_template_new(request):
+    return _template_page(request)
+
+
+@superuser_required
+def billing_template_edit(request, pk):
+    return _template_page(request, get_object_or_404(PlatformInvoiceTemplate, pk=pk))
+
+
+@require_POST
+@superuser_required
+def billing_template_delete(request, pk):
+    """Delete a template. Invoices raised from it are untouched: they copied
+    its lines when they were made."""
+    template = get_object_or_404(PlatformInvoiceTemplate, pk=pk)
+    name = template.name
+    template.delete()
+    messages.success(request, f'Template "{name}" deleted.')
+    return redirect('billing_home')
+
+
+@superuser_required
+def billing_template_preview(request, pk):
+    """The invoice this template would produce today, as a PDF, through the
+    same renderer as a real invoice (bill to is a placeholder)."""
+    from ..billing_pdf import build_template_pdf
+    template = get_object_or_404(PlatformInvoiceTemplate, pk=pk)
+    # ?zimbabwe=1 previews a Zimbabwean client's invoice (EcoCash first).
+    data = build_template_pdf(template, PlatformBillingProfile.current(), timezone.localdate(),
+                              zimbabwe=bool(request.GET.get('zimbabwe')))
+    return _pdf_response(data, f'{template.name}.pdf', inline=not request.GET.get('download'))
