@@ -4884,6 +4884,83 @@ class InboundEmailIntakeTests(TestCase):
         self.assertAlmostEqual(lead.scheduled_datetime, was, delta=timedelta(seconds=2))
         notify.assert_not_called()
 
+
+class InboundHeaderFetchTests(TestCase):
+    """The inbound poller reads a bounded, batched slice of the mailbox.
+
+    Production crash: the operator's Gmail held hundreds of unread emails (the
+    bot leaves declined mail UNREAD), INBOX was searched with no date bound,
+    and one FETCH per uid ran until Gmail dropped the socket mid-loop and the
+    Email_Follow_Ups cron died on imaplib's abort.
+    """
+
+    def _fake_imap(self, uids, skip=()):
+        """An IMAP double that answers a batched UID FETCH the way imaplib
+        returns it: (prefix, literal) tuples separated by bare b')' parts.
+        Uids in `skip` are left out of the response, as a server may do."""
+        from unittest.mock import MagicMock
+        imap = MagicMock()
+        imap.select.return_value = ('OK', [b'1'])
+        fetches = []
+
+        def uid(cmd, *args):
+            if cmd == 'search':
+                return ('OK', [b' '.join(uids)])
+            if cmd == 'fetch':
+                fetches.append(args[0])
+                parts = []
+                for n, u in enumerate(args[0].split(',')):
+                    if u.encode() in skip:
+                        continue
+                    head = f'Subject: mail {u}\r\nFrom: a@example.com\r\n\r\n'.encode()
+                    parts.append((f'{n + 1} (UID {u} BODY[HEADER] {{{len(head)}}}'.encode(), head))
+                    parts.append(b')')
+                return ('OK', parts)
+            return ('OK', [])
+        imap.uid.side_effect = uid
+        return imap, fetches
+
+    def test_headers_are_fetched_in_batches_and_matched_by_uid(self):
+        from bot.management.commands import process_inbound_emails as mod
+        uids = [str(i).encode() for i in range(1, 121)]
+        imap, fetches = self._fake_imap(uids, skip={b'7'})
+        got = mod._fetch_unseen_headers(imap, 'INBOX')
+        # 120 uids in batches of 50: three FETCH commands, not 120.
+        self.assertEqual(len(fetches), 3)
+        self.assertEqual(len(got), 119)
+        # The skipped uid does not shift later headers onto the wrong uid.
+        by_uid = {u: m['Subject'] for u, m in got}
+        self.assertNotIn(b'7', by_uid)
+        self.assertEqual(by_uid[b'8'], 'mail 8')
+        self.assertEqual(by_uid[b'120'], 'mail 120')
+
+    def test_both_folders_are_bounded_by_since(self):
+        from bot.management.commands import process_inbound_emails as mod
+        for folder, days in (('INBOX', mod._INBOX_LOOKBACK_DAYS),
+                             ('[Gmail]/Spam', mod._SPAM_LOOKBACK_DAYS)):
+            imap, _ = self._fake_imap([])
+            mod._fetch_unseen_headers(imap, folder)
+            since = (timezone.now() - timedelta(days=days)).strftime('%d-%b-%Y')
+            imap.uid.assert_any_call('search', None, 'UNSEEN', 'SINCE', since)
+
+    def test_a_dropped_connection_ends_the_run_without_crashing(self):
+        import imaplib
+        from unittest.mock import MagicMock
+        from bot.management.commands import process_inbound_emails as mod
+        out = StringIO()
+        with patch.object(mod, '_EMAIL_FROM', 'team@example.com'), \
+             patch.object(mod, '_IMAP_PASS', 'secret'), \
+             patch.object(mod, '_connect', return_value=MagicMock()), \
+             patch.object(mod, '_spam_folder', return_value='[Gmail]/Spam'), \
+             patch.object(mod, '_fetch_unseen_headers',
+                          side_effect=imaplib.IMAP4.abort('socket error: EOF')) as fetch:
+            call_command('process_inbound_emails', stdout=out)
+        # The dead connection is not reused for the spam folder.
+        fetch.assert_called_once()
+        self.assertIn('IMAP connection lost', out.getvalue())
+        self.assertIn('errors=1', out.getvalue())
+
+
 class JobSchedulingTests(StaffClientTestCase):
     """schedule_job used to write with `Appointment.objects.update(...)` — a
     manager-level update with no filter, so one job's datetime, name and area

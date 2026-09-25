@@ -100,6 +100,19 @@ _SPAM_FOLDER_NAMES = ("[Gmail]/Spam", "Spam", "Junk", "Junk E-mail", "INBOX.Spam
 # reply that was filed there since the last poll or an outage.
 _SPAM_LOOKBACK_DAYS = 3
 
+# How far back INBOX is read. Mail the bot declines is left UNREAD on purpose,
+# so an unbounded UNSEEN search on the operator's personal Gmail matched every
+# unread email it ever received, re-fetched them all every 5 minutes, and Gmail
+# eventually dropped the connection mid-fetch ("socket error: EOF"), crashing
+# the Email_Follow_Ups cron. Anything older than this was already judged on an
+# earlier tick; a week still covers a cron outage. Same "never answer an old
+# email out of the blue" reasoning as the spam window above.
+_INBOX_LOOKBACK_DAYS = 7
+
+# Uids per header FETCH. One FETCH per uid meant hundreds of round trips per
+# run; a comma-joined uid set asks for a batch in one command.
+_HEADER_FETCH_BATCH = 50
+
 
 def _spam_folder(imap):
     """The mailbox's spam folder name, or None.
@@ -157,25 +170,39 @@ def _fetch_unseen_headers(imap, folder="INBOX"):
     unread mail as read; and the body is only worth downloading for the mail we
     are actually going to answer.
 
-    `folder` other than INBOX is the spam folder, read only for the last
-    _SPAM_LOOKBACK_DAYS. The caller must process these uids with that folder
-    still selected: IMAP uids are per folder.
+    Both folders are bounded by SINCE: INBOX by _INBOX_LOOKBACK_DAYS, the spam
+    folder by _SPAM_LOOKBACK_DAYS. The caller must process these uids with that
+    folder still selected: IMAP uids are per folder.
+
+    Headers come back in batches of _HEADER_FETCH_BATCH uids per FETCH (the
+    one-FETCH-per-uid loop is what Gmail cut off mid-run). Each response part
+    is matched to its uid by the "UID n" in its prefix, not by position, so a
+    uid the server skips cannot shift every later header onto the wrong uid.
+    Pinned by InboundHeaderFetchTests.
     """
     status, _ = imap.select(f'"{folder}"')
     if status != "OK":
         return []
-    criteria = ["UNSEEN"]
-    if folder != "INBOX":
-        since = (timezone.now() - timedelta(days=_SPAM_LOOKBACK_DAYS)).strftime("%d-%b-%Y")
-        criteria += ["SINCE", since]
-    status, data = imap.uid("search", None, *criteria)
-    if status != "OK" or not data[0]:
+    days = _INBOX_LOOKBACK_DAYS if folder == "INBOX" else _SPAM_LOOKBACK_DAYS
+    since = (timezone.now() - timedelta(days=days)).strftime("%d-%b-%Y")
+    status, data = imap.uid("search", None, "UNSEEN", "SINCE", since)
+    if status != "OK" or not data or not data[0]:
         return []
+    uids = data[0].split()
     results = []
-    for uid in data[0].split():
-        s, msg_data = imap.uid("fetch", uid, "(BODY.PEEK[HEADER])")
-        if s == "OK" and msg_data and msg_data[0]:
-            results.append((uid, email.message_from_bytes(msg_data[0][1])))
+    for start in range(0, len(uids), _HEADER_FETCH_BATCH):
+        batch = uids[start:start + _HEADER_FETCH_BATCH]
+        s, msg_data = imap.uid("fetch", b",".join(batch).decode(), "(BODY.PEEK[HEADER])")
+        if s != "OK" or not msg_data:
+            continue
+        for part in msg_data:
+            # Header parts are (prefix, literal) tuples; the bare b")" between
+            # them closes each response and carries nothing.
+            if not isinstance(part, tuple) or len(part) < 2:
+                continue
+            found = re.search(rb"UID (\d+)", part[0] or b"")
+            if found:
+                results.append((found.group(1), email.message_from_bytes(part[1])))
     return results
 
 
@@ -961,10 +988,23 @@ class Command(BaseCommand):
         spam = _spam_folder(imap)
         if spam:
             folders.append(spam)
+        # A connection the server drops mid-run (imaplib's abort, or a raw
+        # socket error) used to escape as a traceback and crash the cron. It
+        # now ends the run: the connection is dead so no later folder can be
+        # read, it is logged with its traceback and counted as an error, and
+        # the next 5-minute tick reconnects. Mail not reached stays UNSEEN.
         for folder in folders:
-            emails = _fetch_unseen_headers(imap, folder)
-            self.stdout.write(f"  Unseen emails found in {folder}: {len(emails)}\n")
-            counts = self._process_folder(imap, folder, emails, dry_run, out)
+            try:
+                emails = _fetch_unseen_headers(imap, folder)
+                self.stdout.write(f"  Unseen emails found in {folder}: {len(emails)}\n")
+                counts = self._process_folder(imap, folder, emails, dry_run, out)
+            except (imaplib.IMAP4.abort, OSError):
+                logger.exception("IMAP connection lost while reading %s", folder)
+                self.stdout.write(self.style.ERROR(
+                    f"  IMAP connection lost while reading {folder}; retrying next run."
+                ))
+                errors += 1
+                break
             processed += counts[0]
             skipped += counts[1]
             errors += counts[2]
