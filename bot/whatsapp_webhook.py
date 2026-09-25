@@ -4257,7 +4257,30 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
             appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
             appointment._remove_notes_tag('[AWAITING_MORE_ITEMS]')
 
+        # A price question outranks it too. "Is a tub the only thing you're
+        # looking to get sorted?" answered with "How much" was read as more
+        # work: "How much" was appended to the job description and the lead
+        # got the area question, price unanswered, because this branch never
+        # prices (offline trace of Barmak lead 1236's opening, 2026-09-25).
+        # Same rule as the delay override above: the tags are cleared and the
+        # turn falls through to the price steps below, which price the job
+        # they named. Deterministic (`_asks_price_figure`: how much / price /
+        # cost / marii; "a quote" is not a figure ask and still reads as a
+        # scope answer). Pinned by scenarios/scope_question_price_ask.txt.
+        _sc_price_override = False
         if (_sc_pending or _sc_awaiting_more) and not _sc_delay_override:
+            try:
+                _sc_price_override = bool(plumbot._asks_price_figure(message_body))
+            except Exception:
+                _sc_price_override = False
+            if _sc_price_override:
+                print("💲 Price question outranks the service-confirm question — "
+                      "handing to the price steps")
+                appointment._remove_notes_tag('[SERVICE_CONFIRM_PENDING]')
+                appointment._remove_notes_tag('[AWAITING_MORE_ITEMS]')
+
+        if ((_sc_pending or _sc_awaiting_more) and not _sc_delay_override
+                and not _sc_price_override):
             from bot.out_of_scope_handler import _classify_affirmation
             _more_ai = uc_extracted(_uclass).get('project_description')
             _named = uc_product_intent(_uclass) not in ('none', None)

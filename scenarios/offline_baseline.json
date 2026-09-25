@@ -263,7 +263,7 @@
   "photo_with_caption_price.txt": {
     "0|reject|US$": true,
     "0|reject|describe what you'd like done": true,
-    "1|expect|US$": false,
+    "1|expect|US$": true,
     "1|reject|Takudzwa": true,
     "1|reject|describe what you'd like done": true,
     "2|reject|US$": true,
@@ -317,6 +317,11 @@
     "0|reject|our plumber": true,
     "0|reject|the plumber": true,
     "0|reject|vanity": true
+  },
+  "scope_question_price_ask.txt": {
+    "2|expect|US$": true,
+    "2|expect|freestanding": true,
+    "2|reject|what area are you in": true
   },
   "self_defer.txt": {
     "0|expect|what works better for you": false,

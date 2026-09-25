@@ -1,0 +1,18 @@
+# A price question answers the price, whatever we were waiting on. After
+# "Tub" the bot asks "Is a tub the only thing you're looking to get sorted?"
+# ([SERVICE_CONFIRM_PENDING]), and a "How much" in reply was read as more
+# work: "How much" was appended to the job description and the lead got the
+# area question with the price unanswered (offline trace of Barmak lead
+# 1236's opening, 2026-09-25). The service-confirm block in the webhook now
+# stands aside for `_asks_price_figure`, as it does for a delay signal, and
+# the price steps price the tub they named: both tubs, each named, since no
+# type was given (decision 4A).
+
+> Pictures
+
+> Tub
+
+> How much
+expect: US$
+expect: freestanding
+reject: what area are you in
