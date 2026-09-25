@@ -361,7 +361,8 @@ def mark_delay_signal(appointment, source_message: str = "") -> bool:
     return marked
 
 
-def send_lead_magnet_on_whatsapp(appointment, force: bool = False) -> bool:
+def send_lead_magnet_on_whatsapp(appointment, force: bool = False,
+                                 caption: str = None) -> bool:
     """
     Send the portfolio/pricing PDF (our lead magnet) straight to the customer on
     WhatsApp as a document, instead of emailing it. Used when a lead asks to get
@@ -371,6 +372,12 @@ def send_lead_magnet_on_whatsapp(appointment, force: bool = False) -> bool:
     double-send; `force=True` (the staff button only) sends it again anyway.
     The send is recorded in the transcript with its WAMID ([PDF SENT] ...), so
     a lead replying to the PDF resolves back to it.
+    `caption` replaces the default caption: the price-guide step passes its
+    guide line ("Here's our price guide, ..."), already through
+    finalise_outbound, so the PDF carries it and it is not a message of its
+    own (owner, 2026-09-25: prices, PDF with caption, question). The
+    transcript then records it as "[PDF SENT] file | Caption: ...", the shape
+    the staff document send already uses.
     """
     notes = appointment.internal_notes or ''
     if '[LEAD_MAGNET_WA_SENT]' in notes and not force:
@@ -415,7 +422,8 @@ def send_lead_magnet_on_whatsapp(appointment, force: bool = False) -> bool:
         client = get_client_for_tenant(tenant)
         result = client.send_local_document(
             to, doc_path,
-            caption=f"{business}'s portfolio of past projects plus a pricing guide.",
+            caption=(caption
+                     or f"{business}'s portfolio of past projects plus a pricing guide."),
             filename=f"{slug}_portfolio.pdf",
         )
         if is_temp:
@@ -431,7 +439,9 @@ def send_lead_magnet_on_whatsapp(appointment, force: bool = False) -> bool:
             wamid = (result or {}).get('messages', [{}])[0].get('id')
             if wamid:
                 appointment.record_sent_media(
-                    {wamid: f'{slug}_portfolio.pdf'}, f'[PDF SENT] {slug}_portfolio.pdf')
+                    {wamid: f'{slug}_portfolio.pdf'},
+                    f'[PDF SENT] {slug}_portfolio.pdf'
+                    + (f' | Caption: {caption}' if caption else ''))
         except Exception:
             logger.warning("Could not record the lead magnet send", exc_info=True)
         logger.info("Lead magnet PDF sent on WhatsApp — apt %s",

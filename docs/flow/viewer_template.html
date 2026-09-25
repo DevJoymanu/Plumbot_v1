@@ -1,0 +1,989 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plumbot Flow Map</title>
+<!--
+  The interactive Plumbot flow map. GENERATED: docs/flow/build_flow_map.py fills
+  the data block at the bottom from flow_spec.py and the code. Edit this
+  TEMPLATE (docs/flow/viewer_template.html) for the viewer, flow_spec.py for the
+  flow, never the generated plumbot-flow.html.
+
+  Three views of the same data, from least detail to most, because 266 steps
+  at one zoom level is a picture nobody can read:
+    * Journey: the stages a lead moves through; a stage opens into the bot's
+      moves there. The level for business decisions.
+    * Reply ladder: the reply router as the ranked list it really is ("first
+      match wins"), in the order the code runs it (read from the code).
+    * Full map: every section laid out on its own with dagre; the "Everything"
+      board puts the conversation in row one and the business around it in
+      row two. Cross-section edges stay faint until an end is selected.
+  Any step opens the side panel: exact wording (parsed from the code on every
+  build), code locations and neighbours.
+
+  Styling follows the dashboard's Aetheris Clinical tokens (primary #006591,
+  Inter and Geist) because the page is served inside the dashboard at
+  /platform/flow-map/. The dark palette exists only because the same file is
+  also published as a standalone page, which must work in both themes.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600&family=Geist+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap">
+<style>
+:root{
+  --bg:#f8f9ff; --surface:#ffffff; --surface-2:#eff4ff; --ink:#0b1c30; --ink-2:#3e4850;
+  --line:#d3e4fe; --grid:#e5eeff; --edge:#6e7881; --edge-faint:#bec8d2;
+  --accent:#006591; --accent-soft:#c9e6ff; --accent-ink:#ffffff; --hit:#4648d4;
+  --vivid:#0ea5e9; --placeholder:#4648d4; --shadow:0 20px 40px -15px rgba(14,165,233,.18);
+  --glass:rgba(248,249,255,.88); --glass-line:rgba(0,101,145,.12);
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --cond:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --label:"Geist","Inter",system-ui,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0d1417; --surface:#131d22; --surface-2:#18242a; --ink:#dce6ea; --ink-2:#93a6af;
+    --line:#2a3a42; --grid:#172228; --edge:#6f858f; --edge-faint:#34454d;
+    --accent:#89ceff; --accent-soft:#0f3550; --accent-ink:#001e2f; --hit:#c0c1ff;
+    --vivid:#0ea5e9; --placeholder:#c0c1ff; --shadow:0 10px 30px rgba(0,0,0,.45);
+    --glass:rgba(19,29,34,.9); --glass-line:rgba(137,206,255,.14);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0d1417; --surface:#131d22; --surface-2:#18242a; --ink:#dce6ea; --ink-2:#93a6af;
+  --line:#2a3a42; --grid:#172228; --edge:#6f858f; --edge-faint:#34454d;
+  --accent:#89ceff; --accent-soft:#0f3550; --accent-ink:#001e2f; --hit:#c0c1ff;
+  --vivid:#0ea5e9; --placeholder:#c0c1ff; --shadow:0 10px 30px rgba(0,0,0,.45);
+  --glass:rgba(19,29,34,.9); --glass-line:rgba(137,206,255,.14);
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans);overflow:hidden;
+  display:flex;flex-direction:column}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ── Top bar ── */
+.bar{display:flex;flex-direction:column;gap:8px;padding:12px 16px 10px;background:var(--glass);
+  -webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--glass-line);box-shadow:var(--shadow);position:relative;z-index:5}
+/* The three views, from least detail to most. Pills, per the dashboard system. */
+.tabs{display:flex;gap:4px;padding:3px;background:var(--surface-2);border:1px solid var(--glass-line);border-radius:999px}
+.tab{border:0;background:none;border-radius:999px;padding:6px 14px;cursor:pointer;white-space:nowrap;
+  font:500 11.5px var(--label);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.tab:hover{color:var(--accent)}
+.tab[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);box-shadow:0 6px 16px -6px rgba(0,101,145,.5)}
+.pane{flex:1;min-width:0;overflow:auto;padding:24px 16px 48px;box-sizing:border-box}
+.pane-inner{max-width:1180px;margin:0 auto}
+.eyebrow{font:500 11px var(--label);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:0 0 6px}
+.pane h2.lead{font:300 26px/1.25 var(--sans);margin:0 0 6px;text-wrap:balance}
+.pane p.sub{margin:0 0 24px;color:var(--ink-2);max-width:68ch}
+
+/* ── Journey ── */
+.lane{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-bottom:28px}
+.stage-card{flex:1 1 160px;max-width:230px;min-height:128px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:6px;
+  background:var(--glass);border:1px solid var(--glass-line);border-radius:18px;padding:14px 14px 12px;box-shadow:var(--shadow);
+  transition:transform .2s ease,border-color .2s ease;position:relative}
+.stage-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.stage-card[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),var(--shadow)}
+.stage-card .no{font:500 11px var(--label);letter-spacing:.06em;color:var(--accent)}
+.stage-card h3{font:500 15.5px/1.25 var(--sans);margin:0}
+.stage-card p{margin:0;font-size:12.5px;color:var(--ink-2);flex:1}
+.stage-card .meta{display:flex;gap:6px;flex-wrap:wrap}
+.pill{font:500 10.5px var(--label);letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-2);border:1px solid var(--glass-line)}
+.lane.main .stage-card:not(:last-child)::after{content:"";position:absolute;right:-9px;top:50%;width:8px;height:2px;background:var(--accent);opacity:.5}
+.lane.side .stage-card{border-style:dashed}
+
+/* ── Ladder ── */
+.lad-pick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.rung-group{font:500 11px var(--label);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:22px 0 8px 52px}
+.rung{display:grid;grid-template-columns:40px 1fr;gap:12px;width:100%;text-align:left;cursor:pointer;background:none;
+  border:0;padding:0;margin-bottom:6px}
+.rung .num{width:40px;height:40px;border-radius:999px;display:grid;place-items:center;font:500 13px var(--mono);
+  background:var(--surface);border:1px solid var(--glass-line);color:var(--accent);font-variant-numeric:tabular-nums}
+.rung .body{background:var(--glass);border:1px solid var(--glass-line);border-radius:16px;padding:10px 14px;
+  display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr);gap:6px 18px;transition:border-color .2s ease}
+.rung:hover .body{border-color:var(--accent)}
+.rung.hit .body{border-color:var(--hit);box-shadow:0 0 0 2px var(--hit)}
+.rung.always .body{background:transparent;border-style:dashed}
+.rung.always .num{color:var(--ink-2)}
+.rung .when{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rung .lbl{font-weight:500}
+.rung .ex{font-size:12.5px;color:var(--ink-2)}
+.rung .ex q{font-style:italic}
+.rung .then{display:flex;flex-direction:column;gap:4px;font-size:13px;min-width:0}
+.rung .then .to{display:flex;gap:6px;align-items:baseline}
+.rung .then .to b{font-weight:500}
+.rung .then .say1{font-size:12.5px;color:var(--ink-2);border-left:2px solid var(--vivid);padding-left:8px}
+.rung .then .where{font:500 10.5px var(--label);text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+.rung .kindsw{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:1px}
+@media (max-width:760px){ .rung .body{grid-template-columns:1fr} .rung-group{margin-left:0} }
+.bar-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+.brand h1{font:400 18px/1.2 var(--sans);letter-spacing:.01em;margin:0;white-space:nowrap}
+.brand .stats{font:12px var(--mono);color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.search{position:relative;flex:1 1 260px;max-width:420px}
+.search input{width:100%;box-sizing:border-box;padding:7px 10px 7px 30px;border:1px solid var(--line);
+  border-radius:999px;background:var(--surface-2)}
+.search svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:14px;height:14px;stroke:var(--ink-2);fill:none}
+.results{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:8px;box-shadow:var(--shadow);max-height:min(60vh,420px);overflow:auto;padding:4px;z-index:20}
+.results button{display:grid;grid-template-columns:12px 1fr;gap:2px 8px;width:100%;text-align:left;border:0;
+  background:none;padding:7px 8px;border-radius:5px;cursor:pointer}
+.results button:hover,.results button[aria-selected="true"]{background:var(--accent-soft)}
+.results .sw{width:10px;height:10px;border-radius:3px;margin-top:4px;grid-row:span 2}
+.results .rl{font-weight:500}
+.results .rs{font-size:12px;color:var(--ink-2)}
+.results .empty{padding:10px;color:var(--ink-2)}
+.tools{display:flex;gap:6px}
+.btn{border:1px solid var(--glass-line);background:var(--surface);border-radius:999px;padding:6px 14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.chip{flex:none;border:1px solid var(--line);background:transparent;border-radius:999px;padding:4px 11px;
+  cursor:pointer;font:500 12.5px var(--cond);letter-spacing:.02em;white-space:nowrap}
+.chip:hover{border-color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.chip .n{opacity:.6;margin-left:4px;font-family:var(--mono);font-size:11px}
+
+/* ── Stage ── */
+.stage{position:relative;flex:1;min-height:0;display:flex}
+#canvas{flex:1;min-width:0;display:block;touch-action:none;cursor:grab;background:var(--bg)}
+#canvas.dragging{cursor:grabbing}
+.loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--ink-2);font:13px var(--mono);pointer-events:none}
+.zoom{position:absolute;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow);z-index:3}
+.zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font:500 16px var(--mono)}
+.zoom button+button{border-top:1px solid var(--line)}
+.zoom button:hover{background:var(--accent-soft)}
+
+.legend{position:absolute;left:16px;top:12px;width:250px;max-height:calc(100% - 90px);overflow:auto;background:var(--glass);
+  border:1px solid var(--glass-line);border-radius:18px;box-shadow:var(--shadow);padding:10px 10px 8px;z-index:4}
+.legend h2{font:500 11px var(--label);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:2px 4px 6px}
+.legend .row{display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:8px;width:100%;border:0;background:none;
+  text-align:left;padding:4px;border-radius:6px;cursor:pointer}
+.legend .row:hover{background:var(--surface-2)}
+.legend .row[aria-pressed="true"]{background:var(--accent-soft)}
+.legend .row svg{width:38px;height:22px;overflow:visible}
+.legend .lk{font:500 13px var(--cond)}
+.legend .lc{font:11px var(--mono);color:var(--ink-2);font-variant-numeric:tabular-nums}
+.legend .edges{border-top:1px solid var(--line);margin-top:6px;padding:8px 4px 2px;display:grid;gap:5px;font-size:12px;color:var(--ink-2)}
+.legend .edges div{display:flex;align-items:center;gap:8px}
+.legend .hint{font-size:11.5px;color:var(--ink-2);margin:8px 4px 2px}
+
+/* ── Nodes and edges ── */
+.node{cursor:pointer}
+.node .shape{stroke-width:1.4}
+.node text{font:500 12.5px var(--cond);fill:var(--ink);pointer-events:none}
+.node:hover .shape{stroke-width:2.4}
+.node.sel .shape{stroke:var(--accent);stroke-width:3}
+.node.hit .shape{stroke:var(--hit);stroke-width:3}
+.node .badge{font:600 9px var(--mono);letter-spacing:.06em}
+.stub .shape{fill:var(--surface);stroke:var(--edge);stroke-dasharray:4 3}
+.stub text{fill:var(--ink-2)}
+.edge path{fill:none;stroke:var(--edge);stroke-width:1.3}
+.edge.no path{stroke-dasharray:4 4}
+.edge.loop path,.edge.handoff path{stroke:var(--accent);stroke-width:2}
+.edge.cross path{stroke:var(--edge-faint);stroke-width:1.2;stroke-dasharray:2 5}
+.edge.on path{stroke:var(--accent);stroke-width:2.4;stroke-dasharray:none;opacity:1}
+.edge text{font:11px var(--sans);fill:var(--ink-2)}
+.edge .lbg{fill:var(--bg)}
+.edge.on text{fill:var(--ink)}
+.cluster rect{fill:var(--surface);fill-opacity:.55;stroke:var(--line)}
+.cluster text{font:600 20px var(--cond);fill:var(--ink-2);letter-spacing:.02em}
+.cluster .sub{font:12.5px var(--sans);fill:var(--ink-2);opacity:.85}
+.cluster{cursor:pointer}
+svg.focus .node:not(.near),svg.focus .cluster{opacity:.22}
+svg.focus .edge:not(.on){opacity:.12}
+svg.kindf .node:not(.kin){opacity:.18}
+svg.kindf .edge{opacity:.25}
+.rowtitle{font:600 12px var(--mono);letter-spacing:.14em;fill:var(--ink-2)}
+
+/* ── Detail panel ── */
+.panel{width:min(460px,42vw);flex:none;background:var(--surface);border-left:1px solid var(--line);overflow:auto;
+  padding:16px 18px calc(24px + env(safe-area-inset-bottom,0px));box-sizing:border-box;z-index:6}
+.panel .top{display:flex;align-items:flex-start;gap:10px}
+.panel .kind{display:inline-flex;align-items:center;gap:6px;font:500 11px var(--label);letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 10px;border-radius:999px;border:1px solid}
+.panel .sec{font-size:12px;color:var(--ink-2);margin-top:6px}
+.panel .x{margin-left:auto;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;width:30px;height:30px;cursor:pointer;flex:none}
+.panel h2{font:600 22px/1.2 var(--cond);margin:10px 0 6px;text-wrap:balance}
+.panel .id{font:12px var(--mono);color:var(--ink-2)}
+.panel .note{margin:12px 0 0;padding:10px 12px;background:var(--surface-2);border-radius:8px;font-size:13.5px}
+.panel h3{font:500 11px var(--label);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:20px 0 8px;
+  display:flex;align-items:center;gap:8px}
+.panel h3 .ct{font-family:var(--mono);letter-spacing:0}
+.copyg{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+.copyg .src{display:flex;gap:8px;align-items:baseline;justify-content:space-between;padding:7px 10px;background:var(--surface-2);
+  font:12px var(--mono);color:var(--ink-2);border-bottom:1px solid var(--line)}
+.copyg .src a{color:inherit}
+.say{position:relative;padding:10px 40px 10px 12px;white-space:pre-wrap;font-size:14px;line-height:1.5;border-top:1px dashed var(--line)}
+.say:first-of-type{border-top:0}
+.say.long{font:12px/1.5 var(--mono);max-height:220px;overflow:auto}
+.say .ph{color:var(--placeholder);font-family:var(--mono);font-size:.88em}
+.say button{position:absolute;right:8px;top:8px;border:1px solid var(--line);background:var(--surface);border-radius:5px;
+  font:11px var(--mono);padding:2px 6px;cursor:pointer;color:var(--ink-2)}
+.caveat{font-size:12px;color:var(--ink-2);margin:-2px 0 10px}
+.locs{display:grid;gap:6px}
+.loc{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;align-items:center}
+.loc .f{font:12.5px var(--mono);word-break:break-all}
+.loc .nm{font-size:12px;color:var(--ink-2)}
+.loc .ln{display:flex;gap:6px;grid-row:span 2}
+.loc a{font:11.5px var(--mono);color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:5px;padding:3px 6px}
+.loc a:hover{border-color:var(--accent)}
+.nb{display:grid;gap:4px}
+.nb button{display:flex;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);background:none;border-radius:7px;
+  padding:6px 9px;cursor:pointer}
+.nb button:hover{border-color:var(--accent)}
+.nb .el{font:11px var(--mono);color:var(--ink-2);margin-left:auto;text-align:right}
+.nb .sw{width:9px;height:9px;border-radius:2px;flex:none}
+details.src-x{margin-top:6px;border:1px solid var(--line);border-radius:8px}
+details.src-x summary{cursor:pointer;padding:8px 10px;font:12px var(--mono);color:var(--ink-2)}
+details.src-x pre{margin:0;padding:8px 0;overflow:auto;max-height:420px;font:11.5px/1.5 var(--mono);background:var(--surface-2);
+  border-top:1px solid var(--line);counter-reset:none}
+details.src-x .cl{display:block;padding:0 10px;white-space:pre}
+details.src-x .cl i{display:inline-block;width:42px;color:var(--ink-2);font-style:normal;user-select:none;opacity:.7}
+.rootset{margin-top:14px;font-size:12px;color:var(--ink-2);display:grid;gap:4px}
+.rootset input{padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface-2);font:12px var(--mono)}
+
+@media (max-width:760px){
+  .brand .stats{display:none}
+  .stage{flex-direction:column}
+  .panel{position:absolute;left:0;right:0;bottom:0;width:auto;max-height:62%;border-left:0;border-top:1px solid var(--line);
+    border-radius:14px 14px 0 0;box-shadow:var(--shadow)}
+  .legend{width:auto;right:16px;max-height:55%}
+}
+@media (prefers-reduced-motion:no-preference){
+  #viewport.anim{transition:transform .35s cubic-bezier(.2,.7,.2,1)}
+}
+</style>
+
+<header class="bar">
+  <div class="bar-row">
+    <div class="brand"><h1>Plumbot Flow Map</h1><span class="stats" id="stats"></span></div>
+    <div class="tabs" role="tablist" aria-label="Level of detail">
+      <button class="tab" role="tab" data-mode="journey">Journey</button>
+      <button class="tab" role="tab" data-mode="ladder">Reply ladder</button>
+      <button class="tab" role="tab" data-mode="map">Full map</button>
+    </div>
+    <div class="search" role="search">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke-width="1.6"/></svg>
+      <input id="q" type="search" placeholder="Search steps, wording, functions  ( / )" autocomplete="off" aria-label="Search the flow map">
+      <div class="results" id="results" hidden></div>
+    </div>
+    <div class="tools" id="mapTools">
+      <button class="btn" id="legendBtn" aria-pressed="true">Legend</button>
+      <button class="btn" id="fitBtn">Fit</button>
+    </div>
+  </div>
+  <nav class="chips" id="chips" aria-label="Sections"></nav>
+</header>
+
+<div class="stage">
+  <section class="pane" id="journeyPane" hidden aria-label="The lead's journey"></section>
+  <section class="pane" id="ladderPane" hidden aria-label="The reply ladder"></section>
+  <svg id="canvas" aria-label="Flow diagram">
+    <defs>
+      <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+        <path d="M24 0H0V24" fill="none" stroke="var(--grid)" stroke-width="1"/>
+      </pattern>
+      <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" fill="var(--edge)"/>
+      </marker>
+      <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" fill="var(--accent)"/>
+      </marker>
+    </defs>
+    <rect id="gridbg" x="-50000" y="-50000" width="100000" height="100000" fill="url(#grid)"/>
+    <g id="viewport"></g>
+  </svg>
+  <div class="loading" id="loading">Laying out the map…</div>
+  <div class="legend" id="legend"></div>
+  <div class="zoom">
+    <button id="zin" aria-label="Zoom in">+</button>
+    <button id="zout" aria-label="Zoom out">−</button>
+    <button id="zfit" aria-label="Fit to screen">⤢</button>
+  </div>
+  <aside class="panel" id="panel" hidden aria-live="polite"></aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+<script>
+const DATA = /*__FLOW_DATA__*/null;
+
+(function () {
+  "use strict";
+  const $ = (s, r = document) => r.querySelector(s);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = $("#canvas"), vp = $("#viewport");
+  const byId = new Map(DATA.nodes.map(n => [n.id, n]));
+  const secById = new Map(DATA.sections.map(s => [s.id, s]));
+  const outE = new Map(), inE = new Map();
+  DATA.edges.forEach(e => {
+    (outE.get(e.from) || outE.set(e.from, []).get(e.from)).push(e);
+    (inE.get(e.to) || inE.set(e.to, []).get(e.to)).push(e);
+  });
+  // The chat pipeline reads as row one; everything the business runs around it
+  // as row two. A section missing from both lists still lands in row two.
+  const ROW1 = ["inbound", "router", "pending", "intents", "delay", "pricing", "qualify", "outbound"];
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("pfm:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("pfm:" + k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  /* ── Kind colours for both themes, from the build's kind table ── */
+  (function kindStyles() {
+    let light = "", dark = "";
+    for (const [k, v] of Object.entries(DATA.kinds)) {
+      light += `--kf-${k}:${v.fill};--ks-${k}:${v.stroke};`;
+      dark += `--kf-${k}:color-mix(in srgb, ${v.stroke} 24%, #10191d);--ks-${k}:color-mix(in srgb, ${v.stroke} 65%, #ffffff);`;
+    }
+    const rules = Object.keys(DATA.kinds).map(k =>
+      `.k-${k} .shape{fill:var(--kf-${k});stroke:var(--ks-${k})}.k-${k} .badge{fill:var(--ks-${k})}`).join("");
+    const st = document.createElement("style");
+    st.textContent = `:root{${light}}@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${dark}}}` +
+      `:root[data-theme="dark"]{${dark}}` + rules;
+    document.head.appendChild(st);
+  })();
+
+  /* ── Text measurement and wrapping ── */
+  const mctx = document.createElement("canvas").getContext("2d");
+  const FONT = '500 12.5px "IBM Plex Sans Condensed", "Arial Narrow", sans-serif';
+  const LH = 15.5;
+  function wrap(text, max) {
+    mctx.font = FONT;
+    const words = String(text).split(/\s+/); const lines = []; let cur = "";
+    for (const w of words) {
+      const t = cur ? cur + " " + w : w;
+      if (mctx.measureText(t).width > max && cur) { lines.push(cur); cur = w; } else cur = t;
+    }
+    if (cur) lines.push(cur);
+    const width = Math.max(...lines.map(l => mctx.measureText(l).width), 20);
+    return { lines, width };
+  }
+  const WRAP = { decision: 150, ai_decision: 170, loop: 140, end: 110 };
+  function measure(n, stub) {
+    const label = stub ? "↗ " + secById.get(n.section).title + ": " + n.label : n.label;
+    const { lines, width: tw } = wrap(label, stub ? 180 : (WRAP[n.kind] || 188));
+    const th = lines.length * LH;
+    let w, h, k = stub ? "stub" : n.kind;
+    switch (k) {
+      case "decision": w = tw * 1.5 + 34; h = th * 1.6 + 34; break;
+      case "ai_decision": h = th + 26; w = tw + h * 0.9 + 16; break;
+      case "loop": w = tw * 1.35 + 28; h = th * 1.35 + 28; break;
+      case "end": w = tw + 44; h = th + 34; break;
+      case "send": case "email": case "staff": case "gate": w = tw + 52; h = th + 22; break;
+      case "data": w = tw + 30; h = th + 34; break;
+      case "trigger": w = tw + 40; h = th + 24; break;
+      case "notify": w = tw + 44; h = th + 22; break;
+      case "ai_write": w = tw + 44; h = th + 22; break;
+      default: w = tw + 30; h = th + 22;
+    }
+    return { lines, w: Math.round(w), h: Math.round(h) };
+  }
+
+  /* ── Shapes: one SVG outline per kind ── */
+  function shape(kind, w, h) {
+    const x0 = -w / 2, y0 = -h / 2, x1 = w / 2, y1 = h / 2;
+    const P = pts => { const p = document.createElementNS(NS, "polygon"); p.setAttribute("points", pts.map(q => q.join(",")).join(" ")); return p; };
+    const R = (rx) => { const r = document.createElementNS(NS, "rect"); r.setAttribute("x", x0); r.setAttribute("y", y0); r.setAttribute("width", w); r.setAttribute("height", h); r.setAttribute("rx", rx); return r; };
+    const g = document.createElementNS(NS, "g");
+    let s; const ins = Math.min(16, h * 0.45);
+    switch (kind) {
+      case "trigger": s = R(h / 2); break;
+      case "decision": s = P([[0, y0], [x1, 0], [0, y1], [x0, 0]]); break;
+      case "ai_decision": { const d = h * 0.45; s = P([[x0 + d, y0], [x1 - d, y0], [x1, 0], [x1 - d, y1], [x0 + d, y1], [x0, 0]]); break; }
+      case "gate": s = P([[x0, y0], [x1, y0], [x1 - ins, y1], [x0 + ins, y1]]); break;
+      case "send": s = P([[x0 + ins, y0], [x1, y0], [x1 - ins, y1], [x0, y1]]); break;
+      case "email": s = P([[x0, y0], [x1 - ins, y0], [x1, y1], [x0 + ins, y1]]); break;
+      case "staff": s = P([[x0 + ins, y0], [x1 - ins, y0], [x1, y1], [x0, y1]]); break;
+      case "notify": s = P([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0 + ins, 0]]); break;
+      case "loop": case "end": s = document.createElementNS(NS, "ellipse"); s.setAttribute("rx", w / 2); s.setAttribute("ry", h / 2); break;
+      case "wait": s = R(Math.min(14, h / 2)); break;
+      case "data": {
+        s = document.createElementNS(NS, "path"); const e = 7;
+        s.setAttribute("d", `M${x0},${y0 + e} A${w / 2},${e} 0 0 1 ${x1},${y0 + e} V${y1 - e} A${w / 2},${e} 0 0 1 ${x0},${y1 - e} Z`);
+        const top = document.createElementNS(NS, "path");
+        top.setAttribute("d", `M${x0},${y0 + e} A${w / 2},${e} 0 0 0 ${x1},${y0 + e}`); top.setAttribute("class", "shape"); top.setAttribute("fill", "none");
+        s.setAttribute("class", "shape"); g.appendChild(s); g.appendChild(top); return g;
+      }
+      default: s = R(3);
+    }
+    s.setAttribute("class", "shape"); g.appendChild(s);
+    if (kind === "ai_write") {
+      for (const x of [x0 + 8, x1 - 8]) { const l = document.createElementNS(NS, "line"); l.setAttribute("x1", x); l.setAttribute("x2", x); l.setAttribute("y1", y0); l.setAttribute("y2", y1); l.setAttribute("class", "shape"); g.appendChild(l); }
+    }
+    if (kind === "end") { const i = document.createElementNS(NS, "ellipse"); i.setAttribute("rx", w / 2 - 4); i.setAttribute("ry", h / 2 - 4); i.setAttribute("class", "shape"); i.setAttribute("fill", "none"); g.appendChild(i); }
+    return g;
+  }
+
+  /* ── Layout: each section on its own, cached ── */
+  const layoutCache = new Map();
+  function layoutSection(sid, withStubs) {
+    const key = sid + (withStubs ? ":s" : "");
+    if (layoutCache.has(key)) return layoutCache.get(key);
+    const g = new dagre.graphlib.Graph({ multigraph: true });
+    g.setGraph({ rankdir: "TB", nodesep: 28, ranksep: 38, edgesep: 14, marginx: 30, marginy: 30 });
+    g.setDefaultEdgeLabel(() => ({}));
+    const mine = DATA.nodes.filter(n => n.section === sid);
+    const ids = new Set(mine.map(n => n.id));
+    const sizes = {};
+    mine.forEach(n => { const m = measure(n, false); sizes[n.id] = m; g.setNode(n.id, { width: m.w, height: m.h }); });
+    const stubs = new Set();
+    DATA.edges.forEach((e, i) => {
+      const a = ids.has(e.from), b = ids.has(e.to);
+      if (a && b) {
+        const lw = e.label ? Math.min(150, e.label.length * 5.6 + 10) : 0;
+        // A heavy "no" edge keeps each section's chain of decisions on one
+        // straight spine; without it the fall-throughs drifted into a staircase.
+        g.setEdge(e.from, e.to, { width: lw, height: e.label ? 16 : 0, labelpos: "c", i, weight: e.kind === "no" ? 8 : 1 }, "e" + i);
+      } else if (withStubs && (a || b)) {
+        const other = a ? e.to : e.from, sk = "stub:" + other;
+        if (!stubs.has(sk)) { stubs.add(sk); const m = measure(byId.get(other), true); sizes[sk] = m; g.setNode(sk, { width: m.w, height: m.h }); }
+        const lw = e.label ? Math.min(150, e.label.length * 5.6 + 10) : 0;
+        g.setEdge(a ? e.from : sk, a ? sk : e.to, { width: lw, height: e.label ? 16 : 0, labelpos: "c", i }, "e" + i);
+      }
+    });
+    dagre.layout(g);
+    const res = { nodes: {}, edges: [], w: g.graph().width, h: g.graph().height, sizes };
+    g.nodes().forEach(id => { const d = g.node(id); res.nodes[id] = { x: d.x, y: d.y, w: d.width, h: d.height }; });
+    g.edges().forEach(ev => { const d = g.edge(ev); res.edges.push({ from: ev.v, to: ev.w, points: d.points, lx: d.x, ly: d.y, i: d.i }); });
+    layoutCache.set(key, res);
+    return res;
+  }
+
+  /* ── Drawing ── */
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function curve(pts) {
+    if (pts.length < 3) return `M${pts[0].x},${pts[0].y}L${pts[pts.length - 1].x},${pts[pts.length - 1].y}`;
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p = pts[i], n = pts[i + 1];
+      const mx = (p.x + n.x) / 2, my = (p.y + n.y) / 2;
+      d += i === pts.length - 2 ? `Q${p.x},${p.y} ${n.x},${n.y}` : `Q${p.x},${p.y} ${mx},${my}`;
+    }
+    return d;
+  }
+  let nodeEls = new Map(), edgeEls = [], placed = {}, board = { w: 0, h: 0 };
+
+  function drawNode(parent, id, n, pos, stub) {
+    const m = placed.sizes[id];
+    const g = el("g", { class: "node k-" + (stub ? "stub" : n.kind) + (stub ? " stub" : ""), transform: `translate(${pos.x},${pos.y})`, tabindex: "0", role: "button" }, parent);
+    g.dataset.id = n.id; if (stub) g.dataset.stub = "1";
+    g.setAttribute("aria-label", n.label);
+    g.appendChild(shape(stub ? "trigger" : n.kind, m.w, m.h));
+    const y0 = -(m.lines.length - 1) * LH / 2 + 4.5;
+    const t = el("text", { "text-anchor": "middle" }, g);
+    m.lines.forEach((l, i) => { const s = el("tspan", { x: 0, y: y0 + i * LH }, t); s.textContent = l; });
+    if (!stub && n.copy.length && (n.kind === "send" || n.kind === "email" || n.kind === "ai_write")) {
+      const cnt = n.copy.reduce((a, c) => a + c.texts.length, 0);
+      const b = el("text", { class: "badge", x: m.w / 2 - 4, y: -m.h / 2 - 4, "text-anchor": "end" }, g);
+      b.textContent = cnt + (cnt === 1 ? " LINE" : " LINES");
+    }
+    (nodeEls.get(n.id) || nodeEls.set(n.id, []).get(n.id)).push(g);
+    return g;
+  }
+  function drawEdge(parent, e, pts, lx, ly, cross) {
+    const cls = "edge " + e.kind + (cross ? " cross" : "");
+    const g = el("g", { class: cls }, parent);
+    const accent = e.kind === "loop" || e.kind === "handoff";
+    el("path", { d: typeof pts === "string" ? pts : curve(pts), "marker-end": `url(#${accent ? "arrA" : "arr"})` }, g);
+    if (e.label && lx != null) {
+      mctx.font = "11px 'IBM Plex Sans', sans-serif";
+      const w = mctx.measureText(e.label).width + 8;
+      el("rect", { class: "lbg", x: lx - w / 2, y: ly - 8, width: w, height: 15, rx: 3 }, g);
+      const t = el("text", { x: lx, y: ly + 3.5, "text-anchor": "middle" }, g); t.textContent = e.label;
+    }
+    edgeEls.push({ g, e });
+    return g;
+  }
+
+  let view = store.get("view", "all");
+  function render() {
+    vp.innerHTML = ""; nodeEls = new Map(); edgeEls = [];
+    placed = { sizes: {}, pos: {} };
+    if (view === "all") renderBoard(); else renderSection(view);
+    applyState();
+  }
+
+  function renderSection(sid) {
+    const L = layoutSection(sid, true);
+    placed.sizes = L.sizes;
+    const ge = el("g", {}, vp), gn = el("g", {}, vp);
+    L.edges.forEach(le => drawEdge(ge, DATA.edges[le.i], le.points, DATA.edges[le.i].label ? le.lx : null, le.ly, false));
+    for (const id in L.nodes) {
+      const stub = id.startsWith("stub:");
+      const n = byId.get(stub ? id.slice(5) : id);
+      drawNode(gn, id, n, L.nodes[id], stub);
+      if (!stub) placed.pos[id] = L.nodes[id];
+    }
+    board = { w: L.w, h: L.h, x: 0, y: 0 };
+  }
+
+  function renderBoard() {
+    const GAP = 90, ROWGAP = 170, HEAD = 74;
+    const rows = [ROW1.filter(s => secById.has(s)), DATA.sections.map(s => s.id).filter(s => !ROW1.includes(s))];
+    const gc = el("g", {}, vp), ge = el("g", {}, vp), gx = el("g", {}, vp), gn = el("g", {}, vp);
+    let y = 60, maxW = 0;
+    rows.forEach((row, ri) => {
+      const t = el("text", { class: "rowtitle", x: 0, y: y - 22 }, gc);
+      t.textContent = ri === 0 ? "THE CONVERSATION · EVERY INBOUND WHATSAPP MESSAGE" : "AROUND IT · CRONS, VISITS, QUOTES, THE DASHBOARD";
+      let x = 0, rowH = 0;
+      row.forEach(sid => {
+        const L = layoutSection(sid, false);
+        Object.assign(placed.sizes, L.sizes);
+        const cw = Math.max(L.w, 300), ox = x + (cw - L.w) / 2, oy = y + HEAD;
+        const c = el("g", { class: "cluster" }, gc); c.dataset.sec = sid;
+        el("rect", { x, y, width: cw, height: L.h + HEAD, rx: 14 }, c);
+        const tt = el("text", { x: x + 20, y: y + 34 }, c); tt.textContent = secById.get(sid).title;
+        const cnt = DATA.nodes.filter(n => n.section === sid).length;
+        const st = el("text", { class: "sub", x: x + 20, y: y + 54 }, c); st.textContent = cnt + " nodes · open this section";
+        L.edges.forEach(le => {
+          const pts = le.points.map(p => ({ x: p.x + ox, y: p.y + oy }));
+          drawEdge(ge, DATA.edges[le.i], pts, DATA.edges[le.i].label ? le.lx + ox : null, le.ly + oy, false);
+        });
+        for (const id in L.nodes) {
+          const p = { x: L.nodes[id].x + ox, y: L.nodes[id].y + oy, w: L.nodes[id].w, h: L.nodes[id].h };
+          placed.pos[id] = p; drawNode(gn, id, byId.get(id), p, false);
+        }
+        x += cw + GAP; rowH = Math.max(rowH, L.h + HEAD);
+      });
+      maxW = Math.max(maxW, x - GAP); y += rowH + ROWGAP;
+    });
+    // Edges between sections: a soft S-curve from the side of one node to the other.
+    DATA.edges.forEach(e => {
+      const a = byId.get(e.from), b = byId.get(e.to);
+      if (a.section === b.section) return;
+      const p = placed.pos[e.from], q = placed.pos[e.to]; if (!p || !q) return;
+      const dir = q.x >= p.x ? 1 : -1;
+      const sx = p.x + dir * p.w / 2, sy = p.y, tx = q.x - dir * q.w / 2, ty = q.y;
+      const k = Math.max(80, Math.abs(tx - sx) * 0.4);
+      const d = `M${sx},${sy} C${sx + dir * k},${sy} ${tx - dir * k},${ty} ${tx},${ty}`;
+      drawEdge(gx, e, d, null, null, true);
+    });
+    board = { w: maxW, h: y - ROWGAP, x: 0, y: 0 };
+  }
+
+  /* ── Pan and zoom ── */
+  let T = { x: 0, y: 0, k: 1 };
+  function setT(t, anim) {
+    T = t;
+    vp.classList.toggle("anim", !!anim);
+    vp.setAttribute("transform", `translate(${T.x},${T.y}) scale(${T.k})`);
+    $("#gridbg").setAttribute("transform", `translate(${T.x},${T.y}) scale(${T.k})`);
+  }
+  function fit(anim) {
+    const r = svg.getBoundingClientRect();
+    const pad = 40, bw = board.w + 80, bh = board.h + 80;
+    const k = Math.min((r.width - pad) / bw, (r.height - pad) / bh, 1.4);
+    setT({ k, x: (r.width - board.w * k) / 2, y: Math.max(20, (r.height - board.h * k) / 2) }, anim);
+  }
+  function zoomAt(f, cx, cy) {
+    const k = Math.max(0.04, Math.min(3, T.k * f));
+    const r = svg.getBoundingClientRect();
+    cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+    setT({ k, x: cx - (cx - T.x) * (k / T.k), y: cy - (cy - T.y) * (k / T.k) });
+  }
+  function centerOn(id, anim) {
+    const p = placed.pos[id]; if (!p) return;
+    const r = svg.getBoundingClientRect();
+    const k = Math.max(T.k, 0.85);
+    setT({ k, x: r.width / 2 - p.x * k, y: r.height / 2.4 - p.y * k }, anim);
+  }
+  svg.addEventListener("wheel", ev => {
+    ev.preventDefault();
+    const r = svg.getBoundingClientRect();
+    zoomAt(Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.0015)), ev.clientX - r.left, ev.clientY - r.top);
+  }, { passive: false });
+  const ptrs = new Map(); let drag = null, pinch = null, moved = 0;
+  svg.addEventListener("pointerdown", ev => {
+    svg.setPointerCapture(ev.pointerId);
+    ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    moved = 0;
+    if (ptrs.size === 1) drag = { x: ev.clientX, y: ev.clientY, t: { ...T }, target: ev.target };
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: T.k }; drag = null; }
+  });
+  svg.addEventListener("pointermove", ev => {
+    if (!ptrs.has(ev.pointerId)) return;
+    ptrs.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch && ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()], r = svg.getBoundingClientRect();
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      zoomAt((pinch.k * d / pinch.d) / T.k, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
+    } else if (drag) {
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y; moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+      if (moved > 4) { svg.classList.add("dragging"); setT({ k: T.k, x: drag.t.x + dx, y: drag.t.y + dy }); }
+    }
+  });
+  function endPtr(ev) {
+    ptrs.delete(ev.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (drag && moved <= 4) clickAt(drag.target);
+    if (!ptrs.size) { drag = null; svg.classList.remove("dragging"); }
+  }
+  svg.addEventListener("pointerup", endPtr);
+  svg.addEventListener("pointercancel", ev => { ptrs.delete(ev.pointerId); drag = null; pinch = null; svg.classList.remove("dragging"); });
+
+  function clickAt(target) {
+    const ng = target.closest && target.closest(".node");
+    if (ng) {
+      const id = ng.dataset.id;
+      if (ng.dataset.stub) { go(id, true); return; }
+      select(id); return;
+    }
+    const cl = target.closest && target.closest(".cluster");
+    if (cl) { setView(cl.dataset.sec); return; }
+    select(null);
+  }
+  vp.addEventListener("keydown", ev => {
+    if (ev.key === "Enter" || ev.key === " ") { const g = ev.target.closest(".node"); if (g) { ev.preventDefault(); clickAt(g); } }
+  });
+
+  /* ── Selection, focus and the panel ── */
+  let selected = null, kindFilter = null, hits = new Set();
+  function applyState() {
+    const near = new Set();
+    if (selected) {
+      near.add(selected);
+      (outE.get(selected) || []).forEach(e => near.add(e.to));
+      (inE.get(selected) || []).forEach(e => near.add(e.from));
+    }
+    svg.classList.toggle("focus", !!selected);
+    svg.classList.toggle("kindf", !!kindFilter);
+    nodeEls.forEach((gs, id) => gs.forEach(g => {
+      g.classList.toggle("sel", id === selected && !g.dataset.stub);
+      g.classList.toggle("near", near.has(id));
+      g.classList.toggle("hit", hits.has(id));
+      g.classList.toggle("kin", !kindFilter || byId.get(id).kind === kindFilter);
+    }));
+    edgeEls.forEach(({ g, e }) => g.classList.toggle("on", !!selected && (e.from === selected || e.to === selected)));
+    edgeEls.forEach(({ g }) => { if (g.classList.contains("on")) g.parentNode.appendChild(g); });
+  }
+  function select(id, fromHash) {
+    selected = id; applyState();
+    if (!id) { $("#panel").hidden = true; if (!fromHash) history.replaceState(null, "", location.pathname + location.search); return; }
+    showPanel(byId.get(id));
+    if (!fromHash) history.replaceState(null, "", "#" + id);
+  }
+  // Opening a step keeps the reader where they are: on the journey or the
+  // ladder the panel opens in place (and the ladder marks the rung); only the
+  // full map pans to it. "Show on the full map" in the panel crosses over.
+  function go(id, anim) {
+    const n = byId.get(id); if (!n) return;
+    if (mode !== "map") {
+      selected = id; showPanel(n); history.replaceState(null, "", "#" + id);
+      if (mode === "ladder") markRung(id);
+      return;
+    }
+    if (!placed.pos[id]) setView(view === "all" ? n.section : "all", true);
+    select(id); requestAnimationFrame(() => centerOn(id, anim));
+  }
+
+  /* ── Modes: journey (level 1), ladder (level 2), full map (level 3) ── */
+  let mode = store.get("mode", "journey"), mapReady = false;
+  function setMode(m) {
+    mode = ["journey", "ladder", "map"].includes(m) ? m : "journey";
+    store.set("mode", mode);
+    document.querySelectorAll(".tab[data-mode]").forEach(t => t.setAttribute("aria-selected", t.dataset.mode === mode));
+    const isMap = mode === "map";
+    $("#journeyPane").hidden = mode !== "journey";
+    $("#ladderPane").hidden = mode !== "ladder";
+    svg.toggleAttribute("hidden", !isMap);
+    $(".zoom").hidden = !isMap; $("#chips").hidden = !isMap; $("#mapTools").hidden = !isMap;
+    $("#legend").hidden = !isMap || $("#legendBtn").getAttribute("aria-pressed") !== "true";
+    if (mode === "journey" && !$("#journeyPane").innerHTML) renderJourney();
+    if (mode === "ladder" && !$("#ladderPane").innerHTML) renderLadder();
+    if (isMap && !mapReady) {
+      // The full map is the only view that needs the layout library, so the
+      // journey and the ladder still work when the CDN is unreachable.
+      if (typeof dagre === "undefined") { $("#loading").hidden = false; $("#loading").textContent = "Could not load the layout library (dagre from cdnjs). The Journey and Reply ladder tabs still work."; return; }
+      mapReady = true; setView(view);
+    }
+  }
+  document.querySelectorAll(".tab[data-mode]").forEach(t => t.onclick = () => { setMode(t.dataset.mode); history.replaceState(null, "", "#" + t.dataset.mode); });
+
+  // The preview line for a step: its first ENGLISH line where it has one,
+  // because many builders list the Shona variant first in the source.
+  const ENGLISH = /\b(the|we|you|your|to|and|for|is|it)\b/i;
+  function firstLine(n) {
+    const all = n.copy.flatMap(c => c.texts).map(t => t.replace(/\s+/g, " ").trim());
+    const s = all.find(t => ENGLISH.test(t)) || all[0] || "";
+    return s.length > 140 ? s.slice(0, 137) + "…" : s;
+  }
+
+  // Level 1: the stages a lead moves through, main path then side stages.
+  function renderJourney() {
+    const card = (s, i) => {
+      const msgs = s.nodes.map(id => byId.get(id)).filter(n => n.kind === "send" || n.kind === "email").length;
+      return `<button class="stage-card" data-stage="${esc(s.id)}"><span class="no">${i == null ? "OFF THE PATH" : "STAGE " + (i + 1)}</span>
+        <h3>${esc(s.title)}</h3><p>${esc(s.blurb)}</p>
+        <span class="meta"><span class="pill">${s.nodes.length} steps</span>${msgs ? `<span class="pill">${msgs} message${msgs === 1 ? "" : "s"}</span>` : ""}</span></button>`;
+    };
+    const main = DATA.journey.filter(s => s.lane === "main"), side = DATA.journey.filter(s => s.lane !== "main");
+    $("#journeyPane").innerHTML = `<div class="pane-inner">
+      <p class="eyebrow">Level 1 · the lead's journey</p>
+      <h2 class="lead">Where a lead is, and what the bot does there</h2>
+      <p class="sub">The main path runs from the first message to a won job. The stages under it are where a lead goes when they step off the path, and where they come back from. Open a stage for its steps, what the lead receives and where it leads.</p>
+      <p class="eyebrow">The path to a sale</p><div class="lane main">${main.map(card).join("")}</div>
+      <p class="eyebrow">Off the main path</p><div class="lane side">${side.map(s => card(s, null)).join("")}</div></div>`;
+  }
+  function showStage(id) {
+    const s = DATA.journey.find(x => x.id === id); if (!s) return;
+    document.querySelectorAll(".stage-card").forEach(c => c.setAttribute("aria-pressed", c.dataset.stage === id));
+    const nodes = s.nodes.map(n => byId.get(n));
+    const says = nodes.filter(n => ["send", "email", "ai_write"].includes(n.kind) && n.copy.length);
+    const row = n => `<button data-go="${esc(n.id)}"><span class="sw" style="background:var(--ks-${n.kind})"></span>${esc(n.label)}<span class="el">${esc(DATA.kinds[n.kind].label)}</span></button>`;
+    let h = `<div class="top"><div><span class="kind" style="color:var(--accent);border-color:var(--accent);background:var(--accent-soft)">${s.lane === "main" ? "Journey stage" : "Off the path"}</span></div><button class="x" id="closeP" aria-label="Close">✕</button></div>
+      <h2>${esc(s.title)}</h2><p class="note">${esc(s.blurb)}</p>
+      <h3>How we know a lead is here</h3><p style="margin:0">${esc(s.marker)}</p>
+      <h3>What the bot does here <span class="ct">${nodes.length}</span></h3><div class="nb">${nodes.map(row).join("")}</div>`;
+    if (says.length) {
+      h += `<h3>What the lead receives here <span class="ct">${says.length}</span></h3><div class="nb">` +
+        says.map(n => `<button data-go="${esc(n.id)}" style="flex-direction:column;align-items:flex-start;gap:3px"><b style="font-weight:500">${esc(n.label)}</b><span style="font-size:12.5px;color:var(--ink-2)">${phs(firstLine(n))}</span></button>`).join("") + `</div>`;
+    }
+    if ((s.next || []).length) {
+      h += `<h3>Where it leads</h3><div class="nb">` + s.next.map(([to, label]) => {
+        const t = DATA.journey.find(x => x.id === to);
+        return `<button data-stage="${esc(to)}"><span class="sw" style="background:var(--accent)"></span>${esc(t.title)}<span class="el">${esc(label)}</span></button>`;
+      }).join("") + `</div>`;
+    }
+    h += `<p style="margin-top:18px"><button class="btn" data-stagemap="${esc(s.id)}">Show these steps on the full map</button></p>`;
+    selected = null;
+    const p = $("#panel"); p.innerHTML = h; p.hidden = false; p.scrollTop = 0;
+    history.replaceState(null, "", "#" + s.id);
+  }
+  $("#journeyPane").addEventListener("click", ev => { const c = ev.target.closest("[data-stage]"); if (c) showStage(c.dataset.stage); });
+
+  // Level 2: the router as a ranked list, in code order (built from the code).
+  let ladIdx = Math.min(store.get("ladder", 0), DATA.ladders.length - 1);
+  function renderLadder() {
+    const L = DATA.ladders[ladIdx];
+    let h = `<div class="pane-inner"><p class="eyebrow">Level 2 · the reply ladder</p>
+      <h2 class="lead">The order the bot checks things in</h2>
+      <p class="sub">When a message arrives the bot walks down this list. The first rung that matches sends its reply and the turn ends, so a rung wins over everything below it. The order is read from the code on every build. Dashed rungs always run and never answer on their own.</p>
+      <div class="lad-pick" role="tablist">${DATA.ladders.map((l, i) => `<button class="tab" data-lad="${i}" aria-selected="${i === ladIdx}">${esc(l.title)} · ${l.rungs.length}</button>`).join("")}</div>`;
+    let lastSec = null;
+    L.rungs.forEach((r, i) => {
+      const n = byId.get(r.node);
+      if (n.section !== lastSec) { h += `<div class="rung-group">${esc(secById.get(n.section).title)}</div>`; lastSec = n.section; }
+      // Outcomes only: an edge that just hands on to the next rung, or to a
+      // plain step in the same section, is the ladder itself, not a result.
+      const rungIds = new Set(L.rungs.map(x => x.node));
+      const outs = (outE.get(n.id) || []).filter(e => {
+        const t = byId.get(e.to);
+        return e.kind !== "no" && !rungIds.has(e.to) &&
+          !(t.section === n.section && ["step", "data", "trigger", "ai_write", "wait"].includes(t.kind));
+      });
+      const always = ["step", "trigger", "data", "ai_write"].includes(n.kind) && !outs.some(e => ["send", "email"].includes(byId.get(e.to).kind));
+      const then = outs.map(e => {
+        const t = byId.get(e.to), line = firstLine(t);
+        return `<span class="to"><span>→</span><span>${e.label ? esc(e.label) + ": " : ""}<b>${esc(t.label)}</b>${t.section !== n.section ? ` <span class="where">${esc(secById.get(t.section).title)}</span>` : ""}</span></span>` +
+          (line && ["send", "email", "ai_write"].includes(t.kind) ? `<span class="say1">${phs(line)}</span>` : "");
+      }).join("");
+      h += `<button class="rung${always ? " always" : ""}" data-go="${esc(n.id)}" id="rung-${esc(n.id)}"><span class="num">${i + 1}</span>
+        <span class="body"><span class="when"><span class="lbl"><span class="kindsw" style="background:var(--ks-${n.kind})"></span>${esc(n.label)}</span>
+        ${n.example ? `<span class="ex">e.g. <q>${esc(n.example)}</q></span>` : ""}</span>
+        <span class="then">${then || `<span class="ex">${always ? "always runs, then the next rung" : "carries on to the next rung"}</span>`}</span></span></button>`;
+    });
+    $("#ladderPane").innerHTML = h + `</div>`;
+  }
+  function markRung(id) {
+    document.querySelectorAll(".rung.hit").forEach(x => x.classList.remove("hit"));
+    const r = document.getElementById("rung-" + id);
+    if (r) { r.classList.add("hit"); r.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  }
+  $("#ladderPane").addEventListener("click", ev => {
+    const l = ev.target.closest("[data-lad]");
+    if (l) { ladIdx = +l.dataset.lad; store.set("ladder", ladIdx); renderLadder(); return; }
+    const g = ev.target.closest("[data-go]"); if (g) go(g.dataset.go, true);
+  });
+
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const phs = s => esc(s).replace(/\{[^{}\n]{1,80}\}/g, m => `<span class="ph">${m}</span>`);
+  let localRoot = store.get("root", DATA.localRoot);
+  function ghLink(l) { return `${DATA.repo}${l.file}#L${l.line}${l.end && l.end !== l.line ? "-L" + l.end : ""}`; }
+  function vsLink(l) { return `vscode://file/${localRoot.replace(/\\/g, "/").replace(/\/$/, "")}/${l.file}:${l.line}`; }
+
+  function showPanel(n) {
+    const k = DATA.kinds[n.kind], sec = secById.get(n.section);
+    const nLines = n.copy.reduce((a, c) => a + c.texts.length, 0);
+    let h = `<div class="top"><div><span class="kind" style="color:var(--ks-${n.kind});border-color:var(--ks-${n.kind});background:var(--kf-${n.kind})">${esc(k.label)}</span>
+      <div class="sec">${esc(sec.title)}</div></div><button class="x" id="closeP" aria-label="Close">✕</button></div>
+      <h2>${esc(n.label)}</h2><div class="id">#${esc(n.id)}</div>`;
+    if (mode !== "map") h += `<p style="margin:10px 0 0"><button class="btn" data-map="${esc(n.id)}">Show on the full map</button></p>`;
+    if (n.example) h += `<p class="sec">Typical message: <q>${esc(n.example)}</q></p>`;
+    if (n.note) h += `<p class="note">${esc(n.note)}</p>`;
+    if (n.copy.length) {
+      h += `<h3>Exact wording <span class="ct">${nLines}</span></h3>
+        <p class="caveat">As written in the code, read on every build. <span class="ph">{…}</span> is filled in per lead. Every WhatsApp send still passes the outbound chain (no dashes, “we” not “the plumber”, one question).</p>`;
+      n.copy.forEach(c => {
+        h += `<div class="copyg"><div class="src"><span>${esc(c.source)}${c.via ? ` <span title="sent by">via ${esc(c.via)}</span>` : ""}</span>
+          <a href="${DATA.repo}${c.file}#L${c.line}" target="_blank" rel="noopener">${esc(c.file.split("/").pop())}:${c.line}</a></div>`;
+        c.texts.forEach(t => {
+          const long = t.length > 600;
+          h += `<div class="say${long ? " long" : ""}">${phs(t)}<button data-copy="${esc(t)}">copy</button></div>`;
+        });
+        h += `</div>`;
+      });
+    }
+    if (n.code.length) {
+      h += `<h3>Where in the code <span class="ct">${n.code.length}</span></h3><div class="locs">`;
+      n.code.forEach(l => {
+        h += `<div class="loc"><span class="f">${esc(l.file)}:${l.line}${l.end !== l.line ? "–" + l.end : ""}</span>
+          <span class="ln"><a href="${ghLink(l)}" target="_blank" rel="noopener">GitHub</a><a href="${vsLink(l)}">VS Code</a></span>
+          <span class="nm">${esc(l.name)}${l.anchor ? " · “" + esc(l.anchor) + "”" : ""}</span></div>`;
+      });
+      h += `</div>`;
+      if (n.excerpt) {
+        const lines = n.excerpt.text.split("\n").map((t, i) => `<span class="cl"><i>${n.excerpt.start + i}</i>${esc(t)}</span>`).join("");
+        h += `<details class="src-x"><summary>Source · ${esc(n.excerpt.file)}:${n.excerpt.start}${n.excerpt.truncated ? " (first " + n.excerpt.text.split("\n").length + " lines)" : ""}</summary><pre>${lines}</pre></details>`;
+      }
+    }
+    const nb = (list, dirKey, title) => {
+      if (!list || !list.length) return "";
+      let s = `<h3>${title} <span class="ct">${list.length}</span></h3><div class="nb">`;
+      list.forEach(e => {
+        const o = byId.get(e[dirKey]);
+        s += `<button data-go="${esc(o.id)}"><span class="sw" style="background:var(--ks-${o.kind})"></span>${esc(o.label)}
+          <span class="el">${esc(e.label || "")}${o.section !== n.section ? (e.label ? " · " : "") + esc(secById.get(o.section).title) : ""}</span></button>`;
+      });
+      return s + `</div>`;
+    };
+    h += nb(outE.get(n.id), "to", "Leads to") + nb(inE.get(n.id), "from", "Comes from");
+    h += `<label class="rootset">Your local repo folder (for the VS Code links)<input id="rootIn" value="${esc(localRoot)}" spellcheck="false"></label>`;
+    const p = $("#panel"); p.innerHTML = h; p.hidden = false; p.scrollTop = 0;
+  }
+  $("#panel").addEventListener("click", ev => {
+    const c = ev.target.closest("[data-copy]");
+    if (c) {
+      const txt = c.getAttribute("data-copy");
+      const done = () => { c.textContent = "copied"; setTimeout(() => c.textContent = "copy", 1200); };
+      try { navigator.clipboard.writeText(txt).then(done, () => selectText(c.parentNode)); } catch (e) { selectText(c.parentNode); }
+      return;
+    }
+    const mp = ev.target.closest("[data-map]");
+    if (mp) { const id = mp.dataset.map; setMode("map"); go(id, true); return; }
+    const sm = ev.target.closest("[data-stagemap]");
+    if (sm) {
+      // A stage's steps lit up on the whole board, everything else dimmed.
+      const st = DATA.journey.find(x => x.id === sm.dataset.stagemap);
+      setMode("map"); if (view !== "all") setView("all");
+      hits = new Set(st.nodes); kindFilter = null; applyState(); fit(true); $("#panel").hidden = true;
+      return;
+    }
+    const sg = ev.target.closest("[data-stage]"); if (sg) { showStage(sg.dataset.stage); return; }
+    const g = ev.target.closest("[data-go]"); if (g) { go(g.getAttribute("data-go"), true); return; }
+    if (ev.target.closest("#closeP")) { select(null); document.querySelectorAll(".stage-card").forEach(c => c.setAttribute("aria-pressed", false)); }
+  });
+  $("#panel").addEventListener("change", ev => {
+    if (ev.target.id === "rootIn") { localRoot = ev.target.value.trim() || DATA.localRoot; store.set("root", localRoot); if (selected) showPanel(byId.get(selected)); }
+  });
+  function selectText(node) { const r = document.createRange(); r.selectNodeContents(node); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+  /* ── Sections, legend, search ── */
+  function setView(v, keep) {
+    view = v; store.set("view", v);
+    document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c.dataset.v === v));
+    render(); if (!keep) fit(false);
+  }
+  (function chips() {
+    const box = $("#chips");
+    const mk = (v, t, n) => { const b = document.createElement("button"); b.className = "chip"; b.dataset.v = v; b.innerHTML = `${esc(t)}<span class="n">${n}</span>`; b.onclick = () => setView(v); box.appendChild(b); };
+    mk("all", "Everything", DATA.nodes.length);
+    DATA.sections.forEach(s => mk(s.id, s.title, DATA.nodes.filter(n => n.section === s.id).length));
+  })();
+  (function legend() {
+    const box = $("#legend");
+    let h = `<h2>Shapes</h2>`;
+    for (const [k, v] of Object.entries(DATA.kinds)) {
+      const c = DATA.nodes.filter(n => n.kind === k).length;
+      h += `<button class="row" data-kind="${k}" title="${esc(v.meaning)}"><svg class="k-${k}" data-shape="${k}"></svg><span class="lk">${esc(v.label)}</span><span class="lc">${c}</span></button>`;
+    }
+    h += `<div class="edges">
+      <div><svg width="38" height="8"><path d="M0 4H38" stroke="var(--edge)" stroke-width="1.4"/></svg>the flow, yes</div>
+      <div><svg width="38" height="8"><path d="M0 4H38" stroke="var(--edge)" stroke-width="1.4" stroke-dasharray="4 4"/></svg>no, falls through</div>
+      <div><svg width="38" height="8"><path d="M0 4H38" stroke="var(--accent)" stroke-width="2"/></svg>loops back / hands off</div>
+      <div><svg width="38" height="8"><path d="M0 4H38" stroke="var(--edge-faint)" stroke-width="1.4" stroke-dasharray="2 5"/></svg>crosses sections</div></div>
+      <p class="hint">Tap a shape above to highlight every node of that kind. Tap a node for its exact wording.</p>`;
+    box.innerHTML = h;
+    box.querySelectorAll("svg[data-shape]").forEach(s => {
+      const k = s.dataset.shape; const g = shape(k, k === "decision" || k === "loop" || k === "end" ? 30 : 36, k === "decision" ? 20 : 17);
+      g.setAttribute("transform", "translate(19,11)"); s.appendChild(g);
+    });
+    box.addEventListener("click", ev => {
+      const r = ev.target.closest(".row"); if (!r) return;
+      kindFilter = kindFilter === r.dataset.kind ? null : r.dataset.kind;
+      box.querySelectorAll(".row").forEach(x => x.setAttribute("aria-pressed", x.dataset.kind === kindFilter));
+      applyState();
+    });
+    const shown = store.get("legend", window.innerWidth > 760);
+    box.hidden = !shown; $("#legendBtn").setAttribute("aria-pressed", shown);
+  })();
+  $("#legendBtn").onclick = () => { const b = $("#legendBtn"), on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); $("#legend").hidden = !on; store.set("legend", on); };
+  $("#fitBtn").onclick = () => fit(true);
+  $("#zfit").onclick = () => fit(true);
+  $("#zin").onclick = () => zoomAt(1.25);
+  $("#zout").onclick = () => zoomAt(0.8);
+
+  const hay = DATA.nodes.map(n => ({ n, t: [n.label, n.id, n.note, ...n.code.map(l => l.name + " " + l.file), ...n.copy.flatMap(c => [c.source, ...c.texts])].join(" \u0001 ").toLowerCase() }));
+  const q = $("#q"), res = $("#results"); let resSel = 0, resList = [];
+  function search() {
+    const s = q.value.trim().toLowerCase();
+    if (!s) { res.hidden = true; hits = new Set(); applyState(); return; }
+    const terms = s.split(/\s+/);
+    resList = hay.filter(h => terms.every(t => h.t.includes(t))).map(h => h.n)
+      .sort((a, b) => (b.label.toLowerCase().includes(s)) - (a.label.toLowerCase().includes(s)));
+    hits = new Set(resList.map(n => n.id)); applyState();
+    resSel = 0;
+    res.innerHTML = resList.length ? resList.slice(0, 40).map((n, i) =>
+      `<button data-go="${esc(n.id)}" aria-selected="${i === 0}"><span class="sw" style="background:var(--ks-${n.kind})"></span><span class="rl">${esc(n.label)}</span><span class="rs">${esc(secById.get(n.section).title)} · ${esc(DATA.kinds[n.kind].label)}</span></button>`).join("")
+      : `<div class="empty">Nothing on the map matches “${esc(q.value)}”.</div>`;
+    res.hidden = false;
+  }
+  q.addEventListener("input", search);
+  q.addEventListener("keydown", ev => {
+    const bs = res.querySelectorAll("button");
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault(); if (!bs.length) return;
+      resSel = (resSel + (ev.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length;
+      bs.forEach((b, i) => b.setAttribute("aria-selected", i === resSel)); bs[resSel].scrollIntoView({ block: "nearest" });
+    } else if (ev.key === "Enter" && bs[resSel]) { go(bs[resSel].dataset.go, true); res.hidden = true; }
+    else if (ev.key === "Escape") { q.value = ""; search(); q.blur(); }
+  });
+  res.addEventListener("click", ev => { const b = ev.target.closest("[data-go]"); if (b) { go(b.dataset.go, true); res.hidden = true; } });
+  document.addEventListener("click", ev => { if (!ev.target.closest(".search")) res.hidden = true; });
+  document.addEventListener("keydown", ev => {
+    if (ev.target.matches("input")) return;
+    if (ev.key === "/") { ev.preventDefault(); q.focus(); }
+    else if (ev.key === "Escape") select(null);
+    else if (ev.key === "f" && mode === "map") fit(true);
+  });
+
+  const nCopy = DATA.nodes.reduce((a, n) => a + n.copy.reduce((b, c) => b + c.texts.length, 0), 0);
+  $("#stats").textContent = `${DATA.journey.length} stages · ${DATA.ladders[0].rungs.length} rungs · ${DATA.nodes.length} steps · ${nCopy} customer lines`;
+
+  // Deep links: #journey / #ladder / #map pick a view; a step id opens that
+  // step in the stored view; a stage id opens that stage on the journey.
+  function start() {
+    $("#loading").hidden = true;
+    if (!secById.has(view) && view !== "all") view = "all";
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (["journey", "ladder", "map"].includes(hash)) mode = hash;
+    if (DATA.journey.some(s => s.id === hash)) mode = "journey";
+    setMode(mode);
+    if (byId.has(hash)) go(hash, false);
+    else if (DATA.journey.some(s => s.id === hash)) showStage(hash);
+  }
+  window.addEventListener("hashchange", () => { const h = decodeURIComponent(location.hash.slice(1)); if (byId.has(h) && h !== selected) go(h, true); });
+  let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (mode === "map" && !selected) fit(false); }, 150); });
+  (document.fonts && document.fonts.ready ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve()).then(start);
+})();
+</script>

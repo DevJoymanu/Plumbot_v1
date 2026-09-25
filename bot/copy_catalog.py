@@ -81,8 +81,19 @@ NAME_ASK_AFTER_BOOKING = (
 )
 
 # The area ask when the lead said "no" to something else first, so it opens by
-# accepting that answer before moving on.
+# accepting that answer before moving on. Only after a bare no: said after
+# "Tub" it read as though the lead had apologised for something (owner,
+# 2026-09-25). `photo_ask.area_ask` picks between these three.
 AREA_ASK_AFTER_NO = "All good, what area are you in?"
+
+# The area ask after the lead has just named the job: a plain acknowledgement
+# that names it back ("Got it, a tub."), then the question. {job} is the
+# fixture in the lead's own word, with its article, from `photo_ask.area_ask`.
+AREA_ASK_AFTER_JOB = "Got it, {job}. What area are you in?"
+
+# The area ask when nothing short can be named back (a long description, or
+# the lead's last message was not the job).
+AREA_ASK_PLAIN = "Got it. What area are you in?"
 
 # The area ask on the media and plan paths, where the lead has just sent
 # something and "What area are you in?" reads abrupt.
@@ -272,6 +283,20 @@ PRICE_CHOICE_ASK = (
     "Would you rather get a personalised quote from a quick look at the space, "
     "or a quote online first?"
 )
+# The same three in Shona, so a Shona lead with the three fields is offered
+# the online door too (the sequence used to be English only, and a Shona lead
+# got a price block with no choice). Not in the 2026-09-23 drafts file:
+# written in its style and PENDING the owner's native-speaker check. The
+# choice answer is read by price_guide.read_choice, which already knows
+# "muuye" / "pa online".
+PRICE_GUIDE_INTRO_SN = "Heino price guide yedu, ine mabasa atakamboita nemitengo yekutangira."
+PRICE_GUIDE_ALREADY_SENT_SN = (
+    "Mitengo yekutangira iri mu price guide yatatumira pamusoro apa."
+)
+PRICE_CHOICE_ASK_SN = (
+    "Mungada quote yenyu chaiyo tauya kuzotarisa nzvimbo, kana kuti quote pa "
+    "online kutanga?"
+)
 
 # A deferred lead asks for the portfolio on WhatsApp AGAIN after it went out.
 # Answered where they are, not with the next scripted step: it is the PDF in the
@@ -416,6 +441,51 @@ ONLINE_QUOTE_STILL_OPEN_NAMELESS = (
 # line, then the online quote, then the plumber's link and number.
 FIRM_PRICE_NO_GUESS = "We'd rather not guess. A quick look and you get a firm price."
 FIRM_PRICE_ONLINE = "Or if it's easier, send a few photos for a free online quote first."
+
+# The same second door in Shona, so a Shona lead who hesitates is not left
+# with only the visit (it used to go unanswered: hesitation.py held anything
+# that did not read as English). Taken from docs/drafts/shona-drafts-2026-09-23.md
+# (#7 to #14); the nameless, number and link-form variants that file lacks
+# follow the same wording. PENDING the owner's native-speaker check: correct a
+# line here and every Shona handoff picks it up. Speaks as WE at source,
+# because speak_as_we only rewrites English. Built by bot/hesitation.py and
+# plumber_link.portfolio_handoff(shona=True).
+HESITATION_ACK_SN = "Hapana kumanikidzana pakuuya kwedu."
+PORTFOLIO_HANDOFF_FREE_FIRST_SN = (
+    "Munogona kutanga kuwana quote yemahara pa online. Hapana anofanira kuuya."
+)
+PORTFOLIO_HANDOFF_WHO_SN = (
+    "Tumirai {who} mifananidzo, zviyero kana plan, muchawana mutengo "
+    "wakadonongodzwa uri paPDF."
+)
+PORTFOLIO_HANDOFF_WHO_NAMELESS_SN = (
+    "Tumirai mifananidzo, zviyero kana plan kunhamba iri pazasi, muchawana "
+    "mutengo wakadonongodzwa uri paPDF."
+)
+PORTFOLIO_HANDOFF_CERTAINTY_SN = (
+    "Nenzira iyi munoziva mutengo chaiwo musati masarudza chero chinhu."
+)
+# {whose} is "yaTakudzwa" with a name, "yedu yequotes" without one.
+PORTFOLIO_LINK_LONG_SN = (
+    "Link iyi inovhura WhatsApp {whose} ine ruzivo rwenyu rwakatonyorwa, "
+    "ndosaka yakareba."
+)
+PORTFOLIO_LINK_DETAILS_SN = "Link iyi inovhura WhatsApp {whose} ine ruzivo rwenyu rwakatonyorwa."
+PORTFOLIO_LINK_READY_SN = "Link iyi inovhura WhatsApp {whose} ine meseji yakagadzirira kutumirwa."
+HANDOFF_NUMBER_OF_SN = "Nhamba ya{who}: {number}"
+HANDOFF_NUMBER_SN = "Nhamba: {number}"
+ONLINE_QUOTE_STILL_OPEN_SN = (
+    "Hapana dambudziko. Munogona kutanga mawana quote yemahara pa online: "
+    "tumirai mifananidzo, zviyero kana plan kuna {who} pa {number}."
+)
+ONLINE_QUOTE_STILL_OPEN_NAMELESS_SN = (
+    "Hapana dambudziko. Munogona kutanga mawana quote yemahara pa online: "
+    "tumirai mifananidzo, zviyero kana plan pa {number}."
+)
+FIRM_PRICE_NO_GUESS_SN = "Hatidi kufungidzira. Tikangotarisa, munowana mutengo chaiwo."
+FIRM_PRICE_ONLINE_SN = (
+    "Kana zviri nyore, tumirai mifananidzo muwane quote yemahara pa online."
+)
 
 # THE availability ask with two real slots (owner wording, 2026-09-23). Sent
 # straight after the proof photos once the area is in, and on its own: the

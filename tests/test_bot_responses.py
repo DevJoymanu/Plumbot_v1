@@ -1961,14 +1961,55 @@ try:
          and "Tub: supply from US$80" not in _fs),
         got=_fs,
     )
-    # Without the standalone word the tub stays built-in and basin still shows.
+    # tub tier (owner decision 4A): no type named shows BOTH tubs, each named.
+    # This case used to pin built-in only, before 4A; the basin still shows.
     _bi = _FakeSelfCombined()._build_combined_price_reply(
         "how much for a tub and sink", "english",
     )
     results.log(
-        "combined reply: plain tub stays built-in; basin flat price shown",
-        "US$160 in total" in _bi and "US$70" in _bi and "US$670" not in _bi,
+        "combined reply: untyped tub shows built-in AND freestanding, both named",
+        ("Built-in tub: supply from US$80" in _bi and "Freestanding tub:" in _bi
+         and "US$670" in _bi and "US$70" in _bi),
         got=_bi,
+    )
+    # A plain tub word IS the built-in: only that tub, and named.
+    _pl = _FakeSelfCombined()._build_combined_price_reply(
+        "how much for a normal tub and sink", "english",
+    )
+    results.log(
+        "combined reply: 'normal tub' prices the built-in only",
+        "US$160 in total" in _pl and "US$670" not in _pl,
+        got=_pl,
+    )
+    # Barmak lead 1236 (2026-09-25): "Tub", then a bare "How much". The reply
+    # priced the built-in and called it "tub"; freestanding is 3x that.
+    class _FakeApptTub:
+        project_description = "Tub"
+        conversation_history = []
+        def save(self, update_fields=None):
+            pass
+    _one = _FakeSelfCombined(appointment=_FakeApptTub())._build_combined_price_reply(
+        "How much", "english", with_followup=False,
+    )
+    results.log(
+        "combined reply: 'Tub' then 'How much' names built-in and gives freestanding",
+        ("Starting price per built-in tub:" in _one
+         and "A freestanding tub is from US$670 all-in" in _one),
+        got=_one,
+    )
+    # The type they named earlier holds on a bare "How much".
+    class _FakeApptFsTub:
+        project_description = "freestanding tub"
+        conversation_history = []
+        def save(self, update_fields=None):
+            pass
+    _fsd = _FakeSelfCombined(appointment=_FakeApptFsTub())._build_combined_price_reply(
+        "How much", "english", with_followup=False,
+    )
+    results.log(
+        "combined reply: a freestanding tub described earlier prices freestanding only",
+        "freestanding tub" in _fsd and "US$670" in _fsd and "US$160" not in _fsd,
+        got=_fsd,
     )
 except Exception as e:
     results.log("_build_combined_price_reply", False, got=str(e))
@@ -3370,9 +3411,10 @@ try:
     # using the EXACT approved script — never a paraphrase, never a price.
     _adv_area = _FakeSelfFollowup("area")._advance_after_scope("english")
     _adv_none = _FakeSelfFollowup("project_description")._advance_after_scope("english")
+    # With no job on this fake, the script is the plain ack (photo_ask.area_ask).
     results.log(
         "advance after scope: area uses the exact script (not a paraphrase), no price",
-        _adv_area == "All good, what area are you in?" and "US$" not in _adv_area
+        _adv_area == "Got it. What area are you in?" and "US$" not in _adv_area
         and _adv_none is None,
         got=f"area={_adv_area!r} none={_adv_none!r}",
     )
@@ -13383,7 +13425,13 @@ try:
                       ('Come and see it', 'visit'), ('the first one', 'visit'),
                       ('whatsapp is fine', 'online'), ('send photos here', 'online'),
                       ('ndoda kuti muuye', 'visit'), ('either is fine', ''),
-                      ('come and look, or online', '')):
+                      ('come and look, or online', ''),
+                      # A bare yes is the visit, the first option (owner,
+                      # 2026-09-25; Barmak 1236 got the question again). An
+                      # acknowledgement is not a choice.
+                      ('Yes', 'visit'), ('yes please', 'visit'), ('Hongu', 'visit'),
+                      ('Yes\nyes', 'visit'), ('yes online', 'online'),
+                      ('ok', ''), ('Thanks', ''), ('yes but how long does it take', '')):
         results.log("price guide: %r reads as %r" % (_q, _want or 'no choice'),
                     _pgd.read_choice(_q) == _want, got=_pgd.read_choice(_q))
     _pg_bot = _hb_types.SimpleNamespace(
@@ -13739,6 +13787,52 @@ except Exception as e:
     import traceback as _tb
     results.log("photo ask", False, got=_tb.format_exc()[-600:])
 
+# -- area ask: the ack fits what they said (owner, 2026-09-25) ---------------------
+# Barmak lead 1236 typed "Tub" and got "All good, what area are you in?", which
+# read as though they had apologised. "All good," is now only for a bare no; a
+# short job just named is said back ("Got it, a tub."); else a plain "Got it.".
+try:
+    import types as _aa_types
+    from bot.photo_ask import area_ask as _aa, add_photo_ask as _aa_photo
+    from bot.controller_templates import question_without_ack as _aa_strip
+    def _aa_lead(desc, last):
+        return _aa_types.SimpleNamespace(
+            project_description=desc, status='pending', has_plan=None, plan_status='',
+            project_type='', conversation_history=[{'role': 'user', 'content': last}])
+    _AREA_ASK_CASES = [
+        ("Tub", "Tub", "Got it, a tub. What area are you in?"),
+        ("new tub", "new tub", "Got it, a new tub. What area are you in?"),
+        ("Blocked drain", "Blocked drain", "Got it, a blocked drain. What area are you in?"),
+        ("geyser", "Geyser", "Got it, a geyser. What area are you in?"),
+        ("leaking taps", "leaking taps", "Got it, leaking taps. What area are you in?"),
+        ("tub and toilet", "tub and toilet", "Got it, a tub and a toilet. What area are you in?"),
+        ("bath", "bath", "Got it, a bath. What area are you in?"),
+        # A long description is not squeezed into the ack.
+        ("I want to renovate my whole bathroom and add a tub", "I want to renovate my whole bathroom and add a tub",
+         "Got it. What area are you in?"),
+        # Their last message was not the job: nothing named back.
+        ("Tub", "Pictures", "Got it. What area are you in?"),
+        # A bare no keeps the owner's "All good,".
+        ("Tub", "No", "All good, what area are you in?"),
+        ("Tub", "Alright\nnope", "All good, what area are you in?"),
+    ]
+    for _d, _last, _want in _AREA_ASK_CASES:
+        _got = _aa(_aa_lead(_d, _last))
+        results.log(f"area ask: '{_d[:24]}' after '{_last[:14]}'", _got == _want,
+                    expected=_want, got=_got)
+    # Riding behind our own copy, the whole ack sentence goes, not just "Got it,".
+    _s = _aa_strip("Got it, a tub. What area are you in?")
+    results.log("area ask: question_without_ack drops the whole named ack",
+                _s == "What area are you in?", got=_s)
+    # The photo request still slots in between the ack and the area question.
+    _p, _pa_ok = _aa_photo("Got it, a tub. What area are you in?", _aa_lead("Tub", "Tub"), "Tub")
+    results.log("area ask: the photo ask still fronts the area question",
+                _pa_ok and _p.startswith("Got it, a tub. May you send us")
+                and _p.endswith("What area are you in?"), got=_p)
+except Exception as e:
+    import traceback as _tb
+    results.log("area ask", False, got=_tb.format_exc()[-600:])
+
 # -- after a photo: say what we saw, then the real slots (owner 9A/10A) ---------
 # The spec's #1166: "Thanks, I see the materials list" and then a question the
 # list had answered. Now the ack names what vision reported (never a guess, no
@@ -13799,6 +13893,23 @@ try:
     results.log("hesitation: an exact-figure push is recognised",
                 _exact("how much exactly?") and _exact("just give me the exact price")
                 and not _exact("how much is a tub?"))
+    # Shona: the same signals, the same boundaries. A Shona lead who hesitated
+    # was held back entirely (English only) and offered only the visit again.
+    for _m in ("Hamugone kungondipa quote here?", "Munofanira kuuya here?",
+               "Ndingatumira mifananidzo here?", "Handidi kuti muuye parizvino"):
+        results.log(f"hesitation: Shona {_m!r} is reluctance, anywhere",
+                    _hes(_m, _cold, shona=True))
+    _offered_sn = _h_types.SimpleNamespace(conversation_history=[{'role': 'assistant', 'content':
+        "Zvakanaka, mangwana na9am kana China na2pm, ndeipi inokukodzerai, kuti tiuye tione nzvimbo?"}])
+    for _m in ("Hameno", "Hameno, ndichaona", "handisati ndaziva", "Pamwe"):
+        results.log(f"hesitation: Shona {_m!r} only right after a visit offer",
+                    _hes(_m, _offered_sn, shona=True) and not _hes(_m, _cold, shona=True))
+    for _m in ("Ndichaona", "mwedzi unouya", "Mangwana na9 zvakanaka", "Kwete ndatenda"):
+        results.log(f"hesitation: Shona {_m!r} is not hesitation",
+                    not _hes(_m, _offered_sn, shona=True))
+    results.log("hesitation: a Shona exact-figure push needs 'chaiwo', a bare price ask is not one",
+                _exact("Ndipei mutengo chaiwo", shona=True) and _exact("marii chaiyo?", shona=True)
+                and not _exact("marii?", shona=True) and not _exact("ndipei mutengo", shona=True))
 except Exception as e:
     import traceback as _tb
     results.log("hesitation", False, got=_tb.format_exc()[-600:])

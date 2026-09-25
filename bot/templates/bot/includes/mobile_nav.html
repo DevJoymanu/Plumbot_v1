@@ -78,6 +78,10 @@
         <a href="{% url 'billing_home' %}" class="pb-sheet__item {% if active_nav == 'billing' %}active{% endif %}">
             <i class="fas fa-file-invoice-dollar"></i> Billing
         </a>
+        {# Same gate as the sidebar's Flow Map item. #}
+        <a href="{% url 'flow_map' %}" class="pb-sheet__item {% if active_nav == 'flow_map' %}active{% endif %}">
+            <i class="fas fa-diagram-project"></i> Flow Map
+        </a>
         {% if platform_tenants|length > 1 %}
         <form method="post" action="{% url 'switch_tenant' %}" class="pb-sheet__switch">
             {% csrf_token %}

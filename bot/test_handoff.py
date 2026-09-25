@@ -970,12 +970,43 @@ class HesitationTests(OfflineTestCase):
             "Or if it's easier, send a few photos for a free online quote first."))
         self.assertIn(PLUMBER_WA, reply)
 
-    def test_never_to_a_booked_lead_a_shona_lead_or_a_real_answer(self):
+    def test_never_to_a_booked_lead_or_a_real_answer(self):
         booked = self._lead(status='confirmed')
         self.assertIsNone(self._reply(booked, "Can't you just quote?"))
-        self.assertIsNone(self._reply(self._lead(), 'Hameno, ndichaona'))
+        self.assertIsNone(self._reply(booked, 'Hameno, ndichaona'))
         self.assertIsNone(self._reply(self._lead(), 'Tomorrow at 9am works'))
         self.assertIsNone(self._reply(self._lead(), 'next month'))
+        # "I'll see" on its own is the brush-off path, in Shona as in English.
+        self.assertIsNone(self._reply(self._lead(), 'Ndichaona'))
+
+    def test_a_shona_lead_who_hesitates_gets_the_online_quote_in_shona(self):
+        """A Shona lead who hesitated used to be held back entirely (English
+        only), and was offered nothing but the visit again."""
+        from bot import copy_catalog as cc
+        reply = self._reply(self._lead(), 'Hameno, ndichaona')
+        self.assertTrue(reply.startswith(cc.HESITATION_ACK_SN), reply)
+        self.assertIn(cc.PORTFOLIO_HANDOFF_FREE_FIRST_SN, reply)
+        self.assertIn(PLUMBER_WA, reply)
+        self.assertTrue(reply.rstrip().endswith('+263774819901'))
+        self.assertNotIn('No pressure', reply)
+        # Reluctance anywhere, no visit offer needed.
+        lead = make_lead(7591)
+        lead.add_conversation_message('assistant', 'Muri kupi?')
+        self.assertIsNotNone(self._reply(lead, 'Munofanira kuuya here?'))
+
+    def test_a_shona_exact_figure_push_gets_the_shona_no_guess_lines(self):
+        from bot import copy_catalog as cc
+        reply = self._reply(self._lead(), 'Ndipei mutengo chaiwo')
+        self.assertTrue(reply.startswith(
+            f'{cc.FIRM_PRICE_NO_GUESS_SN}\n{cc.FIRM_PRICE_ONLINE_SN}'), reply)
+        self.assertIn(PLUMBER_WA, reply)
+
+    def test_a_shona_lead_who_has_the_link_gets_the_short_shona_line(self):
+        lead = self._lead(internal_notes=LINK_SENT_TAG)
+        reply = self._reply(lead, 'Munofanira kuuya here?')
+        self.assertIn('Munogona kutanga mawana quote yemahara', reply)
+        self.assertIn('+263774819901', reply)
+        self.assertNotIn(PLUMBER_WA, reply)
 
 
 class NearDateContactTests(OfflineTestCase):

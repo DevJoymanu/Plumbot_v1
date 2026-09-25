@@ -37,4 +37,10 @@ set -e
 echo "[start.sh] web role: migrate + collectstatic + gunicorn"
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
+# The flow map served at /platform/flow-map/ is built from the code being
+# deployed, so it always describes what is running (docs/flow/). A failed
+# build must never stop the site booting: the page then builds itself on
+# first view, or says which pointer broke.
+python docs/flow/build_flow_map.py --html docs/flow/plumbot-flow.html \
+    || echo "[start.sh] flow map build failed; /platform/flow-map/ will report why"
 exec gunicorn Plumbing_CRM.wsgi

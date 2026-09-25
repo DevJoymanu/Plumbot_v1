@@ -85,6 +85,11 @@
             <i class="fas fa-file-invoice-dollar nav-icon"></i>
             Billing
         </a>
+        {# The flow map: the journey, reply ladder and full map of the bot, built from the deployed code. Mirrored in mobile_nav.html (MobileParityTests). #}
+        <a href="{% url 'flow_map' %}" class="pb-sidenav__item {% if active_nav == 'flow_map' %}active{% endif %}">
+            <i class="fas fa-diagram-project nav-icon"></i>
+            Flow Map
+        </a>
         {% endif %}
         {% if user.is_superuser and platform_tenants|length > 1 %}
         <form method="post" action="{% url 'switch_tenant' %}" class="pb-sidenav__item" style="display:block;">

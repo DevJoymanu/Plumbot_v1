@@ -169,6 +169,89 @@ def photo_line(description: str, project_type: str = '') -> str:
     return copy_catalog.PHOTO_ASK_UNCLEAR
 
 
+# ── The scripted area question: acknowledge what they actually said ────────────
+# A bare no ("no", "nope", "kwete") to whatever we asked before the area. Whole
+# line only, per line, because the debounce joins rapid taps into one turn.
+_BARE_NO_RE = re.compile(
+    r"^\s*(?:no|nope|nah|not really|no thanks|no thank you|kwete|hapana)\s*[.!]*\s*$",
+    re.IGNORECASE)
+# The lead's own word for a fixture, with its span so "shower cubicle" is not
+# also counted as "shower". Same fixtures as _FIXTURES, but the MATCHED word is
+# kept, so a lead who said "bath" is told "a bath", not "a tub".
+_JOB_NOUN_RE = re.compile(
+    r"\b(?:shower cubicles?|bath ?tubs?|tubs?|baths?|toilets?|showers?|geysers?"
+    r"|vanit(?:y|ies)|sinks?|basins?|taps?|pipes?|drains?)\b", re.IGNORECASE)
+# One word of the lead's that may ride in front of the fixture ("a new tub",
+# "a blocked drain"). A closed list, so a verb ("replace tub") is never read
+# back as though it were part of the thing's name.
+_JOB_ADJ_RE = re.compile(
+    r"\b(new|old|blocked|leaking|leaky|broken|burst|built-in|freestanding"
+    r"|corner|wall-hung|kitchen|bathroom)\s+$", re.IGNORECASE)
+
+
+def _last_user_text(appointment) -> str:
+    for turn in reversed(getattr(appointment, 'conversation_history', None) or []):
+        if isinstance(turn, dict) and turn.get('role') == 'user':
+            return str(turn.get('content') or '')
+    return ''
+
+
+def _job_named_back(description: str, last_user: str) -> str:
+    """"a tub", "a new tub and a toilet", or '' when nothing short can be named.
+
+    Only a SHORT description (six words at most) is named back, and only when
+    the lead's last message names the same fixture, i.e. they have just told
+    us. A long description cannot be squeezed into an ack without misquoting
+    it, and naming a job they said three turns ago reads as a script. At most
+    two fixtures. A plural takes no article ("taps"), "an" goes before a vowel.
+    """
+    text = ' '.join(str(description or '').split())
+    if not text or len(text.split()) > 6:
+        return ''
+    phrases, nouns = [], []
+    for m in _JOB_NOUN_RE.finditer(text):
+        noun = m.group(0).lower()
+        adj = _JOB_ADJ_RE.search(text[:m.start()])
+        phrase = f"{adj.group(1).lower()} {noun}" if adj else noun
+        # None of these fixtures ends in "s" in the singular.
+        if not noun.endswith('s'):
+            phrase = f"{'an' if phrase[0] in 'aeiou' else 'a'} {phrase}"
+        phrases.append(phrase)
+        # A stem, so "taps" in the description matches "tap" in the message
+        # and "vanities" matches "vanity".
+        nouns.append(re.sub(r'(?:ies|s)$', '', noun)[:5])
+    if not phrases or len(phrases) > 2:
+        return ''
+    said = (last_user or '').lower()
+    if not any(n and n in said for n in nouns):
+        return ''
+    return ' and '.join(phrases)
+
+
+def area_ask(appointment) -> str:
+    """The scripted first ask of the lead's area, with an ack that fits.
+
+    WHAT: "All good, what area are you in?" after a bare no; "Got it, a tub.
+    What area are you in?" when the lead has just named a short job; else
+    "Got it. What area are you in?".
+    WHY (owner, 2026-09-25): "All good," was the only opener, and after a lead
+    typed "Tub" it read as though they had apologised for something. The ack
+    should say plainly that we heard the job.
+    HOW: reads the last user turn and the stored description, nothing else, so
+    it needs no classifier and no state. English only, like the line it
+    replaces. Every opener is one `controller_templates.question_without_ack`
+    strips and `photo_ask.add_photo_ask` parses. Pinned by the "area ask"
+    cases in TEST 0.
+    """
+    last_user = _last_user_text(appointment)
+    if any(_BARE_NO_RE.match(line) for line in last_user.splitlines() if line.strip()):
+        return copy_catalog.AREA_ASK_AFTER_NO
+    job = _job_named_back(getattr(appointment, 'project_description', '') or '', last_user)
+    if job:
+        return copy_catalog.AREA_ASK_AFTER_JOB.format(job=job)
+    return copy_catalog.AREA_ASK_PLAIN
+
+
 def _already_has_media_or_plan(appointment) -> bool:
     if getattr(appointment, 'has_plan', None) is True:
         return True

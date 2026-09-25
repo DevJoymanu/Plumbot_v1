@@ -70,6 +70,24 @@ fi
 
 echo "🔒 Using interpreter: ${PY_CMD[*]}"
 
+# The flow map's Markdown (docs/flow/FLOW.md) is rebuilt from
+# docs/flow/flow_spec.py and the code on every commit and staged into it
+# (owner, 2026-09-25: the map is updated with every change). It carries no
+# line numbers, so it only changes when the flow or the customer wording
+# does, and its diff shows exactly that. The interactive page is NOT built
+# here: it is built at deploy (start.sh) and served at /platform/flow-map/.
+# The build fails, and blocks the commit, only when a pointer in
+# flow_spec.py no longer resolves; the coverage checks (new copy, new router
+# step, new cron) are in bot/test_flow_map.py below. CI runs --check.
+echo "🗺️  Rebuilding docs/flow/FLOW.md…"
+if ! PYTHONIOENCODING=utf-8 "${PY_CMD[@]}" docs/flow/build_flow_map.py --md; then
+    echo ""
+    echo "❌ Commit blocked: the flow map points at code that no longer exists."
+    echo "   Fix the pointer(s) listed above in docs/flow/flow_spec.py."
+    exit 1
+fi
+git add docs/flow/FLOW.md
+
 echo "🔒 Plumbot commit gate — running deterministic regression suite…"
 PYTHONIOENCODING=utf-8 PLUMBOT_GATE=1 "${PY_CMD[@]}" tests/test_bot_responses.py
 status=$?

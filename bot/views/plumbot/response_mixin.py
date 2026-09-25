@@ -3742,24 +3742,43 @@ class ResponseMixin:
             return f"supply from US${supply}, install from US${labour}", supply + labour
 
         def _format_labour_scope(self, scope, has_accessories: bool,
-                                 fs_tub: bool = False) -> str:
+                                 fs_tub: bool = False, both_tubs: bool = False) -> str:
             """Supply + labour broken out per fixture (the customer asked about
             labour, so the labour figure must be visible), with the line total when
             quantity > 1. One flowing line for a single fixture, a bullet list for
-            several."""
+            several.
+
+            `both_tubs` is set when the lead named no tub type (owner decision
+            4A): the built-in line is then NAMED "built-in tub" and the
+            freestanding price follows it, so a lead after a freestanding tub
+            never reads the built-in figure as theirs. Only when the tenant
+            prices a freestanding tub; with one tub on the sheet, "tub" is not
+            ambiguous and the line stays as it was. Pinned by the "tub tier"
+            combined-reply cases in TEST 0.
+            """
             acc_sentence = (" Accessories on top depending on what you go for."
                             if has_accessories else "")
+            fs_price = (self._freestanding_tub_price()
+                        if (both_tubs and not fs_tub
+                            and any(f == 'tub' for f, _ in scope)) else None)
             if len(scope) == 1:
                 family, qty = scope[0]
                 split, allin = self._labour_split_seg(family, fs_tub)
                 if allin is None:
                     return ''  # not on this tenant's price sheet
                 short = ('freestanding tub' if (family == 'tub' and fs_tub)
+                         else 'built-in tub' if (family == 'tub' and fs_price)
                          else self._SCOPE_SHORT[family])
                 each = " each" if qty > 1 else ""
                 line = (f"Starting price per {short}: {split} — "
                         f"US${allin} in total{each}." if split else
                         f"Starting price per {short}: from US${allin}.")
+                if fs_price:
+                    # The other tub, straight after, in one sentence.
+                    fs_allin, fs_split = fs_price
+                    line += (f" A freestanding tub is from US${fs_allin} all-in"
+                             + ("." if fs_split.startswith('freestanding')
+                                else f" ({fs_split})."))
                 if qty > 1:
                     line += f" For {self._num_word(qty)} that's about US${allin * qty} in total"
                     line += (", accessories on top depending on what you go for."
@@ -3772,6 +3791,7 @@ class ResponseMixin:
                 if allin is None:
                     continue  # not on this tenant's price sheet — skip the line
                 label = ('Freestanding tub' if (family == 'tub' and fs_tub)
+                         else 'Built-in tub' if (family == 'tub' and fs_price)
                          else self._SCOPE_LABEL[family].capitalize())
                 seg = f"{label}"
                 if qty > 1:
@@ -3781,6 +3801,13 @@ class ResponseMixin:
                 if qty > 1:
                     seg += f" each, {self._num_word(qty)} about US${allin * qty} in total"
                 lines.append("• " + seg)
+                if family == 'tub' and fs_price:
+                    # The freestanding tub on its own bullet, under the built-in.
+                    fs_allin, fs_split = fs_price
+                    lines.append("• Freestanding tub: "
+                                 + (f"from US${fs_allin} all-in"
+                                    if fs_split.startswith('freestanding')
+                                    else f"{fs_split} — US${fs_allin} in total"))
             return "Starting prices:\n" + "\n".join(lines) + acc_sentence
 
         # Forward-question bank, one stage per booking step. Each entry is
@@ -4089,6 +4116,13 @@ class ResponseMixin:
             # lead: "fit a standalone tab, chamber and sink" was quoted built-in.
             tub_type = self._tub_type_in_message(message)
             if tub_type is None:
+                # A bare "How much" after "freestanding tub" two turns back:
+                # the job they described names the type, and their own words
+                # outrank what a photo seems to show.
+                tub_type = self._tub_type_in_message(
+                    getattr(getattr(self, 'appointment', None), 'project_description', '') or ''
+                )
+            if tub_type is None:
                 # They pointed at a photo instead of naming the type. The picture
                 # decides the US$670-vs-US$160 line only when the customer said
                 # nothing — measured 2026-08-22, vision writes "freestanding"
@@ -4097,6 +4131,12 @@ class ResponseMixin:
                     self._recent_image_description() or ''
                 )
             fs_tub = tub_type == 'freestanding'
+            # No type named anywhere: show BOTH tubs, built-in first, each
+            # named (owner decision 4A). This path priced the built-in alone
+            # and called it "tub", so a lead after a freestanding one read
+            # US$235 against a real US$720 (Barmak lead 1236, 2026-09-25).
+            # Pinned by the "tub tier" combined-reply cases in TEST 0.
+            both_tubs = tub_type is None
 
             # Tenant with no price sheet → not handled here; the router falls
             # through and the flow deflects to the free site visit instead of
@@ -4119,7 +4159,8 @@ class ResponseMixin:
                 # split ("Supply from US$130, Install from US$30"), so a two-item
                 # answer that only gave a combined figure was the odd one out, and
                 # the label said "(supply + install)" without ever showing either.
-                body = self._format_labour_scope(scope, has_accessories, fs_tub=fs_tub)
+                body = self._format_labour_scope(scope, has_accessories, fs_tub=fs_tub,
+                                                 both_tubs=both_tubs)
                 if not body:
                     # Nothing on this tenant's sheet has a split (e.g. flat-priced
                     # items only) — fall back to the combined figures rather than
@@ -4325,7 +4366,9 @@ class ResponseMixin:
                 return scripted
             if not self.appointment.customer_area:
                 self._set_question_retry_count('area', 1)
-                return copy_catalog.AREA_ASK_AFTER_NO
+                # "All good," only after a bare no (bot/photo_ask.area_ask).
+                from bot.photo_ask import area_ask
+                return area_ask(self.appointment)
             if next_question == 'name':
                 return (
                     copy_catalog.NAME_ASK_AFTER_BOOKING
@@ -6044,13 +6087,18 @@ class ResponseMixin:
                 # what area are you in?" (the photo ask then makes it "Hi, you
                 # can send us a plan... What area are you in?"). Not "Hello,"
                 # in front of "All good, ...", which read "Hello, All good."
-                # Counted off their own turns, as below.
+                # Counted off their own turns, as below. The ack is dropped
+                # through the shared stripper, whichever opener area_ask chose
+                # ("Got it.", "Got it, a tub.", "All good,"); splitting on the
+                # first ", " only ever worked for "All good,".
                 first_turns = sum(
                     1 for m in (getattr(appt, 'conversation_history', None) or [])
                     if isinstance(m, dict) and m.get('role') == 'user'
                     and not str(m.get('content') or '').startswith('['))
                 if first_turns <= 1:
-                    return 'Hi, ' + area_q.split(', ', 1)[-1][:1].lower() + area_q.split(', ', 1)[-1][1:]
+                    from bot.controller_templates import question_without_ack
+                    bare_q = question_without_ack(area_q)
+                    return 'Hi, ' + bare_q[:1].lower() + bare_q[1:]
                 return area_q
 
             question = self._new_build_confirm_question(subject, is_shona)
@@ -6106,7 +6154,10 @@ class ResponseMixin:
                 return copy_catalog.TIME_ASK_TWO_SLOTS
 
             if next_question == "area":
-                return copy_catalog.AREA_ASK_AFTER_NO
+                # The ack fits what they just said: "All good," only after a
+                # bare no, "Got it, a tub." after the job (bot/photo_ask.area_ask).
+                from bot.photo_ask import area_ask
+                return area_ask(self.appointment)
 
             if next_question == "timeline":
                 # Only the plan path asks this, and it is the branch point:
@@ -8537,7 +8588,9 @@ class ResponseMixin:
                         return copy_catalog.TIME_ASK_TWO_SLOTS
 
                     if next_question == "area":
-                        return copy_catalog.AREA_ASK_AFTER_NO
+                        # Same ack choice as _get_first_pass_question.
+                        from bot.photo_ask import area_ask
+                        return area_ask(self.appointment)
 
                     #
                     if next_question == "name":

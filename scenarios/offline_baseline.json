@@ -343,6 +343,12 @@
     "1|expect|Corner bathtubs": true,
     "1|expect|Free-standing bathtubs": true
   },
+  "untyped_tub_names_both.txt": {
+    "1|expect|got it, a tub": false,
+    "1|reject|all good": true,
+    "3|expect|built-in tub": true,
+    "3|expect|freestanding": true
+  },
   "vague_timeframe_is_assumed.txt": {
     "0|expect|how may we assist you on plumbing services": false,
     "1|reject|US$": true,

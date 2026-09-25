@@ -41,6 +41,10 @@ _VISIT_RE = re.compile(
 _ONLINE_RE = re.compile(
     r"\b(?:online|on\s*line|whatsapp|here|chat|photos?|pictures?|pics|second\s+(?:one|option)"
     r"|2nd|option\s*2|remote(?:ly)?|pa\s*online)\b", re.IGNORECASE)
+# A bare yes to the choice: taken as the first option, the visit (read_choice).
+_BARE_YES_RE = re.compile(
+    r"^\s*(?:yes|yes please|yeah|yep|yup|ya|yah|sure|definitely|absolutely"
+    r"|hongu|ehe|ehoi)\s*[.!]*\s*$", re.IGNORECASE)
 
 
 def three_fields(appointment) -> bool:
@@ -85,20 +89,28 @@ def read_choice(message) -> str:
     """'visit', 'online', or '' when the reply does not pick one clearly.
 
     Both options named (or neither) is not a choice, so '' and the ordinary
-    flow answers what they said.
+    flow answers what they said. A bare yes ("Yes", "yes please", "hongu") is
+    the visit (owner, 2026-09-25): the quick look is the first option and the
+    one we lead with, and '' there sent Barmak lead 1236 the same question
+    again. Only a yes and nothing else, every line of a batched turn; a mere
+    acknowledgement ("ok", "thanks") is not a choice and stays ''.
     """
     text = message or ''
     visit = bool(_VISIT_RE.search(text))
     online = bool(_ONLINE_RE.search(text))
     if visit == online:
+        lines = [l for l in text.splitlines() if l.strip()]
+        if not visit and lines and all(_BARE_YES_RE.match(l) for l in lines):
+            return 'visit'
         return ''
     return 'visit' if visit else 'online'
 
 
-def intro_line(appointment) -> str:
+def intro_line(appointment, shona: bool = False) -> str:
     """The line before the PDF, or the "already sent" line when it is in the
-    chat already (the PDF is never sent twice by this flow)."""
-    from . import copy_catalog
+    chat already (the PDF is never sent twice by this flow). `shona=True`
+    gives the `_SN` pair for a Shona lead."""
+    from . import copy_catalog as cc
     if pdf_already_sent(appointment):
-        return copy_catalog.PRICE_GUIDE_ALREADY_SENT
-    return copy_catalog.PRICE_GUIDE_INTRO
+        return cc.PRICE_GUIDE_ALREADY_SENT_SN if shona else cc.PRICE_GUIDE_ALREADY_SENT
+    return cc.PRICE_GUIDE_INTRO_SN if shona else cc.PRICE_GUIDE_INTRO

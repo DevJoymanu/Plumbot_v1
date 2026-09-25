@@ -12,6 +12,7 @@ from .views import plan_quote as plan_quote_views
 from .views import phone_quote as phone_quote_views
 from .views import visit_proposal as visit_proposal_views
 from .views import short_links as short_link_views
+from .views import flow_map as flow_map_views
 from .views import (
     DashboardView, AppointmentsListView, AppointmentDetailView, PriorityLeadsView,
     settings_view, calendar_settings_view, ai_settings_view,
@@ -225,6 +226,9 @@ urlpatterns = [
 
     # Platform console (multi-tenant, §3.4) — superuser-only operator screens
     path('platform/', platform_views.platform_console, name='platform_console'),
+    # The Plumbot flow map (journey, reply ladder, full map), built from the
+    # deployed code. Superusers only: it shows source and prompts.
+    path('platform/flow-map/', flow_map_views.flow_map, name='flow_map'),
     path('platform/switch-tenant/', platform_views.switch_tenant, name='switch_tenant'),
     path('platform/tenants/create/', platform_views.platform_create_tenant, name='platform_create_tenant'),
     path('platform/tenants/<slug:slug>/timers/<str:key>/toggle/', platform_views.platform_toggle_timer, name='platform_toggle_timer'),

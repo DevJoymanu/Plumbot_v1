@@ -1842,6 +1842,22 @@ class PlatformConsoleTests(TestCase):
         self.assertEqual(len(switches), 3)
         self.assertTrue(all('checked' in s for s in switches), switches)
 
+    def test_tenant_config_flags_a_missing_plumber_number(self):
+        """Every online-quote offer needs the tenant's OWN plumber number and
+        offers nothing without it (never another tenant's), so the setup page
+        says so rather than a lead finding out by being offered only the visit."""
+        from .models import TenantProfile
+        acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['acme'])).content.decode()
+        self.assertIn('Online quote handoff', body)
+        self.assertIn('No direct line', body)
+        TenantProfile.objects.update_or_create(
+            tenant=acme, defaults={'plumber_contact': '+263771234567'})
+        body = self.client.get(
+            reverse('platform_tenant_config', args=['acme'])).content.decode()
+        self.assertNotIn('No direct line', body)
+
     def test_email_switch_defaults_off_for_every_other_tenant(self):
         from .platform_flags import email_sending_enabled
         acme = Tenant.objects.create(name='Acme Plumbing', slug='acme')
@@ -13497,3 +13513,32 @@ class BillingMarkPaidTests(TestCase):
             response = self.client.post(url, {'amount': '10', 'next': 'https://evil.example/'})
         self.assertRedirects(response, reverse('billing_invoice_detail', args=[self.invoice.pk]),
                              fetch_redirect_response=False)
+
+
+class FlowMapViewTests(TestCase):
+    """The flow map page (/platform/flow-map/, bot/views/flow_map.py).
+
+    Superusers get the interactive map built from the running code; plain
+    staff never get platform internals (it shows source and prompts).
+    """
+
+    def setUp(self):
+        self.root = get_user_model().objects.create_superuser(
+            username='maproot', password='pass12345', email='maproot@example.com')
+
+    def test_superuser_gets_the_map_with_all_three_views(self):
+        self.client.login(username='maproot', password='pass12345')
+        response = self.client.get(reverse('flow_map'))
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('<title>Plumbot Flow Map</title>', body)
+        # The journey, the ladder and the full map all ship in the data.
+        for key in ('"journey":', '"ladders":', '"nodes":'):
+            self.assertIn(key, body)
+
+    def test_staff_cannot_open_the_map(self):
+        get_user_model().objects.create_user(
+            username='mapstaff', password='pass12345', is_staff=True)
+        self.client.login(username='mapstaff', password='pass12345')
+        response = self.client.get(reverse('flow_map'))
+        self.assertIn(response.status_code, (302, 403))

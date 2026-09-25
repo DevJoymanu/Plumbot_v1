@@ -1,0 +1,20 @@
+# Barmak lead 1236 (2026-09-25): the lead typed "Tub" and got "All good, what
+# area are you in?", which read as though they had apologised. Owner,
+# 2026-09-25: a plain ack that names the job, "Got it, a tub." (the scripted
+# area ask, bot/photo_ask.area_ask; "All good," is kept for a bare no).
+# Then a bare "How much" priced the built-in tub and called it "tub", while a
+# freestanding tub costs three times as much. No tub type named shows BOTH,
+# each named (owner decision 4A): _format_labour_scope(both_tubs=True), with
+# the type also read from the stored description.
+
+> Pictures
+
+> Tub
+expect: got it, a tub
+reject: all good
+
+> Rocksville
+
+> How much
+expect: built-in tub
+expect: freestanding

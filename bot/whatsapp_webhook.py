@@ -1039,7 +1039,8 @@ def _send_reply_then_contact_card(sender, reply, delay_seconds, message_id=None,
         print(f"⚠️ Contact card to {sender} failed: {exc}")
 
 
-def _price_guide_prices(plumbot, appointment, message_body, quoted_text=None):
+def _price_guide_prices(plumbot, appointment, message_body, quoted_text=None,
+                        shona=False):
     """The approximate prices that open the price-guide sequence, or None.
 
     WHAT: (1) the highlighted photo's own price lines, every item in the
@@ -1055,7 +1056,12 @@ def _price_guide_prices(plumbot, appointment, message_body, quoted_text=None):
     of OURS that carries no price (a borehole) gets None, never prices borrowed
     from the rest of the conversation: wrong prices for the wrong job is worse
     than none (the same rule as _quoted_portfolio_price_reply).
+    `shona=True` gives a Shona lead the Shona price lines and disclaimer. The
+    photo's own price line is the tenant's English text either way, as it
+    already was in the ordinary quoted-photo reply.
     """
+    disclaimer = (copy_catalog.STARTING_PRICES_DISCLAIMER_SN if shona
+                  else copy_catalog.STARTING_PRICES_DISCLAIMER)
     if quoted_text:
         item = _quoted_portfolio_item(getattr(appointment, 'tenant', None), quoted_text)
         if item is not None:
@@ -1066,32 +1072,42 @@ def _price_guide_prices(plumbot, appointment, message_body, quoted_text=None):
                 line = (getattr(item, 'price_line', '') or '').strip()
             if not line:
                 return None
-            return f"For that photo:\n{line}\n\n{copy_catalog.STARTING_PRICES_DISCLAIMER}"
+            return f"For that photo:\n{line}\n\n{disclaimer}"
     try:
         if (plumbot._product_families_in(message_body)
                 or plumbot._context_product_families(message_body)):
             return plumbot._build_combined_price_reply(
-                message_body, language='english', with_followup=False)
+                message_body, language='shona' if shona else 'english',
+                with_followup=False)
     except Exception as exc:
         print(f"⚠️ Price-guide prices failed: {exc}")
     return None
 
 
 def _start_price_guide(sender, appointment, plumbot, message_body, message_id,
-                       tenant, quoted_text=None):
+                       tenant, quoted_text=None, shona=False):
     """Log the first message and start the price-guide sequence in its thread.
 
     Shared by STEP 1c (a price asked on a highlighted photo) and STEP 1d (any
     other price ask) for a lead with the three fields, so both run the same
     sequence: prices, then the guide line and PDF unless already sent, then
-    the online-or-visit question (see _send_price_guide).
+    the online-or-visit question (see _send_price_guide). `shona=True` sends
+    the `_SN` lines, so a Shona lead is offered the online door as well (the
+    sequence was English only and a Shona lead got a price block with no
+    choice). Pinned by PriceGuideTests.
     """
     from .price_guide import intro_line
-    prices = _price_guide_prices(plumbot, appointment, message_body, quoted_text)
-    intro_text = copy_catalog.PRICE_GUIDE_INTRO if prices else intro_line(appointment)
+    prices = _price_guide_prices(plumbot, appointment, message_body, quoted_text,
+                                 shona=shona)
+    if prices:
+        intro_text = (copy_catalog.PRICE_GUIDE_INTRO_SN if shona
+                      else copy_catalog.PRICE_GUIDE_INTRO)
+    else:
+        intro_text = intro_line(appointment, shona=shona)
     intro = finalise_outbound(intro_text, appointment, message_body, check=False)
-    question = finalise_outbound(copy_catalog.PRICE_CHOICE_ASK, appointment,
-                                 message_body, check=False)
+    question = finalise_outbound(
+        copy_catalog.PRICE_CHOICE_ASK_SN if shona else copy_catalog.PRICE_CHOICE_ASK,
+        appointment, message_body, check=False)
     if prices:
         prices = finalise_outbound(prices, appointment, message_body, check=False)
     print(f"📄 Price guide for a price ask ({'with' if prices else 'no'} prices): "
@@ -1110,8 +1126,9 @@ def _start_price_guide(sender, appointment, plumbot, message_body, message_id,
 
 def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
                       tenant=None, appointment_pk=None, prices=None):
-    """The price-guide reply in its three parts, in order: the line, the PDF,
-    then the choice question (bot/price_guide.py).
+    """The price-guide reply in its three parts, in order: the prices (or,
+    with nothing to price, the guide line), the PDF, then the choice question
+    (bot/price_guide.py). Never four: with prices, the guide line is not sent.
 
     WHY one thread: the PDF has to land BETWEEN the line that introduces it and
     the question about it, and `delayed_response` only sends text. So the line
@@ -1124,9 +1141,11 @@ def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
     """
     # With prices (owner, 2026-09-22: every price question from a lead with
     # the three fields), the prices go FIRST, as their own message, and the
-    # guide line and PDF follow only when the PDF is not already in the chat.
-    # Without prices it is the original order: the guide line, the PDF, the
-    # question. The caller logged `first` already.
+    # PDF follows only when it is not already in the chat, carrying `intro`
+    # as its caption (owner, 2026-09-25: three messages, prices, the PDF
+    # captioned "Here's our price guide, ...", the question). Without prices
+    # it is the original order: the guide line, the PDF, the question. The
+    # caller logged `first` already.
     first = prices or intro
     delayed_response(sender, first, delay_seconds, message_id, None, tenant)
     try:
@@ -1142,12 +1161,15 @@ def _send_price_guide(sender, intro, question, delay_seconds, message_id=None,
         from .out_of_scope_handler import send_lead_magnet_on_whatsapp
         from .price_guide import CHOICE_TAG, pdf_already_sent
         if not pdf_already_sent(appt):
+            # With prices, the guide line rides on the PDF as its caption
+            # instead of going as a message of its own, which made four
+            # messages (owner, 2026-09-25). Without prices the line IS the
+            # first message, so the PDF keeps its default caption.
             if prices:
-                appt.add_conversation_message("assistant", intro)
                 time.sleep(random.randint(2, 4))
-                delayed_response(sender, intro, 0, None, None, tenant)
-                appt.refresh_from_db()
-            send_lead_magnet_on_whatsapp(appt)
+                send_lead_magnet_on_whatsapp(appt, caption=intro)
+            else:
+                send_lead_magnet_on_whatsapp(appt)
         appt.refresh_from_db()
         appt.add_conversation_message("assistant", question)
         time.sleep(random.randint(2, 4))
@@ -4751,8 +4773,9 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # price is offered the free online quote ONCE, with the plumber's link
         # and number (owner decisions 1B, 6B, D, 2026-09-23). Here, early,
         # because those short strings are what the classifier and the pending
-        # delay steps misread. Deterministic (bot/hesitation.py), English only,
-        # never to a booked lead; anything it does not recognise carries on.
+        # delay steps misread. Deterministic (bot/hesitation.py), English and
+        # Shona (a Shona lead gets the `_SN` lines), never to a booked lead;
+        # anything it does not recognise carries on.
         # Pinned by the "hesitation" cases in TEST 0 and HesitationTests.
         from .hesitation import reply_for as _hesitation_reply
         _hes = _hesitation_reply(message_body, appointment)
@@ -4786,16 +4809,24 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
                               or _pg_defer(message_body))
                        else _pg_read(message_body))
             _choice_reply = None
+            # The answer comes back in the language we asked in: a lead asked
+            # PRICE_CHOICE_ASK_SN answers "pa online" or "muuye", which the
+            # detector alone reads as English (one Shona marker at most).
+            from .hesitation import _last_assistant_text as _pg_last
+            _pg_shona = (copy_catalog.PRICE_CHOICE_ASK_SN in _pg_last(appointment)
+                         or detect_language_simple(message_body) == 'shona')
             if _choice == 'online':
-                from .plumber_link import LINK_SENT_TAG, quote_offer
-                _choice_reply = quote_offer(appointment) or None
+                from .plumber_link import LINK_SENT_TAG, portfolio_handoff, quote_offer
+                # A Shona lead gets the Shona handoff; quote_offer has no Shona
+                # wording, and English was all a Shona lead could get here.
+                _choice_reply = ((portfolio_handoff(appointment, shona=True) if _pg_shona
+                                  else quote_offer(appointment)) or None)
                 if _choice_reply and LINK_SENT_TAG not in (appointment.internal_notes or ''):
                     appointment.internal_notes = (
                         f"{appointment.internal_notes or ''}\n{LINK_SENT_TAG}".strip())
                     appointment.save(update_fields=['internal_notes'])
             elif _choice == 'visit' and getattr(appointment, 'status', '') != 'confirmed':
-                _choice_reply = plumbot._availability_ask(
-                    detect_language_simple(message_body) == 'shona')
+                _choice_reply = plumbot._availability_ask(_pg_shona)
             if _choice_reply:
                 print(f"📄 Price-guide choice '{_choice}': '{message_body[:60]}'")
                 _choice_reply = finalise_outbound(_choice_reply, appointment,
@@ -5076,13 +5107,13 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         if quoted_text and _explicitly_requests_price(message_body):
             # A lead with the three fields gets the full price-guide sequence
             # instead (owner, 2026-09-22): this photo's prices, the guide PDF
-            # unless already sent, then the online-or-visit question. English
-            # only, like STEP 1d below.
+            # unless already sent, then the online-or-visit question, in Shona
+            # for a Shona lead, like STEP 1d below.
             from .price_guide import applies as _pg_applies_q
-            if (detect_language_simple(message_body) != 'shona'
-                    and _pg_applies_q(message_body, appointment, plumbot, price_asked=True)):
+            if _pg_applies_q(message_body, appointment, plumbot, price_asked=True):
                 _start_price_guide(sender, appointment, plumbot, message_body,
-                                   message_id, tenant, quoted_text=quoted_text)
+                                   message_id, tenant, quoted_text=quoted_text,
+                                   shona=detect_language_simple(message_body) == 'shona')
                 return
             _quoted_reply = _quoted_portfolio_price_reply(
                 plumbot, appointment, quoted_text, message_body)
@@ -5109,15 +5140,16 @@ def _generate_and_schedule_reply(sender: str, message_body: str, message_id=None
         # its own price block and skip the guide. Before STEP 2, because STEP 2
         # answers a classifier-labelled general ask (combined_pricing) with the
         # overview. After STEP 1b, so a delay or exit signal still wins. A
-        # highlighted photo is handled the same way in STEP 1c above. English
-        # only: a Shona lead keeps the Shona pricing reply below. Pinned by
-        # "price guide" in TEST 0, PriceGuideTests and
-        # scenarios/price_guide_after_three_fields.txt.
+        # highlighted photo is handled the same way in STEP 1c above. A Shona
+        # lead gets the same sequence in Shona (the `_SN` lines); it used to be
+        # English only, so a Shona lead got a price block and was never offered
+        # the online quote. Pinned by "price guide" in TEST 0, PriceGuideTests
+        # and scenarios/price_guide_after_three_fields.txt.
         from .price_guide import applies as _price_guide_applies
-        if (detect_language_simple(message_body) != 'shona'
-                and _price_guide_applies(message_body, appointment, plumbot)):
+        if _price_guide_applies(message_body, appointment, plumbot):
             _start_price_guide(sender, appointment, plumbot, message_body,
-                               message_id, tenant)
+                               message_id, tenant,
+                               shona=detect_language_simple(message_body) == 'shona')
             return
 
         # -- STEP 2: Service-specific pricing inquiry ---------------------------

@@ -28,6 +28,10 @@ jobs:
       TWILIO_AUTH_TOKEN: ci-dummy-twilio-token
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history, so the wording diff can check out the previous
+          # commit of the push.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -41,6 +45,25 @@ jobs:
 
       - name: Run TEST 0 gate
         run: python tests/test_bot_responses.py
+
+      # The pre-commit hook rebuilds docs/flow/FLOW.md on every commit; this
+      # catches a commit made with --no-verify (or from a clone without
+      # core.hooksPath) that changed the flow or the wording under the map
+      # without rebuilding it. Fix: python docs/flow/build_flow_map.py --md
+      - name: Flow map is current
+        run: python docs/flow/build_flow_map.py --check
+
+      # Every customer-facing line that changed in this push, in the run
+      # summary. Commits go straight to main, so this is the one place a
+      # wording change is visible before a customer reads it (owner rule: the
+      # owner's copy is never improved unasked). Informational: it never fails
+      # the build. Skipped on a branch's first push (no previous commit).
+      - name: Customer wording changed
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        continue-on-error: true
+        run: |
+          git worktree add /tmp/previous "${{ github.event.before }}"
+          python docs/flow/build_flow_map.py --wording-diff /tmp/previous >> "$GITHUB_STEP_SUMMARY"
 
       # The same Django suite the pre-commit hook runs: the dashboard
       # view/action tests plus the offline scenario replay

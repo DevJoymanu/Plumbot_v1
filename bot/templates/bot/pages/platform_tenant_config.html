@@ -166,6 +166,16 @@
         <div class="cfg-stat__value is-warn" style="font-size:18px;">Missing</div>
       {% endif %}
     </div>
+    {# Online quote handoff: every "offer the free online quote" path (hesitation, the price-guide choice, the delay flow, follow-up 2, the manual button) needs the tenant's plumber number and silently offers nothing without it, because another tenant's number is never borrowed. So a missing number is flagged here, where a tenant is set up, instead of being found by a lead who was only offered the visit. Pinned by PlatformConsoleTests.test_tenant_config_flags_a_missing_plumber_number. #}
+    <div class="cfg-stat cfg-glass">
+      <div class="cfg-stat__label">Online quote handoff <i class="fas fa-link"></i></div>
+      {% if cfg.plumber_contact %}
+        <div class="cfg-stat__value" style="font-size:18px;">Ready</div>
+      {% else %}
+        <div class="cfg-stat__value is-warn" style="font-size:18px;">No direct line</div>
+        <p class="cfg-mini-note">Leads who hesitate are only offered the visit until a direct line is set.</p>
+      {% endif %}
+    </div>
     <div class="cfg-stat cfg-glass">
       <div class="cfg-stat__label">Priced items <i class="fas fa-tags"></i></div>
       <div class="cfg-stat__value">{{ priced_items|length }}</div>

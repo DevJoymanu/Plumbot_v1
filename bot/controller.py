@@ -847,6 +847,20 @@ def decide_move(uclass, appointment):
         logger.info('%s held back: the lead is answering our budget question', move)
         return None
 
+    # The price-guide choice ("a quick look at the space, or a quote online
+    # first?") owns the turn after it, for the same reason: its reader (webhook
+    # STEP 0-b) runs AFTER this. Barmak lead 1236 (2026-09-25) answered "Yes",
+    # this drove book_visit, the reply check rewrote the close into the same
+    # choice question again, and STEP 0-b never ran, so its open tag was never
+    # cleared either. STEP 0-b reads a bare yes as the visit. PriceGuideTests.
+    try:
+        from bot.price_guide import CHOICE_TAG
+        if CHOICE_TAG in (getattr(appointment, 'internal_notes', '') or ''):
+            logger.info('%s held back: the lead is answering the price-guide choice', move)
+            return None
+    except Exception:
+        logger.warning('Could not read the price-guide choice tag', exc_info=True)
+
     # The close is made ONCE. After that the lead is answering it, and the
     # router's extraction and booking steps are what turn the answer into a
     # booking; re-rendering the close skips them and re-pitches a lead who has

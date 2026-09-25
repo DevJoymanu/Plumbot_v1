@@ -215,7 +215,7 @@ def handoff_message(appointment) -> str:
     return f'{cc.HANDOFF_LEAVE_IT_HERE}\n\n{handles}\n\n{opens}\n{link}\n\n{contact}'
 
 
-def portfolio_handoff(appointment) -> str:
+def portfolio_handoff(appointment, shona: bool = False) -> str:
     """The plumber handoff that goes WITH the portfolio in the delay flow, or ''.
 
     WHAT (owner, 2026-09-22): the free online quote offer, what the link opens and
@@ -229,43 +229,69 @@ def portfolio_handoff(appointment) -> str:
     tenant's. The link line matches the link actually sent: "why it's long"
     only for the long per-lead link, "a message ready to send" for the
     plumber's own short link, which carries no lead details.
-    Pinned by LadderCallPermissionTests.
+    `shona=True` builds the same pieces from the `_SN` catalog lines, for a
+    Shona lead who hesitates or picks "online" after the price guide (both
+    were English only, so a Shona lead was never offered the online door).
+    The link and its pre-filled message stay English: the pre-fill is written
+    to the plumber, not to the lead.
+    Pinned by LadderCallPermissionTests and HesitationTests.
     """
     link = quote_link(appointment)
     if not link:
         return ''
     cc = copy_catalog
     who = _who_handles_quotes(appointment)
-    handles = (cc.PORTFOLIO_HANDOFF_WHO.format(who=who) if who
-               else cc.PORTFOLIO_HANDOFF_WHO_NAMELESS)
+    if shona:
+        handles = (cc.PORTFOLIO_HANDOFF_WHO_SN.format(who=who) if who
+                   else cc.PORTFOLIO_HANDOFF_WHO_NAMELESS_SN)
+        lines = (cc.PORTFOLIO_HANDOFF_FREE_FIRST_SN, handles,
+                 cc.PORTFOLIO_HANDOFF_CERTAINTY_SN)
+    else:
+        handles = (cc.PORTFOLIO_HANDOFF_WHO.format(who=who) if who
+                   else cc.PORTFOLIO_HANDOFF_WHO_NAMELESS)
+        lines = (cc.PORTFOLIO_HANDOFF_FREE_FIRST, handles,
+                 cc.PORTFOLIO_HANDOFF_CERTAINTY)
     # The free online quote leads (owner: "they can get a free online quote
     # first"), then how, then why it is worth it, each on its own short line.
-    offer = '\n'.join((cc.PORTFOLIO_HANDOFF_FREE_FIRST, handles,
-                       cc.PORTFOLIO_HANDOFF_CERTAINTY))
-    return f'{offer}\n\n{link_block(appointment)}'
+    offer = '\n'.join(lines)
+    return f'{offer}\n\n{link_block(appointment, shona=shona)}'
 
 
-def link_block(appointment) -> str:
+def link_block(appointment, shona: bool = False) -> str:
     """What the link opens (and why it is long), the link, then the number, in
     short lines; '' with no plumber number. The tail of portfolio_handoff, and
     what the firm-price reply (bot/hesitation.py) puts under its two lines.
     "why it's long" only for the long per-lead link; the plumber's own short
-    link carries a fixed message, so it says "a message ready to send"."""
+    link carries a fixed message, so it says "a message ready to send".
+    `shona=True` picks the `_SN` lines for a Shona lead, with the possessive
+    written the Shona way ("yaTakudzwa", else "yedu yequotes"); which line
+    goes with which link form is the same in both languages."""
     link = quote_link(appointment)
     if not link:
         return ''
     cc = copy_catalog
     who = _who_handles_quotes(appointment)
-    whose = f"{who}'s" if who else 'our quotes'
-    if is_long_link(link):
-        opens = cc.PORTFOLIO_LINK_LONG.format(whose=whose)
-    elif '/message/' in link:
-        opens = cc.PORTFOLIO_LINK_READY.format(whose=whose)
-    else:
-        opens = cc.PORTFOLIO_LINK_DETAILS.format(whose=whose)
     number = f'+{plumber_number(appointment)}'
-    contact = (cc.HANDOFF_NUMBER_OF.format(who=who, number=number) if who
-               else cc.HANDOFF_NUMBER.format(number=number))
+    if shona:
+        whose = f'ya{who}' if who else 'yedu yequotes'
+        long_line, ready_line, details_line = (
+            cc.PORTFOLIO_LINK_LONG_SN, cc.PORTFOLIO_LINK_READY_SN,
+            cc.PORTFOLIO_LINK_DETAILS_SN)
+        contact = (cc.HANDOFF_NUMBER_OF_SN.format(who=who, number=number) if who
+                   else cc.HANDOFF_NUMBER_SN.format(number=number))
+    else:
+        whose = f"{who}'s" if who else 'our quotes'
+        long_line, ready_line, details_line = (
+            cc.PORTFOLIO_LINK_LONG, cc.PORTFOLIO_LINK_READY,
+            cc.PORTFOLIO_LINK_DETAILS)
+        contact = (cc.HANDOFF_NUMBER_OF.format(who=who, number=number) if who
+                   else cc.HANDOFF_NUMBER.format(number=number))
+    if is_long_link(link):
+        opens = long_line.format(whose=whose)
+    elif '/message/' in link:
+        opens = ready_line.format(whose=whose)
+    else:
+        opens = details_line.format(whose=whose)
     return f'{opens}\n{link}\n\n{contact}'
 
 

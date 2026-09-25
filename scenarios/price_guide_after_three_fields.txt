@@ -5,7 +5,9 @@
 # the space, or a quote online first?". "Online" gets the plumber handoff (his
 # name, that he handles the quotes, his WhatsApp with their details already
 # typed in); "a look" gets the booking question. bot/price_guide.py, webhook
-# STEP 1c/1d (the sequence) and STEP 0-b (the answer).
+# STEP 1c/1d (the sequence) and STEP 0-b (the answer). Three messages, never
+# four (owner, 2026-09-25): the prices, the PDF captioned "Here's our price
+# guide...", the question.
 
 > Hello! Can I get more info on this?
 expect: what needs doing

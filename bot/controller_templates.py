@@ -240,6 +240,9 @@ _LEADING_ACK = re.compile(
     r'[,!.]?\s+',
     re.IGNORECASE,
 )
+# "Got it, a tub." / "Got it, a new tub and a toilet." as a sentence of its
+# own in front of the question. Short (the named job is at most two fixtures).
+_NAMED_ACK = re.compile(r'^got it,\s+[^.?!]{1,60}\.\s+(?=\S)', re.IGNORECASE)
 
 
 def question_without_ack(question: str) -> str:
@@ -255,6 +258,12 @@ def question_without_ack(question: str) -> str:
     text = (question or '').strip()
     if not text:
         return text
+    # A whole ack SENTENCE naming the job ("Got it, a tub. What area are you
+    # in?", photo_ask.area_ask) goes as one piece; the opener pattern alone
+    # would leave "a tub. What area are you in?".
+    stripped = _NAMED_ACK.sub('', text, count=1).strip()
+    if stripped != text and stripped:
+        return stripped[0].upper() + stripped[1:]
     stripped = _LEADING_ACK.sub('', text, count=1).strip()
     if not stripped:
         return text

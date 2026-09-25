@@ -9,4 +9,5 @@ The pipeline files at this level (`whatsapp_webhook.py`, `unified_classifier.py`
 - **The transcript holds what was SENT.** Log through `replace_draft_assistant_turns`, never a bare append, and stamp the outbound WAMID (`attach_message_id` / `record_sent_media`).
 - **A classifier `None` is not "not present".** When the unified call fails, every field comes back null at once. Any field the flow depends on needs a deterministic floor (`_area_from_reply`, `_keyword_availability_date`) that never consults the classifier.
 - **The model picks the move; code writes anything the customer must trust**: slots, prices, booking state, the fee.
+- **The flow map follows the code.** Adding, removing or reordering a router step, a branch, a send path or a cron means editing `docs/flow/flow_spec.py` in the same commit (`bot/test_flow_map.py` catches the missing node; the hook rebuilds `docs/flow/FLOW.md`).
 - A change to intent classification, a pricing gate or routing adds a TEST 0 case; a change that shows up in a CONVERSATION adds or extends a file in `scenarios/` (see `scenarios/CLAUDE.md`).

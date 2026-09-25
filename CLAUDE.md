@@ -89,6 +89,17 @@ Then respond:
 
 When you learn something that belongs in those notes, write it into the doc for that area, in the same commit as the code, never back into this file.
 
+### The flow map: the whole system as one diagram
+**[docs/flow/FLOW.md](docs/flow/FLOW.md)** is Plumbot at three levels of detail. Read it to see where a change lands before making it.
+1. **The lead's journey**: about fifteen stages, each with the bot's moves there.
+2. **The reply ladder**: the router as the ranked "first match wins" list. The order is read from the code, so it is always the real order.
+3. **The full map**: every step, decision and message, one shape per kind.
+
+The interactive version, where a click shows the exact customer wording and the code, is at **`/platform/flow-map/`** for superusers (`bot/views/flow_map.py`). It is built from the deployed code by `start.sh`; locally, run `python docs/flow/build_flow_map.py` and open `docs/flow/plumbot-flow.html`.
+- **Only FLOW.md is committed, and it has no line numbers**, so it changes only when the flow or the customer wording changes. `.githooks/pre-commit` rebuilds and stages it (`--md`). CI checks it is current (`--check`) and writes every changed customer line to the run summary (`--wording-diff`), which is where a wording change shows before it ships. The HTML is gitignored: committed, it changed on nearly every commit.
+- **The graph is `docs/flow/flow_spec.py`, and a flow change updates it in the same commit** (owner, 2026-09-25). A new router step, branch, message, cron or dashboard action gets a node, and a removed one loses its node. A new stage in the lead's life goes in `JOURNEY`; a new ladder rung wants an `_EXAMPLES` message. `bot/test_flow_map.py` blocks the commit on a pointer that no longer resolves, a `copy_catalog` sentence on no node, a router or `generate_response` section header with no node, a Railway cron command not on the map, a journey stage naming a missing node, or a ladder out of code order.
+- Never edit `FLOW.md` or `plumbot-flow.html` by hand. Edit `flow_spec.py` for the graph or `viewer_template.html` for the viewer.
+
 ### Non-negotiables (each is a production failure that already happened; detail behind the link)
 - **No Homebase value may reach another tenant's customer.** Every figure, name, number and place resolves through the lead's own tenant; absent means omit, never borrow. [tenancy](docs/current-state/tenancy-and-permissions.md)
 - **The customer's own words override any gate or holding state** (a carried-over LLM intent or pending flow state never outranks what they just said). [conversation-rules](docs/current-state/conversation-rules.md)
