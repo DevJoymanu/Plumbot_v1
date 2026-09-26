@@ -42,8 +42,13 @@ def _tenant_profile(request):
 _LETTERHEAD_LISTS = ('phones', 'terms')
 _LETTERHEAD_TEXT = (
     'trading_name', 'public_email', 'website', 'services_blurb',
-    'maintenance_blurb', 'tagline', 'signatory',
+    'maintenance_blurb', 'tagline', 'signatory', 'company_name', 'watermark',
+    'sheet_address',
 )
+
+# The quote layouts the Profile page offers. 'standard' is stored as NO
+# layout key, so a tenant who never touched this keeps the flat default.
+_QUOTE_LAYOUTS = ('standard', 'sectioned', 'fix_and_supply')
 _LETTERHEAD_BANK = ('account_name', 'bank_name', 'branch', 'account_number')
 
 
@@ -66,7 +71,9 @@ def _letterhead_form_values(profile):
     bank = raw.get('bank') if isinstance(raw.get('bank'), dict) else {}
     values = {key: str(raw.get(key) or '') for key in _LETTERHEAD_TEXT}
     values.update({
-        'sectioned': str(raw.get('layout') or '').lower() == 'sectioned',
+        'layout': (str(raw.get('layout') or '').lower()
+                   if str(raw.get('layout') or '').lower() in _QUOTE_LAYOUTS
+                   else 'standard'),
         'address': getattr(profile, 'location_line', '') if profile else '',
         'default_vat_percent': raw.get('default_vat_percent') or 0,
         'bank': {key: str(bank.get(key) or '') for key in _LETTERHEAD_BANK},
@@ -108,10 +115,16 @@ def _save_letterhead(request, profile):
     # rather than left behind to seed a quote through a reader we missed.
     stored.pop('default_deposit_percent', None)
 
-    # The layout switch: ticked means this business's quotes use their own
-    # sectioned sheet. Unticked drops back to the standard layout.
-    if request.POST.get('lh_sectioned'):
-        stored['layout'] = 'sectioned'
+    # The layout switch: a select of the three sheets (`lh_layout`). It was a
+    # single "sectioned" tickbox before the fix-and-supply sheet existed, and a
+    # post carrying only that tickbox is still read the old way, so an older
+    # form or test posting `lh_sectioned` keeps working. 'standard' (or
+    # anything unknown) drops back to the flat layout by removing the key.
+    layout = (request.POST.get('lh_layout') or '').strip().lower()
+    if not layout:
+        layout = 'sectioned' if request.POST.get('lh_sectioned') else 'standard'
+    if layout in _QUOTE_LAYOUTS and layout != 'standard':
+        stored['layout'] = layout
     else:
         stored.pop('layout', None)
 

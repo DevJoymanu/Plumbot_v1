@@ -6,6 +6,10 @@ with no trading name, no blurb or no phone list simply does not get that line
 
 Expects `lh` (the letterhead dict) in context.
 {% endcomment %}
+{# The fix-and-supply sheet has its own head (logo | name | contacts); every other sheet keeps the head below. #}
+{% if lh.layout == "fix_and_supply" %}
+{% include "bot/includes/quote_fs_letterhead.html" %}
+{% else %}
 <div class="bq-head">
     <div class="bq-logo">
         {% if logo_data_uri or logo_url %}
@@ -38,3 +42,4 @@ Expects `lh` (the letterhead dict) in context.
 {% endif %}
 
 <div class="bq-qtitle">Quotation</div>
+{% endif %}

@@ -13542,3 +13542,192 @@ class FlowMapViewTests(TestCase):
         self.client.login(username='mapstaff', password='pass12345')
         response = self.client.get(reverse('flow_map'))
         self.assertIn(response.status_code, (302, 403))
+
+
+# ======================================================================
+# The fix-and-supply quote sheet (letterhead.layout = "fix_and_supply")
+#
+# Homebase's own paper quote, reproduced: a logo | company name | contacts
+# head, "Quotation", Client Name and the date, one table led by DESCRIPTION
+# with item groups split by blank rows, the highlighted Material cost /
+# Labour / Transport cost / Total fix and supply block, and a Bank Details |
+# Fix and Supply | Total | figure box over the tagline. It rides the grouped
+# (sectioned) editor, view, builder and PDF, so these tests pin that the look
+# switches with the tenant's data and nothing crosses to another tenant.
+# ======================================================================
+
+FIX_SUPPLY_LETTERHEAD = {
+    'layout': 'fix_and_supply',
+    'company_name': 'FIXCO CONSTRUCTION [PVT]LTD',
+    'watermark': 'FIXCO',
+    'sheet_address': '150 Northway | Seke rd, Hatfield, Harare',
+    'phones': ['0774 000 901', '0772 000 823'],
+    'public_email': 'info@fixco.example',
+    'website': 'www.fixco.example',
+    'tagline': 'Quality Is Our Qualification',
+    'bank': {'account_name': 'FIXCO CONSTRUCTION', 'branch': 'FBC CENTER',
+             'account_number': '4482100000101'},
+}
+
+# The assistant's own location sentence. It must never be printed as the
+# sheet's address (sheet_address wins on the letterhead).
+SPOKEN_LOCATION = "We're in Hatfield, Harare."
+
+
+class FixAndSupplySheetTests(TestCase):
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Fixco Plumbers', slug='fixco')
+        TenantProfile.objects.create(
+            tenant=self.tenant, location_line=SPOKEN_LOCATION,
+            letterhead=FIX_SUPPLY_LETTERHEAD)
+        self.client.force_login(self._staff('fixco-staff', self.tenant))
+
+        self.lead = make_lead(7301, tenant=self.tenant, customer_name='Tinaye Nhemachena')
+        self.quote = Quotation.objects.create(
+            appointment=self.lead, labor_cost=Decimal('280'),
+            transport_cost=Decimal('20'))
+        # Two groups, as on the paper: the plumbing lines, then the tiling.
+        for section, description, qty, price in (
+                ('GROUP 1', '50mm pvc waste pipe', 2, '6'),
+                ('GROUP 1', 'Basin mixer', 1, '40'),
+                ('GROUP 2', 'Tile Boxes', 8, '10')):
+            QuotationItem.objects.create(
+                quotation=self.quote, section=section, description=description,
+                quantity=qty, unit_price=Decimal(price))
+        self.quote.refresh_from_db()
+
+    @staticmethod
+    def _staff(username, tenant):
+        user = get_user_model().objects.create_user(
+            username=username, password='pass12345', is_staff=True)
+        TenantMembership.objects.create(user=user, tenant=tenant, role='staff')
+        return user
+
+    def _html(self, url, client=None):
+        response = (client or self.client).get(url)
+        self.assertEqual(response.status_code, 200, f'{url} -> {response.status_code}')
+        return response.content.decode('utf-8', 'replace')
+
+    def test_every_quote_screen_draws_the_fix_and_supply_sheet(self):
+        pages = {
+            'create': reverse('create_quotation', args=[self.lead.pk]),
+            'edit': reverse('edit_quotation', args=[self.quote.pk]),
+            'view': reverse('view_quotation', args=[self.quote.pk]),
+            'builder': reverse('create_quotation_template'),
+        }
+        for name, url in pages.items():
+            html = self._html(url)
+            for marker in ('bq-sheet bq-sheet--fs', 'data-watermark="FIXCO"',
+                           'FIXCO CONSTRUCTION [PVT]LTD', '150 Northway | Seke rd',
+                           'Cell; 0774 000 901', 'Email; ', '>Quotation<',
+                           'Material cost', 'Transport cost', 'fix and supply',
+                           'Fix and Supply', 'Acc No. 4482100000101', 'FBC CENTER',
+                           'Quality Is Our Qualification'):
+                self.assertIn(marker, html, f'{marker!r} missing from the {name} screen')
+            # The sectioned sheet's own furniture is not on this paper, and the
+            # assistant's location sentence is not a letterhead address.
+            sheet = html.split('bq-sheet bq-sheet--fs', 1)[1]
+            for absent in ('DOMESTIC | INDUSTRIAL', 'Client signature',
+                           'Banking Details', 'Hatfield, Harare.'):
+                self.assertNotIn(absent, sheet, f'{absent!r} on the {name} screen')
+
+    def test_the_client_copy_reads_like_the_paper(self):
+        html = self._html(reverse('view_quotation', args=[self.quote.pk]))
+        sheet = html.split('bq-sheet bq-sheet--fs', 1)[1]
+        # Description before quantity, in the markup itself.
+        row = sheet[sheet.index('50mm pvc waste pipe'):]
+        self.assertLess(row.index('50mm pvc waste pipe'), row.index('<td>2</td>'))
+        # A blank row between the two groups, and the group labels never print.
+        between = sheet[sheet.index('Basin mixer'):sheet.index('Tile Boxes')]
+        self.assertIn('bq-fs-gap', between)
+        self.assertNotIn('GROUP 1', sheet)
+        self.assertNotIn('GROUP 2', sheet)
+        self.assertIn('Tinaye Nhemachena', sheet)
+        # 12 + 40 + 80 materials, + 280 labour + 20 transport.
+        self.assertIn('432.00', sheet)
+
+    def test_nothing_crosses_to_a_sectioned_or_flat_tenant(self):
+        from django.test import Client
+        barmak = Tenant.objects.create(name='Barmak Plumbing', slug='barmak-plumbing')
+        TenantProfile.objects.create(tenant=barmak, letterhead=SECTIONED_LETTERHEAD)
+        flat = Tenant.objects.create(name='Flat Plumbing', slug='flat-plumbing')
+        TenantProfile.objects.create(tenant=flat)
+        for tenant, number in ((barmak, 7302), (flat, 7303)):
+            client = Client()
+            client.force_login(self._staff(f'{tenant.slug}-staff', tenant))
+            lead = make_lead(number, tenant=tenant)
+            html = self._html(reverse('create_quotation', args=[lead.pk]), client=client)
+            # The class on the sheet itself; the shared editor script names the
+            # class too, which is not the sheet being drawn.
+            for value in ('bq-sheet bq-sheet--fs', 'FIXCO', '4482100000101', 'fixco.example',
+                          'Quality Is Our Qualification', 'fix and supply'):
+                self.assertNotIn(value, html, f'{value} reached {tenant.slug}')
+
+    def test_the_pdf_is_the_fix_and_supply_paper(self):
+        text = QuotePdfMatchesTheAppTests._text(self.quote)
+        for value in ('FIXCO CONSTRUCTION', 'Quotation', 'Client Name:',
+                      'Tinaye Nhemachena', '50mm pvc waste pipe', 'Tile Boxes',
+                      'Material cost', 'Labour', 'Transport cost',
+                      'Total  fix and supply', 'Fix and', 'Supply', 'Total',
+                      'Acc No. 4482100000101', 'Branch: FBC CENTER',
+                      'Cell; 0774 000 901', 'FIXCO', '432.00'):
+            self.assertIn(value, text, f'{value!r} missing from the PDF')
+        for absent in ('GRAND TOTAL', 'MATERIALS SUB-TOTAL', 'GROUP 1',
+                       'Client signature', 'Hatfield, Harare.'):
+            self.assertNotIn(absent, text, f'{absent!r} on the fix-and-supply PDF')
+
+    def test_the_profile_page_picks_the_layout(self):
+        self.client.post(reverse('profile'), {
+            'letterhead_submit': '1', 'lh_layout': 'sectioned'})
+        profile = TenantProfile.objects.get(tenant=self.tenant)
+        self.assertEqual(profile.letterhead['layout'], 'sectioned')
+
+        self.client.post(reverse('profile'), {
+            'letterhead_submit': '1', 'lh_layout': 'fix_and_supply',
+            'lh_company_name': 'FIXCO LTD', 'lh_watermark': 'FIX',
+            'lh_sheet_address': '1 Road, Harare'})
+        profile.refresh_from_db()
+        self.assertEqual(profile.letterhead['layout'], 'fix_and_supply')
+        self.assertEqual(profile.letterhead['company_name'], 'FIXCO LTD')
+        self.assertEqual(profile.letterhead['sheet_address'], '1 Road, Harare')
+        self.assertIn('value="fix_and_supply" selected', self._html(reverse('profile')))
+
+        self.client.post(reverse('profile'), {
+            'letterhead_submit': '1', 'lh_layout': 'standard'})
+        profile.refresh_from_db()
+        self.assertNotIn('layout', profile.letterhead)
+
+    def test_seed_migration_fills_blanks_for_homebase_only(self):
+        import importlib
+        module = importlib.import_module('bot.migrations.0099_seed_homebase_fix_and_supply_sheet')
+
+        class Apps:
+            @staticmethod
+            def get_model(app_label, name):
+                from django.apps import apps as django_apps
+                return django_apps.get_model(app_label, name)
+
+        homebase = Tenant.objects.get(slug='homebase')
+        profile, _ = TenantProfile.objects.get_or_create(tenant=homebase)
+        profile.letterhead = {'public_email': 'edited@homebase.example',
+                              'bank': {'account_name': '', 'branch': 'EDITED'}}
+        profile.location_line = SPOKEN_LOCATION
+        profile.save(update_fields=['letterhead', 'location_line'])
+
+        module.seed(Apps, None)
+
+        profile.refresh_from_db()
+        lh = profile.letterhead
+        self.assertEqual(lh['layout'], 'fix_and_supply')
+        self.assertEqual(lh['public_email'], 'edited@homebase.example')
+        self.assertEqual(lh['bank']['branch'], 'EDITED')
+        self.assertEqual(lh['bank']['account_number'], '4482103480101')
+        self.assertEqual(lh['company_name'], 'HOMEBASE CONSTRUCTION [PVT]LTD')
+        # The assistant's own sentence is left alone.
+        self.assertEqual(profile.location_line, SPOKEN_LOCATION)
+
+        # Nobody else is touched.
+        before = dict(TenantProfile.objects.get(tenant=self.tenant).letterhead)
+        module.seed(Apps, None)
+        self.assertEqual(TenantProfile.objects.get(tenant=self.tenant).letterhead, before)

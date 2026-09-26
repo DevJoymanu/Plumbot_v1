@@ -10,6 +10,7 @@ prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
 
 {% block extra_css %}
 {% include "bot/includes/quote_sectioned_css.html" %}
+{% if lh.layout == "fix_and_supply" %}{% include "bot/includes/quote_fs_css.html" %}{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -65,10 +66,106 @@ prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
         </form>
     </div>
 
-    <div class="bq-sheet">
+    <div class="bq-sheet{% if lh.layout == "fix_and_supply" %} bq-sheet--fs{% endif %}"
+         {% if lh.layout == "fix_and_supply" and lh.watermark %}data-watermark="{{ lh.watermark }}"{% endif %}>
 
         {% include "bot/includes/quote_letterhead.html" %}
 
+        {% comment %}
+        The fix-and-supply paper, filled in from the saved quote: Client Name
+        and the date, then ONE table led by DESCRIPTION whose item groups are
+        split by a blank row (the group titles are the plumber's own labels
+        and never print), then Material cost / Labour / Transport cost / Total
+        fix and supply, highlighted. Rendered in paper order here, so the rows
+        carry data-fs-ordered and quote_fs_script.html leaves them alone.
+        Discount, VAT and deposit rows appear only when the quote has one, the
+        same rule the sectioned copy below follows. Mirrored by
+        _fix_supply_sheet in bot/quote_pdf.py.
+        {% endcomment %}
+        {% if lh.layout == "fix_and_supply" %}
+        <div class="bq-fs-meta">
+            <div class="bq-fs-meta__client">
+                <label>Client Name:</label>
+                {{ quotation.appointment.customer_name|default:"" }}
+            </div>
+            <div class="bq-fs-meta__date">{{ quotation.created_at|date:"d/m/Y" }}</div>
+        </div>
+
+        <table class="bq-table" data-fs-ordered="1">
+            <colgroup>
+                <col class="bq-c-desc"><col class="bq-c-qty"><col class="bq-c-unit"><col class="bq-c-total">
+            </colgroup>
+            <tbody>
+                {% for group in sections %}
+                {% if not forloop.first %}<tr class="bq-fs-gap"><td colspan="4"></td></tr>{% endif %}
+                {% for item in group.items %}
+                <tr class="bq-item" data-fs-ordered="1">
+                    <td>{{ item.description }}</td>
+                    <td>{{ item.qty_text }}</td>
+                    <td>${{ item.unit_price|floatformat:2 }}</td>
+                    <td class="bq-total-cell">${{ item.total_price|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+                {% empty %}
+                <tr>
+                    <td colspan="4" style="text-align:center;padding:26px;">
+                        No items on this quotation yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <table class="bq-totals" data-fs-ordered="1">
+            <colgroup>
+                <col class="bq-c-desc"><col class="bq-c-qty"><col class="bq-c-unit"><col class="bq-c-total">
+            </colgroup>
+            <tbody>
+                <tr class="bq-fs-gap"><td colspan="4"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Material cost</span></td>
+                    <td class="bq-amt"><span class="bq-hl">{{ lh.currency }}{{ materials_total|floatformat:2 }}</span></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="4"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Labour</span></td>
+                    <td class="bq-amt"><span class="bq-hl">{{ lh.currency }}{{ quotation.labor_cost|floatformat:2 }}</span></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="4"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Transport cost</span></td>
+                    <td class="bq-amt"><span class="bq-hl">{{ lh.currency }}{{ quotation.transport_cost|floatformat:2 }}</span></td>
+                </tr>
+                {% if quotation.discount %}
+                <tr>
+                    <td class="bq-lbl" colspan="3">Discount</td>
+                    <td class="bq-amt">- {{ lh.currency }}{{ quotation.discount|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+                {% if quotation.vat_percent %}
+                <tr>
+                    <td class="bq-lbl" colspan="3">VAT ({{ quotation.vat_percent|floatformat:"-2" }}%)</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ vat_amount|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+                <tr class="bq-fs-gap"><td colspan="4"></td></tr>
+                <tr class="bq-grand">
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Total&nbsp; fix and supply</span></td>
+                    <td class="bq-amt"><span class="bq-hl">{{ lh.currency }}{{ quotation.total_amount|floatformat:2 }}</span></td>
+                </tr>
+                {% if quotation.deposit_percent %}
+                <tr class="bq-deposit">
+                    <td class="bq-lbl" colspan="3">Deposit ({{ quotation.deposit_percent|floatformat:"-2" }}%)</td>
+                    <td class="bq-amt">{{ lh.currency }}{{ deposit_amount|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+                <tr class="bq-fs-gap"><td colspan="4"></td></tr>
+                {% for term in quote_terms %}
+                <tr class="bq-terms"><td colspan="4">{{ term }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
         <div class="bq-meta">
             <div class="f"><label>DATE:</label>
                 <span>{{ quotation.created_at|date:"d M Y" }}</span></div>
@@ -188,6 +285,7 @@ prints. Used for any tenant whose profile sets letterhead.layout = "sectioned".
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
 
         {% include "bot/includes/quote_footer.html" %}
     </div>

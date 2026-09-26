@@ -2,9 +2,11 @@
 
 A tenant whose profile sets ``letterhead.layout = "sectioned"`` gets the
 grouped quote sheet (numbered sections with their own subtotals, plus
-discount and VAT); everyone else keeps the flat default. The switch is tenant
-data, never a slug check, so one tenant's document can never render for
-another — and every letterhead value comes from that tenant's own profile.
+discount and VAT); ``"fix_and_supply"`` gets the same grouped machinery drawn
+as the "Total fix and supply" paper sheet Homebase writes its quotes on;
+everyone else keeps the flat default. The switch is tenant data, never a slug
+check, so one tenant's document can never render for another — and every
+letterhead value comes from that tenant's own profile.
 """
 import re
 from decimal import Decimal
@@ -12,6 +14,15 @@ from decimal import Decimal
 from ..tenant_config import get_config
 
 SECTIONED = 'sectioned'
+FIX_AND_SUPPLY = 'fix_and_supply'
+
+# The layouts built on the grouped sheet: one editor, one view, one template
+# builder and one PDF entry point, with the look chosen by `lh.layout` inside
+# them. The fix-and-supply sheet rides this machinery rather than getting its
+# own editor because the work is identical (grouped lines, labour, transport,
+# deposit, save and send) and a second 1,000-line editor would drift from the
+# first exactly as the three flat editors once did.
+SHEET_LAYOUTS = (SECTIONED, FIX_AND_SUPPLY)
 
 
 def tenant_of(request, appointment=None, quotation=None):
@@ -33,7 +44,17 @@ def layout_for(tenant) -> str:
 
 
 def is_sectioned(tenant) -> bool:
-    return layout_for(tenant) == SECTIONED
+    """Does this tenant quote on a grouped SHEET rather than the flat layout?
+
+    True for both sheet layouts, because every caller uses it to pick the
+    grouped editor / view / builder / PDF, and both sheets are drawn by those.
+    Use `is_fix_and_supply` where the two sheets differ.
+    """
+    return layout_for(tenant) in SHEET_LAYOUTS
+
+
+def is_fix_and_supply(tenant) -> bool:
+    return layout_for(tenant) == FIX_AND_SUPPLY
 
 
 def letterhead_for(tenant) -> dict:

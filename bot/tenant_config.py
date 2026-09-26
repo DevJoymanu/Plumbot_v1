@@ -438,11 +438,15 @@ class TenantConfig:
         """Which quote template this tenant's documents use.
 
         'sectioned' is the grouped layout (numbered sections, per-section
-        subtotals, discount and VAT); anything else uses the flat default.
-        Driven by the tenant's own profile, so a layout can never appear on
-        another tenant's quote."""
+        subtotals, discount and VAT). 'fix_and_supply' is the same grouped
+        editor drawn as the "Total fix and supply" paper sheet (a three-column
+        letterhead, item groups split by blank rows, a highlighted Material /
+        Labour / Transport / Total block and a banking + total box) - the
+        layout Homebase's own quotes are written on. Anything else uses the
+        flat default. Driven by the tenant's own profile, so a layout can
+        never appear on another tenant's quote."""
         layout = str(self._letterhead().get('layout') or '').strip().lower()
-        return layout if layout in ('sectioned',) else 'standard'
+        return layout if layout in ('sectioned', 'fix_and_supply') else 'standard'
 
     def letterhead(self) -> dict:
         """The tenant's quote-document facts, normalised for templates.
@@ -466,9 +470,32 @@ class TenantConfig:
         bank = {k: str(v or '').strip() for k, v in bank.items()}
 
         return {
+            # Which sheet this letterhead heads. Carried here because every
+            # quote screen, the template builder and the PDF already receive
+            # the letterhead, so the templates branch on `lh.layout` without a
+            # second lookup that could disagree with `quote_layout()`.
+            'layout': self.quote_layout(),
             'business_name': (getattr(self.tenant, 'name', '') or '').strip(),
+            # The registered name the fix-and-supply sheet is headed with
+            # ("HOMEBASE CONSTRUCTION [PVT]LTD") when it is not the name the
+            # business trades under. Absent: the sheet uses business_name.
+            'company_name': text('company_name'),
+            # The faint diagonal word across the fix-and-supply sheet. The
+            # tenant's own word or nothing; never derived from another field,
+            # so a tenant who leaves it blank gets a clean page.
+            'watermark': text('watermark'),
             'trading_name': text('trading_name'),
             'address': self.location_line or self.location_short(),
+            # The address as the fix-and-supply sheet stacks it down its
+            # contact column ("150 Northway | Seke rd" / "Hatfield" /
+            # "Harare"), split on commas and line breaks. `sheet_address` wins
+            # when set, because location_line is also what the assistant SAYS
+            # ("We're in Hatfield, Harare." on Homebase) - a sentence that
+            # does not belong on a letterhead, and one that cannot be edited
+            # into a street address without changing the WhatsApp copy.
+            'address_lines': [part.strip() for part in re.split(
+                r'[,\n]', text('sheet_address') or self.location_line
+                or self.location_short() or '') if part.strip()],
             'phones': lines('phones') or ([self.plumber_contact] if self.plumber_contact else []),
             'public_email': text('public_email'),
             'website': text('website'),

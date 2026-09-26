@@ -1,0 +1,30 @@
+{% comment %}
+The head of the fix-and-supply sheet: logo left, the company name centred,
+the contacts right, then "Quotation" centred and underlined - the layout of
+the paper quote this sheet reproduces.
+
+Rendered entirely from the tenant's own letterhead: company_name heads it when
+set (the registered name can differ from the trading name), else
+business_name. The contact lines keep the paper's own labels ("Cell;",
+"Email;", "Website;"). Every line is guarded and absent means omit, never
+borrow another tenant's. Reached through quote_letterhead.html, which picks
+this head when lh.layout == "fix_and_supply", so the editor, the view and the
+template builder all get it from the one include they already use.
+{% endcomment %}
+<div class="bq-fs-head">
+    <div class="bq-fs-logo">
+        {% if logo_data_uri or logo_url %}
+        <img src="{{ logo_data_uri|default:logo_url }}" alt="{% firstof lh.company_name lh.business_name %}">
+        {% endif %}
+    </div>
+    <div class="bq-fs-name">{% firstof lh.company_name lh.business_name %}</div>
+    <div class="bq-fs-contact">
+        {% for line in lh.address_lines %}{{ line }}<br>{% endfor %}
+        {% if lh.phones %}<br>{% for phone in lh.phones %}{% if forloop.first %}Cell; {% endif %}{{ phone }}<br>{% endfor %}{% endif %}
+        {% if lh.public_email or lh.website %}<br>{% endif %}
+        {% if lh.public_email %}Email; <a href="mailto:{{ lh.public_email }}">{{ lh.public_email }}</a><br>{% endif %}
+        {% if lh.website %}Website; <a href="https://{{ lh.website }}">{{ lh.website }}</a>{% endif %}
+    </div>
+</div>
+
+<div class="bq-fs-title">Quotation</div>

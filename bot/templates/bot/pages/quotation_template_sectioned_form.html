@@ -44,6 +44,8 @@ the sectioned quote editor uses, so where both name a box the document wins.
 {% endcomment %}
 {% include "bot/includes/quote_responsive_css.html" %}
 {% include "bot/includes/quote_sectioned_css.html" %}
+{# A fix-and-supply tenant builds templates on that sheet, the same overlay its quote editor loads. #}
+{% if lh.layout == "fix_and_supply" %}{% include "bot/includes/quote_fs_css.html" %}{% endif %}
 <style>
     /* The toolbar carries the page's name on the left and the way out on the
        right; the quote editor has no title because a quote names itself. */
@@ -161,7 +163,8 @@ the sectioned quote editor uses, so where both name a box the document wins.
         {% csrf_token %}
         {{ formset.management_form }}
 
-        <div class="bq-sheet" id="bqtSheet">
+        <div class="bq-sheet{% if lh.layout == "fix_and_supply" %} bq-sheet--fs{% endif %}" id="bqtSheet"
+             {% if lh.layout == "fix_and_supply" and lh.watermark %}data-watermark="{{ lh.watermark }}"{% endif %}>
 
             {% include "bot/includes/quote_letterhead.html" %}
 
@@ -297,32 +300,33 @@ the sectioned quote editor uses, so where both name a box the document wins.
                 </colgroup>
                 <tbody>
                     <tr>
-                        <td class="bq-lbl" colspan="3">MATERIALS SUB-TOTAL</td>
+                        {# On the fix-and-supply sheet these rows carry that paper's names; the ids the recalc writes to are the same on both sheets. #}
+                        <td class="bq-lbl" colspan="3">{% if lh.layout == "fix_and_supply" %}<span class="bq-hl">Material cost</span>{% else %}MATERIALS SUB-TOTAL{% endif %}</td>
                         <td class="bq-amt" id="t-materials">{{ quote_currency }}0.00</td>
                         <td></td>
                     </tr>
                     <tr>
-                        <td class="bq-lbl" colspan="3"><sup>ADD:</sup> Labour</td>
+                        <td class="bq-lbl" colspan="3">{% if lh.layout == "fix_and_supply" %}<span class="bq-hl">Labour</span>{% else %}<sup>ADD:</sup> Labour{% endif %}</td>
                         <td class="bq-val">{{ form.default_labor_cost }}</td>
                         <td></td>
                     </tr>
                     <tr>
-                        <td class="bq-lbl" colspan="3">Transport</td>
+                        <td class="bq-lbl" colspan="3">{% if lh.layout == "fix_and_supply" %}<span class="bq-hl">Transport cost</span>{% else %}Transport{% endif %}</td>
                         <td class="bq-val">{{ form.default_transport_cost }}</td>
                         <td></td>
                     </tr>
-                    <tr>
+                    <tr class="bq-fs-off">
                         <td class="bq-lbl bq-strong" colspan="3">SUB-TOTAL</td>
                         <td class="bq-amt" id="t-subtotal">{{ quote_currency }}0.00</td>
                         <td></td>
                     </tr>
-                    <tr class="bqt-static">
+                    <tr class="bqt-static{% if not default_vat_percent %} bq-fs-off{% endif %}">
                         <td class="bq-lbl" colspan="3">VAT ({{ default_vat_percent }}%)</td>
                         <td class="bq-amt" id="t-vat">{{ quote_currency }}0.00</td>
                         <td></td>
                     </tr>
                     <tr class="bq-grand">
-                        <td class="bq-lbl" colspan="3">GRAND TOTAL</td>
+                        <td class="bq-lbl" colspan="3">{% if lh.layout == "fix_and_supply" %}<span class="bq-hl">Total&nbsp; fix and supply</span>{% else %}GRAND TOTAL{% endif %}</td>
                         <td class="bq-amt" id="t-grand">{{ quote_currency }}0.00</td>
                         <td></td>
                     </tr>
@@ -395,6 +399,7 @@ the sectioned quote editor uses, so where both name a box the document wins.
 {% endblock %}
 
 {% block extra_js %}
+{% if lh.layout == "fix_and_supply" %}{% include "bot/includes/quote_fs_script.html" %}{% endif %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     'use strict';
@@ -495,7 +500,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncSection(sid) {
         const head = document.querySelector('#bqtSections tr.bqt-sec[data-section="' + sid + '"]');
         if (!head) { return; }
-        const title = head.querySelector('.bq-sec-title').value.trim();
+        // On the fix-and-supply sheet group titles never print and are usually
+        // left blank, and two blank-titled groups in a row would reopen as ONE
+        // group (consecutive rows sharing a title are one section). A blank
+        // title there is stored as "GROUP n", the same rule as the quote
+        // editor's collect(). The sectioned sheet keeps a blank title blank.
+        const untitled = document.getElementById('bqtSheet').classList.contains('bq-sheet--fs');
+        const title = head.querySelector('.bq-sec-title').value.trim()
+            || (untitled ? 'GROUP ' + sid : '');
         // Deleted rows are stamped too: they still post, marked DELETE, and a
         // row that came back would otherwise carry a stale heading.
         document.querySelectorAll(

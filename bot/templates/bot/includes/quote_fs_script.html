@@ -1,0 +1,75 @@
+{% comment %}
+Behaviour the fix-and-supply sheet needs on top of the grouped editor/builder.
+
+WHAT: (1) puts DESCRIPTION before QTY in every item row and <colgroup>, since
+the paper reads Description | Qty | Unit price | Total, where the sectioned
+sheet it rides reads Qty first; (2) relabels the group heading's placeholder,
+because on this sheet the heading is a blank separator row and its title is
+never printed; (3) mirrors the live grand total (#t-grand) into the black
+figure box at the foot ([data-fs-grand]).
+
+WHY here and not in each page's JavaScript: the quote editor and the template
+builder build rows in two different ways (string templates vs a formset
+prototype), and a server-rendered sheet arrives already built. One observer on
+the sheet catches every row however it got there, so neither editor's own code
+carries a fix-and-supply branch that could drift from the other. Rows and
+tables already rendered in paper order carry data-fs-ordered and are left
+alone (the read-only view does this).
+
+HOW: runs once over what is on the page, then a MutationObserver on each
+.bq-sheet--fs handles rows added later (the editor builds its rows on
+DOMContentLoaded, after this script has parsed). Cells are found by position
+and moved once; the editors read cells by class (.bq-qty, .bq-desc, field
+names), never by index, so the move does not touch what they save.
+Include only when lh.layout == "fix_and_supply".
+{% endcomment %}
+<script>
+(function () {
+    'use strict';
+
+    function orderRow(row) {
+        if (row.dataset.fsOrdered) { return; }
+        var cells = row.cells;
+        if (cells.length >= 4) { row.insertBefore(cells[1], cells[0]); }
+        row.dataset.fsOrdered = '1';
+    }
+
+    function orderColgroup(table) {
+        if (table.dataset.fsOrdered) { return; }
+        var qty = table.querySelector('col.bq-c-qty');
+        var desc = table.querySelector('col.bq-c-desc');
+        if (qty && desc) { qty.parentNode.insertBefore(desc, qty); }
+        table.dataset.fsOrdered = '1';
+    }
+
+    function relabel(input) {
+        input.placeholder = 'Group name (not printed)';
+    }
+
+    function sweep(root) {
+        root.querySelectorAll('table.bq-table, table.bq-totals').forEach(orderColgroup);
+        root.querySelectorAll('tr.bq-item, tr.bqt-row').forEach(orderRow);
+        root.querySelectorAll('input.bq-sec-title').forEach(relabel);
+    }
+
+    function mirrorGrand() {
+        var grand = document.getElementById('t-grand');
+        if (!grand) { return; }
+        var copy = function () {
+            document.querySelectorAll('[data-fs-grand]').forEach(function (box) {
+                box.textContent = grand.textContent;
+            });
+        };
+        copy();
+        new MutationObserver(copy).observe(grand, {
+            childList: true, characterData: true, subtree: true });
+    }
+
+    document.querySelectorAll('.bq-sheet--fs').forEach(function (sheet) {
+        sweep(sheet);
+        new MutationObserver(function () { sweep(sheet); })
+            .observe(sheet, { childList: true, subtree: true });
+    });
+    mirrorGrand();
+})();
+</script>

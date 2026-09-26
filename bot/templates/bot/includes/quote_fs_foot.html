@@ -1,0 +1,32 @@
+{% comment %}
+The foot of the fix-and-supply sheet: one row of Bank Details | "Fix and
+Supply" | "Total" | the grand total in a black box, then the tagline centred
+at the bottom of the page - the paper quote's own close.
+
+The figure is the saved total where there is a saved quote; on the editor and
+the template builder quote_fs_script.html copies the live #t-grand into
+[data-fs-grand] as the plumber types. The bank block and the tagline are the
+tenant's own and absent means omit. There is no signature line: the paper
+has none. Reached through quote_footer.html when lh.layout == "fix_and_supply".
+{% endcomment %}
+<table class="bq-fs-foot">
+    <colgroup><col class="c1"><col class="c2"><col class="c3"><col></colgroup>
+    <tr>
+        <td class="bq-fs-bank">
+            {% if lh.bank %}
+            <u>Bank Details</u><br>
+            {% if lh.bank.bank_name %}Bank: {{ lh.bank.bank_name }}<br>{% endif %}
+            {% if lh.bank.branch %}Branch: {{ lh.bank.branch }}<br>{% endif %}
+            {% if lh.bank.account_name %}{{ lh.bank.account_name }}<br>{% endif %}
+            {% if lh.bank.account_number %}Acc No. {{ lh.bank.account_number }}{% endif %}
+            {% endif %}
+        </td>
+        <td><span class="bq-fs-box bq-fs-box--label">Fix and Supply</span></td>
+        <td><span class="bq-fs-total">Total</span></td>
+        <td><span class="bq-fs-box bq-fs-box--figure" data-fs-grand>{% if quotation %}{{ lh.currency }}{{ quotation.total_amount|floatformat:2 }}{% else %}{{ lh.currency }}0.00{% endif %}</span></td>
+    </tr>
+</table>
+
+{% if lh.tagline %}
+<div class="bq-fs-tag">&lsquo;{{ lh.tagline }}&rsquo;</div>
+{% endif %}

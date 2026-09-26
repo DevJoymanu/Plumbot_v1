@@ -461,7 +461,10 @@ class WideTableTests(TestCase):
     """
 
     #: Layouts that constrain themselves and need no scroll box.
-    SELF_CONSTRAINED = ('pbq-table--stack', 'pbq-table--edit', 'bq-table', 'bq-totals')
+    #: bq-fs-foot is the fix-and-supply sheet's bank + total row: width 100%
+    #: and table-layout fixed (quote_fs_css.html), like bq-totals above it.
+    SELF_CONSTRAINED = ('pbq-table--stack', 'pbq-table--edit', 'bq-table', 'bq-totals',
+                        'bq-fs-foot')
 
     def test_every_table_is_either_constrained_or_scrollable(self):
         root = pathlib.Path(settings.BASE_DIR) / 'bot' / 'templates'

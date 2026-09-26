@@ -17,8 +17,10 @@ flat list with none of it. The PDF was also hardcoded to "US$" and printed the
 
 The blocks and their order mirror the templates deliberately:
 
-    flat       -> bot/includes/quote_flat_document.html
-    sectioned  -> bot/pages/quote_sectioned_view.html + quote_footer.html
+    flat            -> bot/includes/quote_flat_document.html
+    sectioned       -> bot/pages/quote_sectioned_view.html + quote_footer.html
+    fix and supply  -> the fix_and_supply branch of quote_sectioned_view.html
+                       + quote_fs_letterhead.html + quote_fs_foot.html
 
 If you change one, change the other. There is no way to share the markup — one
 is HTML and the other is a reportlab canvas — so the tests assert the FIGURES
@@ -44,8 +46,8 @@ def build_quotation_pdf(quotation):
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
-    from .views.quote_layout import (document_context, is_sectioned,
-                                     letterhead_for, tenant_of)
+    from .views.quote_layout import (document_context, is_fix_and_supply,
+                                     is_sectioned, letterhead_for, tenant_of)
 
     tenant = tenant_of(None, quotation=quotation)
     letterhead = letterhead_for(tenant) or {}
@@ -56,7 +58,12 @@ def build_quotation_pdf(quotation):
     sheet = canvas.Canvas(path, pagesize=A4)
     page = _Sheet(sheet, A4, tenant, letterhead, quotation)
 
-    if is_sectioned(tenant):
+    # The fix-and-supply sheet is checked FIRST: it is one of the grouped
+    # sheets, so is_sectioned() is true for it too, but its paper is drawn by
+    # its own renderer.
+    if is_fix_and_supply(tenant):
+        _fix_supply_sheet(page, document_context(quotation, letterhead))
+    elif is_sectioned(tenant):
         _sectioned_sheet(page, document_context(quotation, letterhead))
     else:
         _flat_sheet(page)
@@ -83,6 +90,10 @@ class _Sheet:
         self.quotation = quotation
         self.currency = (letterhead.get('currency')
                          or _tenant_currency(tenant) or 'US$')
+        # Called after every page break, for a sheet that repeats its own
+        # stationery on each page (the fix-and-supply letterhead, watermark and
+        # tagline). None for the sheets that do not.
+        self.on_new_page = None
 
     # -- page mechanics ----------------------------------------------------
 
@@ -91,6 +102,8 @@ class _Sheet:
         if self.y - needed < 60:
             self.c.showPage()
             self.y = self.height - 45
+            if self.on_new_page is not None:
+                self.on_new_page(self)
             return True
         return False
 
@@ -628,6 +641,325 @@ def _sectioned_foot(page):
         page.c.setFillColor(_hex('blue'))
         page.c.drawCentredString(page.width / 2, page.y, page.lh['website'])
         page.y -= 13
+
+
+# ── The fix-and-supply sheet ─────────────────────────────────────────────────
+#
+# The paper quote Homebase writes by hand, drawn as that paper: logo | company
+# name | contacts across the top of EVERY page, "Quotation" and Client Name /
+# date on the first, a grey-ruled table led by DESCRIPTION with item groups
+# split by a blank row, the yellow-highlighted Material cost / Labour /
+# Transport cost / Total fix and supply block, then Bank Details | Fix and
+# Supply | Total | figure, the tagline at the foot of every page and a faint
+# diagonal watermark. Colours and proportions follow
+# bot/includes/quote_fs_css.html, so the customer's PDF is the sheet the
+# plumber saw. Every letterhead value is the tenant's own; absent means omit.
+
+FS = {
+    'rule': '#a6a6a6',
+    'stripe': '#f2f2f2',
+    'highlight': '#ffff00',
+    'link': '#0563c1',
+}
+
+# Description first, as the paper reads: col.bq-c-* under .bq-sheet--fs.
+FS_COLS = (0.46, 0.13, 0.13, 0.28)
+FS_ROW = 16
+
+
+def _fs_hex(name):
+    from reportlab.lib import colors
+    return colors.HexColor(FS[name])
+
+
+def _fix_supply_sheet(page, document):
+    """Mirrors the fix_and_supply branch of quote_sectioned_view.html."""
+    from reportlab.lib import colors
+
+    quotation = page.quotation
+    appointment = getattr(quotation, 'appointment', None)
+    widths = [(page.right - page.left) * f for f in FS_COLS]
+
+    # The stationery repeats on every page, as a printed letterhead does.
+    page.on_new_page = _fs_stationery
+    _fs_stationery(page)
+
+    # "Quotation", centred and underlined.
+    page.y -= 10
+    page.c.setFont('Times-Bold', 18)
+    page.c.setFillColor(colors.black)
+    page.c.drawCentredString(page.width / 2, page.y, 'Quotation')
+    half = page.c.stringWidth('Quotation', 'Times-Bold', 18) / 2
+    page.c.setStrokeColor(colors.black)
+    page.c.line(page.width / 2 - half, page.y - 3, page.width / 2 + half, page.y - 3)
+    page.y -= 26
+
+    # Client Name on the left, the date underlined on the right.
+    page.c.setFont('Helvetica-Bold', 9.5)
+    page.c.drawString(page.left + 4, page.y, 'Client Name:')
+    if quotation.created_at:
+        stamp = quotation.created_at.strftime('%d/%m/%Y')
+        page.c.setFont('Times-Roman', 14)
+        page.c.drawRightString(page.right - 4, page.y, stamp)
+        width = page.c.stringWidth(stamp, 'Times-Roman', 14)
+        page.c.line(page.right - 4 - width, page.y - 2, page.right - 4, page.y - 2)
+    page.y -= 18
+    name = (getattr(appointment, 'customer_name', '') or '').strip()
+    if name:
+        page.c.setFont('Helvetica-Bold', 9.5)
+        page.c.drawString(page.left + 4, page.y, name)
+    page.y -= 34
+
+    # The items: groups in the order typed, a blank row between groups.
+    sections = document.get('sections') or []
+    stripe = False
+    if not sections:
+        _fs_row(page, widths, ('No items on this quotation yet.', '', '', ''))
+    for index, group in enumerate(sections):
+        if index:
+            page.space(FS_ROW)
+            _fs_row(page, widths, ('', '', '', ''))
+            stripe = False
+        for item in group['items']:
+            page.space(FS_ROW)
+            _fs_row(page, widths,
+                    (_fs_fit(page, str(item['description']), widths[0]),
+                     str(item['qty_text']),
+                     page.money(item['unit']), page.money(item['total_price'])),
+                    fill=_fs_hex('stripe') if stripe else None)
+            stripe = not stripe
+
+    # The totals block, a blank row between its lines as on the paper.
+    rows = [('Material cost', document.get('materials_total') or 0, True),
+            ('Labour', quotation.labor_cost, True),
+            ('Transport cost', quotation.transport_cost, True)]
+    if _dec(quotation.discount):
+        rows.append(('Discount', -_dec(quotation.discount), False))
+    if _dec(quotation.vat_percent):
+        rows.append((f'VAT ({_dec(quotation.vat_percent):g}%)',
+                     document.get('vat_amount') or 0, False))
+    rows.append(('Total  fix and supply', quotation.total_amount, True))
+    deposit = _deposit_row(quotation, 'Deposit')
+    if deposit:
+        rows.append((deposit[0], deposit[1], False))
+
+    page.space(FS_ROW * 2)
+    _fs_row(page, widths, ('', '', '', ''))
+    for label, value, highlighted in rows:
+        page.space(FS_ROW * 2)
+        _fs_row(page, widths, (label, '', '', page.money(value)),
+                highlight=highlighted)
+        _fs_row(page, widths, ('', '', '', ''))
+
+    for term in document.get('quote_terms') or []:
+        page.space(FS_ROW)
+        _fs_row(page, widths, (_fs_fit(page, str(term), sum(widths)), '', '', ''),
+                span_all=True)
+
+    _fs_foot(page, widths, quotation.total_amount)
+
+
+def _fs_stationery(page):
+    """Watermark, letterhead and tagline: what every page of the paper carries.
+
+    The watermark goes first so everything else is drawn over it. The tagline
+    sits at the foot of the page; page breaks (`_Sheet.space`) keep content
+    above 60pt, so the two never meet.
+    """
+    from reportlab.lib import colors
+    from . import branding
+
+    # The watermark: the tenant's own word, or nothing.
+    mark = page.lh.get('watermark')
+    if mark:
+        page.c.saveState()
+        page.c.setFillColor(colors.Color(0, 0, 0, alpha=0.07))
+        page.c.translate(page.width / 2, page.height * 0.45)
+        page.c.rotate(58)
+        page.c.setFont('Times-Roman', 130)
+        page.c.drawCentredString(0, 0, str(mark))
+        page.c.restoreState()
+
+    if page.lh.get('tagline'):
+        page.c.setFont('Helvetica-BoldOblique', 9.5)
+        page.c.setFillColor(colors.black)
+        page.c.drawCentredString(page.width / 2, 34, f"\u2018{page.lh['tagline']}\u2019")
+
+    top = page.height - 36
+    bottom = top
+
+    # The logo, left.
+    raw, _ = branding.logo_bytes(page.tenant)
+    if raw:
+        try:
+            import io as _io
+            from reportlab.lib.utils import ImageReader
+            image = ImageReader(_io.BytesIO(raw))
+            iw, ih = image.getSize()
+            draw_h = 50.0
+            draw_w = min(130.0, iw * (draw_h / ih)) if ih else 100.0
+            page.c.drawImage(image, page.left, top - draw_h,
+                             width=draw_w, height=draw_h,
+                             preserveAspectRatio=True, mask='auto')
+            bottom = min(bottom, top - draw_h)
+        except Exception:
+            logger.info('Quote PDF: logo not drawable for tenant %s', page.tenant)
+
+    # The company name, centred, wrapped inside the middle column.
+    name = (page.lh.get('company_name') or page.lh.get('business_name')
+            or branding.brand_name(page.tenant) or '')
+    if name:
+        page.c.setFont('Times-Bold', 16)
+        page.c.setFillColor(colors.black)
+        line_y = top - 16
+        for chunk in _wrap_px(page.c, name.upper(), (page.right - page.left) * 0.48,
+                              'Times-Bold', 16):
+            page.c.drawCentredString(page.width / 2, line_y, chunk)
+            line_y -= 18
+        bottom = min(bottom, line_y + 8)
+
+    # The contacts, right-aligned, with the paper's own labels.
+    contact = list(page.lh.get('address_lines') or [])
+    phones = page.lh.get('phones') or []
+    if phones:
+        contact.append('')
+        contact.extend(('Cell; ' if i == 0 else '') + str(p) for i, p in enumerate(phones))
+    if page.lh.get('public_email') or page.lh.get('website'):
+        contact.append('')
+    if page.lh.get('public_email'):
+        contact.append(f"Email; {page.lh['public_email']}")
+    if page.lh.get('website'):
+        contact.append(f"Website; {page.lh['website']}")
+    page.c.setFont('Helvetica-Bold', 6.5)
+    page.c.setFillColor(colors.black)
+    line_y = top - 4
+    for entry in contact:
+        if entry:
+            page.c.drawRightString(page.right, line_y, entry)
+        line_y -= 8
+    bottom = min(bottom, line_y)
+
+    page.y = bottom - 24
+
+
+def _fs_fit(page, value, width):
+    """Clip a cell's text to its MEASURED width, so it never runs into the
+    next column (a character count cannot know how wide 'W' is)."""
+    limit = width - 10
+    if page.c.stringWidth(value, 'Times-Bold', 10) <= limit:
+        return value
+    while value and page.c.stringWidth(value + '...', 'Times-Bold', 10) > limit:
+        value = value[:-1]
+    return value + '...'
+
+
+def _fs_row(page, widths, values, *, fill=None, highlight=False, span_all=False):
+    """One grey-ruled row of the sheet. `highlight` puts the paper's yellow
+    marker behind the label and the figure (first and last cells)."""
+    from reportlab.lib import colors
+
+    top = page.y
+    bottom = top - FS_ROW
+    x = page.left
+    cells = ((sum(widths), values[0]),) if span_all else tuple(zip(widths, values))
+    for index, (width, value) in enumerate(cells):
+        if fill is not None:
+            page.c.setFillColor(fill)
+            page.c.rect(x, bottom, width, FS_ROW, stroke=0, fill=1)
+        page.c.setStrokeColor(_fs_hex('rule'))
+        page.c.rect(x, bottom, width, FS_ROW, stroke=1, fill=0)
+        text = str(value)
+        if text:
+            page.c.setFont('Times-Bold', 10)
+            if highlight and index in (0, len(cells) - 1):
+                page.c.setFillColor(_fs_hex('highlight'))
+                page.c.rect(x + 4, bottom + 2.5, page.c.stringWidth(text, 'Times-Bold', 10) + 3,
+                            11, stroke=0, fill=1)
+            page.c.setFillColor(colors.black)
+            page.c.drawString(x + 5, bottom + 4.5, text)
+        x += width
+    page.y = bottom
+
+
+def _fs_foot(page, widths, grand):
+    """Bank Details | Fix and Supply | Total | figure (quote_fs_foot.html)."""
+    from reportlab.lib import colors
+
+    height = 52
+    page.space(height + 10)
+    top = page.y
+    bottom = top - height
+    x = page.left
+    for width in widths:
+        page.c.setFillColor(_fs_hex('stripe'))
+        page.c.rect(x, bottom, width, height, stroke=0, fill=1)
+        page.c.setStrokeColor(_fs_hex('rule'))
+        page.c.rect(x, bottom, width, height, stroke=1, fill=0)
+        x += width
+
+    # The bank block, the tenant's own, or an empty cell.
+    bank = page.lh.get('bank') or {}
+    lines = []
+    if bank:
+        lines.append('Bank Details')
+        if bank.get('bank_name'):
+            lines.append(f"Bank: {bank['bank_name']}")
+        if bank.get('branch'):
+            lines.append(f"Branch: {bank['branch']}")
+        if bank.get('account_name'):
+            lines.append(bank['account_name'])
+        if bank.get('account_number'):
+            lines.append(f"Acc No. {bank['account_number']}")
+    line_y = top - 11
+    for index, line in enumerate(lines):
+        page.c.setFillColor(colors.black)
+        if index == 0:
+            page.c.setFont('Times-Bold', 8)
+            page.c.drawString(page.left + 6, line_y, line)
+            page.c.setStrokeColor(colors.black)
+            page.c.line(page.left + 6, line_y - 1.5,
+                        page.left + 6 + page.c.stringWidth(line, 'Times-Bold', 8), line_y - 1.5)
+        else:
+            page.c.setFont('Helvetica-Bold', 7.5)
+            page.c.drawString(page.left + 6, line_y, _fs_clip(page, line, widths[0] - 12))
+        line_y -= 9.5
+
+    # "Fix and Supply", white on black, over two lines as on the paper.
+    x2 = page.left + widths[0]
+    page.c.setFillColor(colors.black)
+    page.c.rect(x2 + 5, top - 34, widths[1] - 10, 30, stroke=0, fill=1)
+    page.c.setFillColor(colors.white)
+    page.c.setFont('Times-Roman', 11)
+    page.c.drawString(x2 + 8, top - 15, 'Fix and')
+    page.c.drawString(x2 + 8, top - 29, 'Supply')
+
+    # "Total", bold and underlined.
+    x3 = x2 + widths[1]
+    page.c.setFillColor(colors.black)
+    page.c.setFont('Times-Bold', 16)
+    page.c.drawString(x3 + 6, top - 22, 'Total')
+    page.c.line(x3 + 6, top - 24.5, x3 + 6 + page.c.stringWidth('Total', 'Times-Bold', 16), top - 24.5)
+
+    # The figure, white on black.
+    x4 = x3 + widths[2]
+    figure = page.money(grand)
+    size = 20
+    while size > 10 and page.c.stringWidth(figure, 'Times-Roman', size) > widths[3] - 16:
+        size -= 1
+    box_w = page.c.stringWidth(figure, 'Times-Roman', size) + 8
+    page.c.setFillColor(colors.black)
+    page.c.rect(x4 + 5, top - 8 - size, box_w, size + 4, stroke=0, fill=1)
+    page.c.setFillColor(colors.white)
+    page.c.setFont('Times-Roman', size)
+    page.c.drawString(x4 + 9, top - 4 - size, figure)
+
+    page.y = bottom - 10
+
+
+def _fs_clip(page, value, width):
+    while value and page.c.stringWidth(value, 'Helvetica-Bold', 7.5) > width:
+        value = value[:-1]
+    return value
 
 
 def _wrap_px(canvas_obj, value, max_width, font, size):

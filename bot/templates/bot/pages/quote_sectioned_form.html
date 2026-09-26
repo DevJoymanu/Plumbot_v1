@@ -32,6 +32,8 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
 {% endcomment %}
 {% include "bot/includes/quote_responsive_css.html" %}
 {% include "bot/includes/quote_sectioned_css.html" %}
+{# The fix-and-supply sheet is this editor drawn as that paper; its overlay loads after the sectioned styles it overrides. #}
+{% if lh.layout == "fix_and_supply" %}{% include "bot/includes/quote_fs_css.html" %}{% endif %}
 <style>
     .bq-toolbar {
         max-width: 920px;
@@ -100,11 +102,41 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
         {% endif %}
     </div>
 
-    <div class="bq-sheet" id="bqSheet">
+    <div class="bq-sheet{% if lh.layout == "fix_and_supply" %} bq-sheet--fs{% endif %}" id="bqSheet"
+         {% if lh.layout == "fix_and_supply" and lh.watermark %}data-watermark="{{ lh.watermark }}"{% endif %}>
 
         {% include "bot/includes/quote_letterhead.html" %}
 
-        <!-- Client / job details -->
+        {% comment %}
+        Client / job details. The fix-and-supply paper prints only Client Name
+        and the date, so that sheet shows those two in the paper's places and
+        keeps contact, address and email (which Save & Email / Save & WhatsApp
+        need) in a strip that never prints. Same input ids on both sheets, so
+        the save, the sends, the draft and the lead picker are unchanged.
+        {% endcomment %}
+        {% if lh.layout == "fix_and_supply" %}
+        <div class="bq-fs-meta">
+            <div class="bq-fs-meta__client">
+                <label for="m-client">Client Name:</label>
+                <input type="text" id="m-client" placeholder="Client name"
+                       value="{{ appointment.customer_name|default:'' }}">
+            </div>
+            <div class="bq-fs-meta__date">
+                <input type="date" id="m-date" value="{{ quote_date|date:'Y-m-d' }}">
+            </div>
+        </div>
+        <div class="bq-fs-contactline bq-no-print">
+            <div><label for="m-contact">Contact (not printed)</label>
+                <input type="text" id="m-contact" placeholder="Phone number"
+                       value="{{ appointment.phone_number|default:'' }}"></div>
+            <div><label for="m-address">Address (not printed)</label>
+                <input type="text" id="m-address" placeholder="Site address"
+                       value="{{ appointment.customer_area|default:'' }}"></div>
+            <div><label for="m-email">Email (not printed)</label>
+                <input type="text" id="m-email" placeholder="Client email"
+                       value="{{ appointment.customer_email|default:'' }}"></div>
+        </div>
+        {% else %}
         <div class="bq-meta">
             <div class="f">
                 <label for="m-date">DATE:</label>
@@ -131,6 +163,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
                        value="{{ appointment.customer_email|default:'' }}">
             </div>
         </div>
+        {% endif %}
 
         <!-- Sections and their items -->
         <table class="bq-table">
@@ -161,6 +194,68 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
                 <col class="bq-c-total"><col class="bq-c-act">
             </colgroup>
             <tbody>
+                {% if lh.layout == "fix_and_supply" %}
+                {% comment %}
+                The fix-and-supply paper's own block: Material cost, Labour,
+                Transport cost and "Total fix and supply", highlighted, with
+                blank rows between them as on the paper. Discount and VAT have
+                no line on that paper, so their rows are hidden (.bq-fs-off)
+                while zero and appear the moment a figure is on the quote; the
+                inputs stay in the form either way, so recalc() and the save
+                read them unchanged and a saved figure is never dropped.
+                {% endcomment %}
+                <tr class="bq-fs-gap"><td colspan="5"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Material cost</span></td>
+                    <td class="bq-amt"><span class="bq-hl" id="t-materials">{{ lh.currency }}0.00</span></td>
+                    <td></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="5"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Labour</span></td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-labour"
+                               value="{{ quotation.labor_cost|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="5"></td></tr>
+                <tr>
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Transport cost</span></td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-transport"
+                               value="{{ quotation.transport_cost|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr class="{% if not quotation.discount %}bq-fs-off{% endif %}">
+                    <td class="bq-lbl" colspan="3">Discount</td>
+                    <td class="bq-val">
+                        <input type="number" step="0.01" inputmode="decimal" id="t-discount"
+                               value="{{ quotation.discount|default:0 }}" oninput="recalc()">
+                    </td>
+                    <td></td>
+                </tr>
+                <tr class="bq-fs-off">
+                    <td class="bq-lbl" colspan="3">SUB-TOTAL</td>
+                    <td class="bq-amt" id="t-subtotal">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                <tr class="{% if not vat_percent_initial %}bq-fs-off{% endif %}">
+                    <td class="bq-lbl" colspan="3">VAT (<input type="number" step="0.1" inputmode="decimal"
+                        class="bq-pct" id="t-vatpct"
+                        value="{{ vat_percent_initial }}" oninput="recalc()">%)</td>
+                    <td class="bq-amt" id="t-vat">{{ lh.currency }}0.00</td>
+                    <td></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="5"></td></tr>
+                <tr class="bq-grand">
+                    <td class="bq-lbl" colspan="3"><span class="bq-hl">Total&nbsp; fix and supply</span></td>
+                    <td class="bq-amt"><span class="bq-hl" id="t-grand">{{ lh.currency }}0.00</span></td>
+                    <td></td>
+                </tr>
+                <tr class="bq-fs-gap"><td colspan="5"></td></tr>
+                {% else %}
                 <tr>
                     <td class="bq-lbl" colspan="3">MATERIALS SUB-TOTAL</td>
                     <td class="bq-amt" id="t-materials">{{ lh.currency }}0.00</td>
@@ -207,6 +302,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
                     <td class="bq-amt" id="t-grand">{{ lh.currency }}0.00</td>
                     <td></td>
                 </tr>
+                {% endif %}
                 {% comment %}
                 The deposit, and THE one place it is set (owner rule,
                 2026-09-21). A new quote opens at 0 and the plumber types what
@@ -274,6 +370,7 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
 {% endblock %}
 
 {% block extra_js %}
+{% if lh.layout == "fix_and_supply" %}{% include "bot/includes/quote_fs_script.html" %}{% endif %}
 {{ existing_sections|json_script:"bqInitialSections" }}
 {{ lh.currency|json_script:"bqCurrency" }}
 <script>
@@ -660,11 +757,23 @@ box (.bq-page / .pbq-page padding) the document's own answer wins.
     /* ── Saving ────────────────────────────────────────────────────────────
        Items are flattened into the CRM's own item rows, each tagged with its
        section so the sheet rebuilds exactly on reopen. */
+    // On the fix-and-supply sheet a group's title is never printed, so it is
+    // usually left blank - and two blank-titled groups in a row would come back
+    // as ONE group on reopen (group_items joins consecutive rows sharing a
+    // title), losing the blank row between the plumbing and the tiling. A
+    // blank title there is stored as "GROUP n" instead. The sectioned sheet
+    // prints its titles and keeps a blank one blank ("ITEMS" on the copy).
+    const BQ_UNTITLED_GROUPS = document.getElementById('bqSheet')
+        .classList.contains('bq-sheet--fs');
+
     function collect() {
         const items = [];
+        let groupNo = 0;
         document.querySelectorAll('#bqSections tr.bq-section-head').forEach(head => {
             const sid = head.dataset.section;
-            const section = head.querySelector('.bq-sec-title').value.trim();
+            groupNo++;
+            const section = head.querySelector('.bq-sec-title').value.trim()
+                || (BQ_UNTITLED_GROUPS ? 'GROUP ' + groupNo : '');
             document.querySelectorAll(`tr.bq-item[data-item-sec="${sid}"]`).forEach(row => {
                 const name = row.querySelector('.bq-desc').value.trim();
                 if (!name) return;                       // blank rows are scaffolding

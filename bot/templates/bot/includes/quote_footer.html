@@ -2,6 +2,10 @@
 The foot of a sectioned quote: banking details, signature line and tagline.
 Each block renders only if the tenant has that fact on file. Expects `lh`.
 {% endcomment %}
+{# The fix-and-supply sheet closes on its own bank + total box and tagline; every other sheet keeps the foot below. #}
+{% if lh.layout == "fix_and_supply" %}
+{% include "bot/includes/quote_fs_foot.html" %}
+{% else %}
 <div class="bq-foot">
     {% if lh.bank %}
     <h3>Banking Details</h3>
@@ -26,4 +30,5 @@ Each block renders only if the tenant has that fact on file. Expects `lh`.
     {% if lh.tagline %}<span>{{ lh.tagline }}</span>{% endif %}
     {% if lh.website %}<span>{{ lh.website }}</span>{% endif %}
 </div>
+{% endif %}
 {% endif %}

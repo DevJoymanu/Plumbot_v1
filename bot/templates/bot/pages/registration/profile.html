@@ -267,16 +267,41 @@
                                 {% csrf_token %}
                                 <input type="hidden" name="letterhead_submit" value="1">
 
-                                <div class="form-check mb-3">
-                                    <input class="form-check-input" type="checkbox" name="lh_sectioned"
-                                           id="id_lh_sectioned" {% if letterhead.sectioned %}checked{% endif %}>
-                                    <label class="form-check-label fw-bold" for="id_lh_sectioned">
-                                        Use our own sectioned quote sheet
-                                    </label>
+                                {# Which quote sheet this business uses. A select, not the old sectioned tickbox, because there are three sheets now; the server still reads a lone lh_sectioned post the old way. #}
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold" for="id_lh_layout">Quote layout</label>
+                                    <select class="form-select" name="lh_layout" id="id_lh_layout">
+                                        <option value="standard" {% if letterhead.layout == 'standard' %}selected{% endif %}>Standard layout</option>
+                                        <option value="sectioned" {% if letterhead.layout == 'sectioned' %}selected{% endif %}>Sectioned sheet (numbered sections, subtotals, discount and VAT)</option>
+                                        <option value="fix_and_supply" {% if letterhead.layout == 'fix_and_supply' %}selected{% endif %}>Fix and supply sheet (item groups, Material / Labour / Transport, bank details and total box)</option>
+                                    </select>
                                     <small class="d-block text-muted">
-                                        Groups a quote into numbered sections with their own subtotals,
-                                        and adds discount and VAT rows. Off means the standard layout.
+                                        Every quote screen, the template builder and the PDF use the sheet chosen here.
                                     </small>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_company_name">Company name on the quote</label>
+                                        <input type="text" class="form-control" id="id_lh_company_name"
+                                               name="lh_company_name" value="{{ letterhead.company_name }}"
+                                               placeholder="YOUR COMPANY [PVT] LTD">
+                                        <small class="text-muted">Heads the fix and supply sheet. Blank uses your business name.</small>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_watermark">Watermark</label>
+                                        <input type="text" class="form-control" id="id_lh_watermark"
+                                               name="lh_watermark" value="{{ letterhead.watermark }}"
+                                               placeholder="One short word">
+                                        <small class="text-muted">The faint word across the fix and supply sheet. Blank means none.</small>
+                                    </div>
+                                    <div class="col-12 mb-3">
+                                        <label class="form-label fw-bold" for="id_lh_sheet_address">Address on the fix and supply sheet</label>
+                                        <input type="text" class="form-control" id="id_lh_sheet_address"
+                                               name="lh_sheet_address" value="{{ letterhead.sheet_address }}"
+                                               placeholder="150 Northway | Seke rd, Hatfield, Harare">
+                                        <small class="text-muted">Commas start a new line. Blank uses the Address below. This one is printed only, the assistant never says it.</small>
+                                    </div>
                                 </div>
 
                                 <div class="row">
