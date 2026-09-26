@@ -260,6 +260,57 @@ Mirrored by the fix-and-supply renderer in bot/quote_pdf.py (_fix_supply_sheet).
     margin-top: 56px;
 }
 
+/* ── Inputs look like the paper's cells, not dashboard fields ──
+   The dashboard styles every input in .pb-content as a tall, pale-blue,
+   pill-shaped field with a selector that carries three :not() clauses, which
+   outranked every rule above: a blank new quote (/quotations/new/) read as a
+   web form, with pill-shaped Labour / Transport boxes and the deposit field
+   stretched onto its own line. These rules repeat that selector under
+   .bq-sheet--fs so they win, and put back only what this sheet wants: a
+   dotted rule under the client name, yellow Labour / Transport figures, and a
+   short inline deposit percentage. Scoped to this sheet only. */
+.pb-content .bq-sheet--fs input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    width: 100%;
+    min-height: 0;
+    padding: 2px 3px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font: inherit;
+    color: inherit;
+}
+.pb-content .bq-sheet--fs input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus {
+    background: #fffde0;
+    outline: 1px solid #c9c9c9;
+}
+.pb-content .bq-sheet--fs .bq-fs-meta input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.pb-content .bq-sheet--fs .bq-fs-contactline input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    border-bottom: 1px dotted #999;
+}
+.pb-content .bq-sheet--fs .bq-fs-meta__date input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    width: auto;
+    text-decoration: underline;
+}
+.pb-content .bq-sheet--fs .bq-totals .bq-val input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    width: 8em;
+    max-width: 100%;
+    background: var(--fs-highlight);
+    font-weight: 700;
+}
+.pb-content .bq-sheet--fs .bq-totals input.bq-pct:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    display: inline-block;
+    width: 3.5em;
+    text-align: right;
+    border-bottom: 1px dotted #999;
+}
+.pb-content .bq-sheet--fs input.bq-sec-title:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    font-style: italic;
+    font-weight: 400;
+    font-size: 12px;
+    color: #888;
+}
+
 @media (max-width: 767px) {
     .bq-fs-head { grid-template-columns: 1fr; text-align: center; }
     .bq-fs-contact { text-align: center; }

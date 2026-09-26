@@ -13612,6 +13612,9 @@ class FixAndSupplySheetTests(TestCase):
     def test_every_quote_screen_draws_the_fix_and_supply_sheet(self):
         pages = {
             'create': reverse('create_quotation', args=[self.lead.pk]),
+            # The blank "New Quotation" screen, with no lead: the sheet comes
+            # from the workspace's own layout.
+            'standalone': reverse('standalone_quotation'),
             'edit': reverse('edit_quotation', args=[self.quote.pk]),
             'view': reverse('view_quotation', args=[self.quote.pk]),
             'builder': reverse('create_quotation_template'),
@@ -13631,6 +13634,15 @@ class FixAndSupplySheetTests(TestCase):
             for absent in ('DOMESTIC | INDUSTRIAL', 'Client signature',
                            'Banking Details', 'Hatfield, Harare.'):
                 self.assertNotIn(absent, sheet, f'{absent!r} on the {name} screen')
+
+    def test_the_sheet_inputs_outrank_the_dashboard_field_style(self):
+        """A blank new quote read as a web form: the dashboard's pill-shaped
+        field rule (.pb-content input with three :not() clauses) outranked the
+        sheet's own input rules. The sheet repeats that selector under
+        .bq-sheet--fs so its cells look like the paper's."""
+        html = self._html(reverse('standalone_quotation'))
+        self.assertIn('.pb-content .bq-sheet--fs input:not([type="checkbox"])'
+                      ':not([type="radio"]):not([type="hidden"])', html)
 
     def test_the_client_copy_reads_like_the_paper(self):
         html = self._html(reverse('view_quotation', args=[self.quote.pk]))
